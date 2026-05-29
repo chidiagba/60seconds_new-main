@@ -1,0 +1,17 @@
+\n\n-- Create properties table\nCREATE TABLE IF NOT EXISTS properties (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  type text NOT NULL,\n  title text NOT NULL,\n  price numeric NOT NULL CHECK (price >= 0),\n  location text NOT NULL,\n  city text NOT NULL,\n  state text NOT NULL,\n  bedrooms integer CHECK (bedrooms >= 0),\n  bathrooms numeric CHECK (bathrooms >= 0),\n  area numeric CHECK (area >= 0),\n  description text NOT NULL,\n  features text[] DEFAULT '{}',\n  images text[] DEFAULT '{}',\n  listing_type text NOT NULL CHECK (listing_type IN ('sale', 'rent', 'short-rent')),\n  user_id uuid NOT NULL REFERENCES auth.users(id),\n  created_at timestamptz DEFAULT now(),\n  updated_at timestamptz DEFAULT now()\n);
+\n\n-- Create saved_properties table\nCREATE TABLE IF NOT EXISTS saved_properties (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  user_id uuid NOT NULL REFERENCES auth.users(id),\n  property_id uuid NOT NULL REFERENCES properties(id) ON DELETE CASCADE,\n  created_at timestamptz DEFAULT now(),\n  UNIQUE(user_id, property_id)\n);
+\n\n-- Enable RLS\nALTER TABLE properties ENABLE ROW LEVEL SECURITY;
+\nALTER TABLE saved_properties ENABLE ROW LEVEL SECURITY;
+\n\n-- Policies for properties table\nCREATE POLICY "Users can read all properties"\n  ON properties\n  FOR SELECT\n  TO authenticated\n  USING (true);
+\n\nCREATE POLICY "Users can create their own properties"\n  ON properties\n  FOR INSERT\n  TO authenticated\n  WITH CHECK (auth.uid() = user_id);
+\n\nCREATE POLICY "Users can update their own properties"\n  ON properties\n  FOR UPDATE\n  TO authenticated\n  USING (auth.uid() = user_id)\n  WITH CHECK (auth.uid() = user_id);
+\n\nCREATE POLICY "Users can delete their own properties"\n  ON properties\n  FOR DELETE\n  TO authenticated\n  USING (auth.uid() = user_id);
+\n\n-- Policies for saved_properties table\nCREATE POLICY "Users can view their saved properties"\n  ON saved_properties\n  FOR SELECT\n  TO authenticated\n  USING (auth.uid() = user_id);
+\n\nCREATE POLICY "Users can save properties"\n  ON saved_properties\n  FOR INSERT\n  TO authenticated\n  WITH CHECK (auth.uid() = user_id);
+\n\nCREATE POLICY "Users can unsave properties"\n  ON saved_properties\n  FOR DELETE\n  TO authenticated\n  USING (auth.uid() = user_id);
+\n\n-- Create updated_at trigger function\nCREATE OR REPLACE FUNCTION update_updated_at()\nRETURNS TRIGGER AS $$\nBEGIN\n  NEW.updated_at = now();
+\n  RETURN NEW;
+\nEND;
+\n$$ LANGUAGE plpgsql;
+\n\n-- Create trigger for properties\nCREATE TRIGGER update_properties_updated_at\n  BEFORE UPDATE ON properties\n  FOR EACH ROW\n  EXECUTE FUNCTION update_updated_at();
+;
