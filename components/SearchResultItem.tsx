@@ -13,12 +13,12 @@ import Colors from '@/constants/colors';
 interface SearchResultItemProps {
   type: 'event' | 'video' | 'user';
   data: any;
-  onPress: (id: string, type: string) => void;
+  onPress: (id: string, type: string, data: any) => void;
 }
 
 export default function SearchResultItem({ type, data, onPress }: SearchResultItemProps) {
   const handlePress = () => {
-    onPress(data.id, type);
+    onPress(data.id, type, data);
   };
 
   const renderEventItem = () => (

@@ -39,7 +39,7 @@ import ProductsList from "@/components/ProductsList";
 import ShareModal from "@/components/ShareModal";
 import BusinessVouchersSection from "@/components/BusinessVouchersSection";
 import * as Location from "expo-location";
-import { calculateDistance, formatDistance } from "@/utils/location";
+import { calculateDistance, calculateRoadDistance, formatDistance } from "@/utils/location";
 import { useAuthStore } from "@/store/auth-store";
 import { useContentModerationStore } from "@/store/content-moderation-store";
 import { useActionSheet } from "@expo/react-native-action-sheet";
@@ -49,6 +49,7 @@ import GuestListButton from "@/components/GuestListButton";
 import { AttendanceStatus } from "@/types";
 import { TRANSACTION_FEE_PERCENTAGE } from "@/types/wallet";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getEventLifecycleStatus } from '@/utils/event-status';
 
 const { width } = Dimensions.get("window");
 
@@ -87,6 +88,21 @@ export default function EventScreen() {
   const [pendingDistanceCalc, setPendingDistanceCalc] = useState(false);
   const [locationDisclosureAccepted, setLocationDisclosureAccepted] =
     useState(false);
+
+  const eventLifecycleStatus = useMemo(() => {
+    if (!video) {
+      return 'open' as const;
+    }
+
+    return getEventLifecycleStatus({
+      status: video.eventStatus,
+      startDate: video.eventStartDate || video.eventDate,
+      endDate: video.eventEndDate,
+      eventDate: video.eventDate,
+    });
+  }, [video?.eventDate, video?.eventEndDate, video?.eventStartDate, video?.eventStatus]);
+
+  const isEventClosed = eventLifecycleStatus === 'closed';
 
   // Function to check if a video is liked
   const isVideoLiked = (videoId: string): boolean => {
@@ -191,7 +207,7 @@ export default function EventScreen() {
         return;
       }
 
-      const distance = calculateDistance(
+      const distance = await calculateRoadDistance(
         latitude,
         longitude,
         targetLatitude,
@@ -350,6 +366,11 @@ export default function EventScreen() {
   const handleAttendancePress = () => {
     if (!user) {
       router.push("/signin");
+      return;
+    }
+
+    if (isEventClosed) {
+      Alert.alert("Event closed", "This event has already ended.");
       return;
     }
 
@@ -615,16 +636,24 @@ export default function EventScreen() {
               </View>
             </View>
 
+            <View style={[styles.eventStatusBadge, isEventClosed ? styles.closedBadge : styles.openBadge]}>
+              <Text style={styles.eventStatusText}>{isEventClosed ? 'Closed' : 'Open'}</Text>
+            </View>
+
             <View style={styles.attendanceSection}>
               <TouchableOpacity
                 style={[
                   styles.attendButton,
                   attendanceStatus === AttendanceStatus.GOING &&
                     styles.attendingButton,
+                  isEventClosed && styles.disabledButton,
                 ]}
                 onPress={handleAttendancePress}
+                disabled={isEventClosed}
               >
-                {attendanceStatus === AttendanceStatus.GOING ? (
+                {isEventClosed ? (
+                  <X size={20} color={Colors.dark.text} />
+                ) : attendanceStatus === AttendanceStatus.GOING ? (
                   <UserCheck size={20} color={Colors.dark.primary} />
                 ) : (
                   <UserPlus size={20} color={Colors.dark.text} />
@@ -634,9 +663,12 @@ export default function EventScreen() {
                     styles.attendButtonText,
                     attendanceStatus === AttendanceStatus.GOING &&
                       styles.attendingButtonText,
+                    isEventClosed && styles.disabledButtonText,
                   ]}
                 >
-                  {attendanceStatus === AttendanceStatus.GOING
+                  {isEventClosed
+                    ? "Event Closed"
+                    : attendanceStatus === AttendanceStatus.GOING
                     ? "I'm Going"
                     : "Attend Event"}
                 </Text>
@@ -886,6 +918,28 @@ const styles = StyleSheet.create({
     color: Colors.dark.text,
     marginLeft: 8,
   },
+  eventStatusBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  openBadge: {
+    backgroundColor: "rgba(16, 185, 129, 0.18)",
+  },
+  closedBadge: {
+    backgroundColor: "rgba(107, 114, 128, 0.28)",
+  },
+  eventStatusText: {
+    color: Colors.dark.text,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
   attendanceSection: {
     marginBottom: 20,
   },
@@ -904,6 +958,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.dark.primary,
   },
+  disabledButton: {
+    opacity: 0.65,
+  },
   attendButtonText: {
     color: Colors.dark.text,
     fontSize: 16,
@@ -912,6 +969,9 @@ const styles = StyleSheet.create({
   },
   attendingButtonText: {
     color: Colors.dark.primary,
+  },
+  disabledButtonText: {
+    color: Colors.dark.textSecondary,
   },
   viewAttendeesButton: {
     flexDirection: "row",

@@ -1,21 +1,70 @@
 import { supabase } from './supabase';
-import { Database } from './supabase';
 
-type Tables = Database['public']['Tables'];
-
-export interface EventWithProducts extends Tables['events']['Row'] {
-  products?: Tables['products']['Row'][];
+export interface EventWithProducts {
+  id: string;
+  user_id: string;
+  creator_id?: string | null;
+  event_name: string;
+  description?: string | null;
+  start_date: string;
+  end_date?: string | null;
+  location_name?: string | null;
+  location_address?: string | null;
+  location_city?: string | null;
+  location_state?: string | null;
+  location_country?: string | null;
+  location_latitude?: number | null;
+  location_longitude?: number | null;
+  max_attendees?: number | null;
+  current_attendees?: number | null;
+  ticket_price?: number | null;
+  currency?: string | null;
+  image_url?: string | null;
+  category?: string | null;
+  tags?: string[] | null;
+  hashtags?: string[] | null;
+  video_id?: string | null;
+  business_id?: string | null;
+  is_public: boolean;
+  requires_approval?: boolean | null;
+  status: 'draft' | 'published' | 'cancelled' | 'completed';
+  created_at: string;
+  updated_at: string;
+  products?: any[];
   has_products?: boolean;
   product_count?: number;
-  video?: Tables['videos']['Row'];
-  creator?: Tables['profiles']['Row'];
+  video?: any;
+  creator?: any;
 }
 
-export interface EventListItem extends Tables['events']['Row'] {
+export interface EventListItem {
+  id: string;
+  user_id: string;
+  creator_id?: string | null;
+  event_name: string;
+  description?: string | null;
+  start_date: string;
+  end_date?: string | null;
+  location_name?: string | null;
+  location_city?: string | null;
+  location_latitude?: number | null;
+  location_longitude?: number | null;
+  ticket_price?: number | null;
+  currency?: string | null;
+  image_url?: string | null;
+  category?: string | null;
+  hashtags?: string[] | null;
+  video_id?: string | null;
+  business_id?: string | null;
+  is_public: boolean;
+  requires_approval?: boolean | null;
+  status: 'draft' | 'published' | 'cancelled' | 'completed';
+  created_at: string;
+  updated_at: string;
   has_products: boolean;
   product_count: number;
-  video?: Pick<Tables['videos']['Row'], 'id' | 'title' | 'thumbnail_url' | 'video_url'>;
-  creator?: Pick<Tables['profiles']['Row'], 'id' | 'username' | 'full_name' | 'avatar_url'>;
+  video?: { id: string; title?: string | null; thumbnail_url?: string | null; video_url?: string | null };
+  creator?: { id: string; username?: string | null; full_name?: string | null; avatar_url?: string | null };
 }
 
 export class EventQueries {

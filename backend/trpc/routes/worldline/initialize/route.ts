@@ -12,6 +12,8 @@ const WORLDLINE_BASE_URL =
   process.env.WORLDLINE_BASE_URL ||
   "https://payment.direct.worldline-solutions.com/v2";
 
+const APP_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "myapp://payment";
+
 export const initializePaymentProcedure = publicProcedure
   .input(
     z.object({
@@ -54,10 +56,10 @@ export const initializePaymentProcedure = publicProcedure
         description: input.description || `Payment for order ${input.orderId}`,
         returnUrl:
           input.returnUrl ||
-          `${process.env.NEXT_PUBLIC_APP_URL}/payment/success`,
+          `${APP_BASE_URL}/success`,
         cancelUrl:
           input.cancelUrl ||
-          `${process.env.NEXT_PUBLIC_APP_URL}/payment/cancel`,
+          `${APP_BASE_URL}/cancel`,
         metadata: {
           ...input.metadata,
           app_name: "60Seconds",
@@ -71,7 +73,7 @@ export const initializePaymentProcedure = publicProcedure
         testMode: process.env.NODE_ENV !== "production",
       };
 
-      const response = await fetch(`${WORLDLINE_BASE_URL}/v1/payments`, {
+      const response = await fetch(`${WORLDLINE_BASE_URL}/payments`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${WORLDLINE_API_KEY}`,
@@ -119,9 +121,7 @@ export const initializePaymentProcedure = publicProcedure
             paymentId: `mock_${Date.now()}_${Math.random()
               .toString(36)
               .substr(2, 9)}`,
-            redirectUrl: `${
-              process.env.NEXT_PUBLIC_APP_URL
-            }/payment/mock-success?paymentId=mock_${Date.now()}`,
+            redirectUrl: `${APP_BASE_URL}/mock-success?paymentId=mock_${Date.now()}`,
             orderId: input.orderId,
             amount: input.amount,
             currency: input.currency,

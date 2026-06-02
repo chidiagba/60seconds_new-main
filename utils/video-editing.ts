@@ -69,6 +69,17 @@ class VideoEditService {
     const cleaned = inputUri.split("?")[0];
     const extension = cleaned.split(".").pop()?.toLowerCase() || "mp4";
     const outputUri = `${FileSystem.cacheDirectory}${filePrefix}_${Date.now()}.${extension}`;
+
+    // Library pickers on Android/iOS often return local content URIs, not network URLs.
+    if (
+      inputUri.startsWith("content://") ||
+      inputUri.startsWith("ph://") ||
+      inputUri.startsWith("assets-library://")
+    ) {
+      await FileSystem.copyAsync({ from: inputUri, to: outputUri });
+      return outputUri;
+    }
+
     const { uri, status } = await FileSystem.downloadAsync(inputUri, outputUri);
     if (status !== 200) {
       throw new Error(`Failed to download remote file (${status})`);

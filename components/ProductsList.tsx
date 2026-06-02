@@ -28,13 +28,16 @@ import { Product } from "@/types";
 import { useProductStore } from "@/store/product-store";
 import { useWalletStore } from "@/store/wallet-store";
 import { useAuthStore } from "@/store/auth-store";
+import { useAuth } from "@/lib/auth";
 import { orderService, ticketReceiptService } from "@/lib/database";
 import { supabase } from "@/lib/supabase";
 import { settleStripePayment } from "@/lib/stripe-settlement";
+import { settleExternalOrderPayment } from "@/lib/external-payment-settlement";
 import PaystackWebView from "@/components/PaystackWebView";
 import TwintPaymentModal from "@/components/TwintPaymentModal";
 import TwintWebViewModal from "@/components/TwintWebViewModal";
-import { canOpenTwintApp, getTwintWebCheckoutUrl, openTwintApp } from "@/lib/twint";
+import { canOpenTwintApp, openTwintApp } from "@/lib/twint";
+import WorldlineService from "@/lib/worldline";
 
 // Constants
 const PLATFORM_FEE_PERCENTAGE = 0.04;
@@ -61,6 +64,11 @@ const formatAmount = (amount: number, currency?: string | null): string => {
   }
 };
 
+const isNigerianCountryValue = (value?: string | null): boolean => {
+  const normalized = String(value || "").trim().toUpperCase();
+  return normalized === "NG" || normalized === "NGA" || normalized === "NIGERIA";
+};
+
 type StripePaymentSheetApi = {
   initPaymentSheet?: (options: any) => Promise<any>;
   presentPaymentSheet?: () => Promise<any>;
@@ -84,6 +92,7 @@ const ProductsList = ({
   const { products: storeProducts, fetchProducts, addToCart, isLoading } = useProductStore();
   const { makePayment, fetchPaymentMethods } = useWalletStore();
   const user = useAuthStore((s) => s.user);
+  const { profile, user: authUser } = useAuth();
   const router = useRouter();
   const stripeApiRef = React.useRef<StripePaymentSheetApi>({});
 
@@ -125,21 +134,32 @@ const ProductsList = ({
   // Paystack payment state
   const [showPaystackModal, setShowPaystackModal] = React.useState(false);
   const [paystackProduct, setPaystackProduct] = React.useState<Product | null>(null);
+  // Keep a ref in sync so that async callbacks always see the LATEST value,
+  // even if the component has re-rendered or the user navigated away.
+  const paystackProductRef = React.useRef<Product | null>(null);
+  const paystackCancelledRef = React.useRef(false);
   const [showTwintPaymentModal, setShowTwintPaymentModal] = React.useState(false);
   const [showTwintWebViewModal, setShowTwintWebViewModal] = React.useState(false);
   const [twintProduct, setTwintProduct] = React.useState<Product | null>(null);
   const [twintReference, setTwintReference] = React.useState<string>(`twint_product_${Date.now()}`);
   const [twintOpeningApp, setTwintOpeningApp] = React.useState(false);
+  const [twintCheckoutUrl, setTwintCheckoutUrl] = React.useState<string | null>(null);
+  const [twintPaymentId, setTwintPaymentId] = React.useState<string | null>(null);
+  const [twintOrderId, setTwintOrderId] = React.useState<string | null>(null);
 
   const { wallet } = useWalletStore();
-
-  // Detect Nigerian payment: use Paystack when the product currency is NGN
-  // or the user's wallet currency is NGN
-  const isNigerianPayment = (product: Product) => {
-    const productCurrency = String(product.currency || '').trim().toUpperCase();
-    const walletCurrency = String(wallet?.currency || '').trim().toUpperCase();
-    return productCurrency === 'NGN' || walletCurrency === 'NGN';
-  };
+  const isLoggedInNigerianUser =
+    !!(user?.id || authUser?.id || buyerId) &&
+    [
+      (profile as any)?.country_code,
+      (profile as any)?.country,
+      (authUser as any)?.user_metadata?.country_code,
+      (authUser as any)?.user_metadata?.country,
+      (wallet as any)?.country,
+      (wallet as any)?.countryCode,
+      (user as any)?.country,
+      (user as any)?.countryCode,
+    ].some((value) => isNigerianCountryValue(value));
 
   const flatListRef = React.useRef<FlatList>(null);
 
@@ -159,6 +179,10 @@ const ProductsList = ({
     const fee = calculatePlatformFee(price);
     const total = price + fee;
     return { fee, total: Math.round(total * 100) / 100 };
+  };
+
+  const getBusinessNetAmount = (grossAmount: number) => {
+    return Number((grossAmount / (1 + PLATFORM_FEE_PERCENTAGE)).toFixed(2));
   };
 
   const resolveProductOwnerId = (product: any): string | null => {
@@ -338,6 +362,8 @@ const ProductsList = ({
 
       // Extra small delay and ensure interactions finished before presenting
       await new Promise((r) => setTimeout(r, 300));
+      let wasPaymentCancelled = false;
+
       await new Promise((resolve) => {
         InteractionManager.runAfterInteractions(async () => {
           try {
@@ -351,10 +377,18 @@ const ProductsList = ({
         });
       }).then((presentResult: any) => {
         if (presentResult?.error) {
-          if (presentResult.error.code === "Canceled") return;
+          const errorCode = String(presentResult.error.code || "").toLowerCase();
+          if (errorCode === "canceled" || errorCode === "cancelled") {
+            wasPaymentCancelled = true;
+            return;
+          }
           throw new Error(presentResult.error.message || "Failed to present payment sheet");
         }
       });
+
+      if (wasPaymentCancelled) {
+        return;
+      }
 
       // Record the payment on our backend (best-effort)
       try {
@@ -386,7 +420,7 @@ const ProductsList = ({
             total_amount: total,
             currency: productCurrency,
             payment_method: selectedMethod,
-            payment_status: 'paid',
+            payment_status: 'pending',
             items: [
               {
                 product_id: productForPayment.id,
@@ -419,6 +453,28 @@ const ProductsList = ({
 
           if (!settlement.success) {
             console.warn('Stripe settlement failed:', settlement.error);
+            await supabase
+              .from('orders')
+              .update({
+                payment_status: 'failed',
+                status: 'cancelled',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', order.id);
+            throw new Error(settlement.error || 'Stripe settlement failed. Ticket was not created.');
+          }
+
+          const { error: paidUpdateError } = await supabase
+            .from('orders')
+            .update({
+              payment_status: 'paid',
+              status: 'completed',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', order.id);
+
+          if (paidUpdateError) {
+            throw new Error(`Payment succeeded but order status update failed: ${paidUpdateError.message}`);
           }
 
           const orderNumber =
@@ -464,10 +520,14 @@ const ProductsList = ({
 
           if (!settlement.success) {
             console.warn('Stripe settlement failed (no order id path):', settlement.error);
+            throw new Error(settlement.error || 'Stripe settlement failed.');
           }
         }
       } catch (recordErr) {
-        console.warn("Payment succeeded but recording failed:", recordErr);
+        const message = recordErr instanceof Error ? recordErr.message : 'Payment could not be finalized.';
+        console.warn('Payment finalization failed:', recordErr);
+        Alert.alert('Payment Not Successful', message);
+        return;
       }
 
       Alert.alert("Purchase Successful", "You have successfully made the payment.");
@@ -489,6 +549,11 @@ const ProductsList = ({
       return;
     }
 
+    if (!twintPaymentId || !twintOrderId) {
+      Alert.alert("Twint Payment", "Missing Twint checkout session. Please restart payment.");
+      return;
+    }
+
     const { fee, total } = getTotalPayableAmount(twintProduct.price);
     const ownerId = resolveProductOwnerId(twintProduct);
     const currentAuthId = buyerId || user?.id;
@@ -496,17 +561,66 @@ const ProductsList = ({
     try {
       setIsPaying(true);
 
+      const verification = await WorldlineService.verifyPayment(twintPaymentId);
+      if (verification.data.status !== "SUCCESS") {
+        throw new Error(`Twint payment is ${verification.data.status}. Complete payment first and verify again.`);
+      }
+
+      const { error: orderUpdateError } = await supabase
+        .from("orders")
+        .update({
+          payment_status: "paid",
+          payment_method: "twint",
+          status: "completed",
+          updated_at: new Date().toISOString(),
+          notes: `Twint payment verified: ${verification.data.paymentId}`,
+        })
+        .eq("id", twintOrderId);
+
+      if (orderUpdateError) {
+        throw new Error(`Failed to update Twint order: ${orderUpdateError.message}`);
+      }
+
+      const settlement = await settleExternalOrderPayment({
+        orderId: twintOrderId,
+        provider: 'twint',
+        paymentReference: verification.data.paymentId,
+        paymentTransactionId: verification.data.transactionId || verification.data.paymentId,
+        recipientId: ownerId,
+        grossAmount: total,
+        netAmount: twintProduct.price,
+        currency: normalizeCurrencyCode(twintProduct.currency),
+        videoId: twintProduct.videoId,
+        items: [
+          {
+            productId: twintProduct.id,
+            quantity: 1,
+            unitPrice: twintProduct.price,
+            currency: normalizeCurrencyCode(twintProduct.currency),
+            ownerId,
+          },
+        ],
+        metadata: {
+          productId: twintProduct.id,
+          baseAmount: twintProduct.price,
+          totalAmount: total,
+        },
+      });
+
+      if (!settlement.success) {
+        throw new Error(settlement.error || 'Twint settlement failed.');
+      }
+
       if (currentAuthId) {
-        const order = await orderService.createOrder({
-          user_id: currentAuthId,
-          video_id: twintProduct.videoId,
-          total_amount: total,
-          currency: normalizeCurrencyCode(twintProduct.currency),
-          payment_method: 'twint',
-          payment_status: 'paid',
-          items: [{ product_id: twintProduct.id, quantity: 1, price: total, name: twintProduct.name }],
-          notes: `Twint reference: ${twintReference}`,
-        });
+        const { data: order, error: orderFetchError } = await supabase
+          .from("orders")
+          .select("id, order_number")
+          .eq("id", twintOrderId)
+          .single();
+
+        if (orderFetchError || !order) {
+          throw new Error("Verified payment order is missing");
+        }
 
         const orderNumber =
           (order as any)?.order_number ||
@@ -532,25 +646,15 @@ const ProductsList = ({
         });
       }
 
-      await makePayment(total, `Purchase: ${twintProduct.name}`, {
-        productId: twintProduct.id,
-        videoId,
-        paymentProvider: 'twint',
-        buyerId: buyerId || undefined,
-        recipientId: ownerId,
-        platformFeePercentage: PLATFORM_FEE_PERCENTAGE,
-        platformFeeAmount: fee,
-        baseAmount: twintProduct.price,
-        totalAmount: total,
-        twintTransactionId: twintReference,
-      });
-
       Alert.alert("Purchase Successful", "Twint payment completed successfully.");
       setShowTwintPaymentModal(false);
       setShowTwintWebViewModal(false);
       setTwintProduct(null);
       setSelectedProduct(null);
       setShowPaymentOptions(false);
+      setTwintCheckoutUrl(null);
+      setTwintPaymentId(null);
+      setTwintOrderId(null);
       onClose();
     } catch (error) {
       console.error('Twint checkout error:', error);
@@ -601,9 +705,65 @@ const ProductsList = ({
     setTwintReference(reference);
     setTwintProduct(product);
 
+    const currentAuthId = buyerId || user?.id;
+    const effectiveEmail = buyerEmail || user?.email;
+    if (!currentAuthId || !effectiveEmail) {
+      Alert.alert("Twint Payment", "Please sign in with a valid email before using Twint.");
+      return;
+    }
+
+    const { total } = getTotalPayableAmount(product.price);
+    const currency = normalizeCurrencyCode(product.currency);
+
+    setIsPaying(true);
+    try {
+      const order = await orderService.createOrder({
+        user_id: currentAuthId,
+        video_id: product.videoId,
+        total_amount: total,
+        currency,
+        payment_method: "twint",
+        payment_status: "pending",
+        items: [{ product_id: product.id, quantity: 1, price: total, name: product.name }],
+        notes: `Twint reference: ${reference}`,
+      });
+
+      const ownerId = resolveProductOwnerId(product);
+      const initialized = await WorldlineService.initializePayment({
+        amount: total,
+        currency,
+        orderId: order.id,
+        customerEmail: effectiveEmail,
+        customerName: user?.name || effectiveEmail,
+        description: `Product purchase via Twint: ${product.name}`,
+        metadata: {
+          paymentProvider: "twint",
+          reference,
+          orderId: order.id,
+          userId: currentAuthId,
+          recipientId: ownerId,
+          productId: product.id,
+          type: "order_payment",
+        },
+      });
+
+      setTwintPaymentId(initialized.data.paymentId);
+      setTwintCheckoutUrl(initialized.data.redirectUrl);
+      setTwintOrderId(order.id);
+    } catch (error) {
+      console.error("Twint checkout initialization failed:", error);
+      Alert.alert(
+        "Twint Initialization Failed",
+        error instanceof Error ? error.message : "Could not initialize Twint checkout."
+      );
+      return;
+    } finally {
+      setIsPaying(false);
+    }
+
     Alert.alert(
       'Twint Payment',
-      `You will be redirected to Twint to complete your payment of ${formatAmount(getTotalPayableAmount(product.price).total, normalizeCurrencyCode(product.currency))}.`,
+      `You will be redirected to Twint to complete your payment of ${formatAmount(total, currency)}.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -635,6 +795,9 @@ const ProductsList = ({
   const renderPaymentOptions = () => {
     const isIOS = Platform.OS === "ios";
     const primary = isIOS ? ["StripePayment", "BankTransfer"] : ["GooglePay", "BankTransfer"];
+    if (isLoggedInNigerianUser) {
+      primary.unshift("Paystack");
+    }
     const more = ["CreditCard", "Twint"];
 
     const renderButton = (method: string) => (
@@ -646,6 +809,16 @@ const ProductsList = ({
         ]}
         onPress={() => {
           setPaymentMethod(method);
+          if (method === "Paystack") {
+            if (selectedProduct) {
+              paystackCancelledRef.current = false;
+              paystackProductRef.current = selectedProduct;
+              setPaystackProduct(selectedProduct);
+              setShowPaystackModal(true);
+              setShowPaymentOptions(false);
+            }
+            return;
+          }
           if (method === "Twint") {
             if (selectedProduct) {
               startTwintCheckout(selectedProduct);
@@ -676,33 +849,6 @@ const ProductsList = ({
         {showMoreOptions && more.map(renderButton)}
       </>
     );
-  };
-
-  const renderMoreOptions = () => {
-    const allOptions = ["CreditCard", "Twint"]; // wallet options already handled by sheet
-
-    return allOptions.map((method) => (
-      <TouchableOpacity
-        key={method}
-        style={[
-          styles.paymentMethodButton,
-          paymentMethod === method && styles.selectedPaymentMethod,
-        ]}
-        onPress={() => {
-          setPaymentMethod(method);
-          if (method === "Twint") {
-            if (selectedProduct) {
-              startTwintCheckout(selectedProduct);
-            }
-          } else {
-            startStripeCheckout(method);
-          }
-          setShowPaymentOptions(false);
-        }}
-      >
-        <Text style={styles.paymentMethodText}>{method}</Text>
-      </TouchableOpacity>
-    ));
   };
 
   const handleAddToCart = (product: Product) => {
@@ -788,12 +934,8 @@ const ProductsList = ({
                 style={[styles.actionButton, styles.buyButton]}
                 onPress={() => {
                   setSelectedProduct(item);
-                  if (isNigerianPayment(item)) {
-                    setPaystackProduct(item);
-                    setShowPaystackModal(true);
-                  } else {
-                    setShowPaymentOptions(true);
-                  }
+                  setShowMoreOptions(false);
+                  setShowPaymentOptions(true);
                 }}
                 disabled={isPaying}
               >
@@ -847,12 +989,6 @@ const ProductsList = ({
           </View>
           <Text style={styles.paymentMethodLabel}>Select Payment Method</Text>
           {renderPaymentOptions()}
-          {showMoreOptions && renderMoreOptions()}
-          {!showMoreOptions && (
-            <TouchableOpacity onPress={() => setShowMoreOptions(true)} style={styles.moreOptionsButton}>
-              <Text style={styles.paymentMethodText}>More</Text>
-            </TouchableOpacity>
-          )}
         </View>
       )}
     </>
@@ -867,62 +1003,91 @@ const ProductsList = ({
     ) : null;
 
   const handlePaystackSuccess = async (reference: string) => {
+    // If the user cancelled or navigated away before verification finished, ignore.
+    if (paystackCancelledRef.current) return;
+
     setShowPaystackModal(false);
-    const product = paystackProduct;
+    // Read from the ref so we always get the latest product even from stale closures.
+    const product = paystackProductRef.current;
     if (!product) return;
     const { total } = getTotalPayableAmount(product.price);
     const currentAuthId = buyerId || user?.id;
     try {
       setIsPaying(true);
       const ownerId = resolveProductOwnerId(product);
-      if (currentAuthId) {
-        const order = await orderService.createOrder({
-          user_id: currentAuthId,
-          video_id: product.videoId,
-          total_amount: total,
-          currency: normalizeCurrencyCode(product.currency),
-          payment_method: 'paystack',
-          payment_status: 'paid',
-          items: [{ product_id: product.id, quantity: 1, price: total, name: product.name }],
-          notes: `Paystack reference: ${reference}`,
-        });
-        const orderNumber =
-          (order as any)?.order_number ||
-          (order as any)?.orderNumber ||
-          `ORD-${Date.now()}-${String(order?.id || '').slice(0, 6)}`;
-        await ticketReceiptService.createTicketReceiptsForOrder({
-          orderId: order.id,
-          orderNumber,
-          buyerId: currentAuthId,
-          fallbackVideoId: product.videoId,
-          sourceItems: [{
-            productId: product.id,
-            name: product.name,
-            quantity: 1,
-            unitPrice: total,
-            currency: normalizeCurrencyCode(product.currency),
-            type: product.type,
-            videoId: product.videoId,
-          }],
-        });
+      if (!currentAuthId) {
+        throw new Error('Please sign in before completing a Paystack purchase.');
       }
-      await makePayment(total, `Purchase: ${product.name}`, {
-        productId: product.id,
-        videoId,
-        paymentProvider: 'paystack',
-        buyerId: buyerId || undefined,
+
+      const order = await orderService.createOrder({
+        user_id: currentAuthId,
+        video_id: product.videoId,
+        total_amount: total,
+        currency: normalizeCurrencyCode(product.currency),
+        payment_method: 'paystack',
+        payment_status: 'paid',
+        items: [{ product_id: product.id, quantity: 1, price: total, name: product.name }],
+        notes: `Paystack reference: ${reference}`,
+      });
+
+      const settlement = await settleExternalOrderPayment({
+        orderId: order.id,
+        provider: 'paystack',
+        paymentReference: reference,
+        paymentTransactionId: reference,
         recipientId: ownerId,
-        platformFeePercentage: PLATFORM_FEE_PERCENTAGE,
-        platformFeeAmount: getTotalPayableAmount(product.price).fee,
-        baseAmount: product.price,
-        totalAmount: total,
+        grossAmount: total,
+        netAmount: product.price,
+        currency: normalizeCurrencyCode(product.currency),
+        videoId: product.videoId,
+        items: [
+          {
+            productId: product.id,
+            quantity: 1,
+            unitPrice: product.price,
+            currency: normalizeCurrencyCode(product.currency),
+            ownerId,
+          },
+        ],
+        metadata: {
+          productId: product.id,
+          baseAmount: product.price,
+          totalAmount: total,
+        },
+      });
+
+      if (!settlement.success) {
+        throw new Error(settlement.error || 'Paystack settlement failed.');
+      }
+
+      const orderNumber =
+        (order as any)?.order_number ||
+        (order as any)?.orderNumber ||
+        `ORD-${Date.now()}-${String(order?.id || '').slice(0, 6)}`;
+      await ticketReceiptService.createTicketReceiptsForOrder({
+        orderId: order.id,
+        orderNumber,
+        buyerId: currentAuthId,
+        fallbackVideoId: product.videoId,
+        sourceItems: [{
+          productId: product.id,
+          name: product.name,
+          quantity: 1,
+          unitPrice: total,
+          currency: normalizeCurrencyCode(product.currency),
+          type: product.type,
+          videoId: product.videoId,
+        }],
       });
     } catch (recordErr) {
       console.warn('Paystack payment succeeded but recording failed:', recordErr);
     } finally {
       setIsPaying(false);
     }
+    // Only show success if we haven't been cancelled in the meantime.
+    if (paystackCancelledRef.current) return;
     Alert.alert('Purchase Successful', 'Your Paystack payment was completed successfully.');
+    paystackProductRef.current = null;
     setPaystackProduct(null);
     onClose();
   };
@@ -943,9 +1108,19 @@ const ProductsList = ({
       {paystackProduct && (
         <PaystackWebView
           visible={showPaystackModal}
-          onClose={() => { setShowPaystackModal(false); setPaystackProduct(null); }}
+          onClose={() => {
+            paystackCancelledRef.current = true;
+            paystackProductRef.current = null;
+            setShowPaystackModal(false);
+            setPaystackProduct(null);
+          }}
           onSuccess={handlePaystackSuccess}
-          onCancel={() => { setShowPaystackModal(false); setPaystackProduct(null); }}
+          onCancel={() => {
+            paystackCancelledRef.current = true;
+            paystackProductRef.current = null;
+            setShowPaystackModal(false);
+            setPaystackProduct(null);
+          }}
           amount={getTotalPayableAmount(paystackProduct.price).total}
           email={buyerEmail || user?.email || ''}
           description={`Purchase: ${paystackProduct.name}`}
@@ -973,14 +1148,29 @@ const ProductsList = ({
       {twintProduct && (
         <TwintWebViewModal
           visible={showTwintWebViewModal}
-          url={getTwintWebCheckoutUrl({
-            amount: getTotalPayableAmount(twintProduct.price).total,
-            currency: normalizeCurrencyCode(twintProduct.currency),
-            reference: twintReference,
-            note: `Payment for ${twintProduct.name}`,
-          })}
+          url={twintCheckoutUrl || "about:blank"}
           processing={isPaying}
           onClose={() => setShowTwintWebViewModal(false)}
+          onCancelDetected={() => {
+            setShowTwintWebViewModal(false);
+            Alert.alert("Twint Payment", "Payment was cancelled or failed. Please try again.");
+          }}
+          successUrlPatterns={[
+            "myapp://payment/success",
+            "/payment/success",
+            "status=success",
+            "result=success",
+            "success=true",
+          ]}
+          cancelUrlPatterns={[
+            "myapp://payment/cancel",
+            "/payment/cancel",
+            "status=cancel",
+            "status=failed",
+            "result=failed",
+            "canceled",
+            "cancelled",
+          ]}
           onComplete={completeTwintPayment}
         />
       )}

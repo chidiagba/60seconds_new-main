@@ -1,0 +1,19 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build Signed AAB",
+			"type": "shell",
+			"command": "./gradlew",
+			"args": [
+				"--no-daemon",
+				":app:bundleRelease",
+				"-x",
+				"lint",
+				"-x",
+				"test"
+			],
+			"isBackground": false
+		}
+	]
+}

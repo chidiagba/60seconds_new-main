@@ -11,6 +11,7 @@ import {
   Modal,
   Dimensions,
   Platform,
+  Alert,
 } from "react-native";
 import { Image } from "expo-image";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -154,17 +155,44 @@ export default function SearchScreen() {
   };
 
   // ✅ FIXED: open correct route for user profile
-  const handleResultPress = (id: string, type: string) => {
+  const handleResultPress = (id: string, type: string, data?: any) => {
     if (!id) return;
 
     if (type === "event") {
-      router.push(`/event/${id}` as any);
+      const videoId = data?.video_id;
+      const endDate = data?.end_date;
+      const now = new Date();
+
+      if (!videoId) {
+        Alert.alert(
+          '🎬 No Video Yet',
+          'This event doesn\'t have a video uploaded yet. Check back later!',
+          [{ text: 'OK', style: 'default' }]
+        );
+        return;
+      }
+
+      if (endDate && new Date(endDate) < now) {
+        Alert.alert(
+          '⏰ Event Has Ended',
+          `This event ended on ${new Date(endDate).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}. You can still watch the recorded video.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Watch Video',
+              onPress: () => router.push({ pathname: '/', params: { selectedVideoId: videoId } } as any),
+            },
+          ]
+        );
+        return;
+      }
+
+      router.push({ pathname: '/', params: { selectedVideoId: videoId } } as any);
       return;
     }
 
     if (type === "video") {
-      // if your video route is different, change here
-      router.push(`/event/${id}` as any);
+      router.push({ pathname: '/', params: { selectedVideoId: id } } as any);
       return;
     }
 

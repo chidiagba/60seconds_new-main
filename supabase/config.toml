@@ -424,6 +424,11 @@ verify_jwt = true
 import_map = "./functions/stripe-confirm-and-settle/deno.json"
 entrypoint = "./functions/stripe-confirm-and-settle/index.ts"
 
+[functions.settle-external-order-payment]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/settle-external-order-payment/index.ts"
+
 [functions.create-signup-user]
 enabled = true
 verify_jwt = false

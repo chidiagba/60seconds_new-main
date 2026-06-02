@@ -17,7 +17,30 @@ interface TwintWebViewModalProps {
   processing: boolean;
   onClose: () => void;
   onComplete: () => void;
+  onCancelDetected?: () => void;
+  successUrlPatterns?: string[];
+  cancelUrlPatterns?: string[];
+  autoVerifyEnabled?: boolean;
 }
+
+const DEFAULT_SUCCESS_URL_PATTERNS = [
+  'myapp://payment/success',
+  '/payment/success',
+  'status=success',
+  'result=success',
+  'success=true',
+  'redirect_status=succeeded',
+];
+
+const DEFAULT_CANCEL_URL_PATTERNS = [
+  'myapp://payment/cancel',
+  '/payment/cancel',
+  'status=cancel',
+  'status=failed',
+  'result=failed',
+  'cancelled',
+  'canceled',
+];
 
 export default function TwintWebViewModal({
   visible,
@@ -25,7 +48,54 @@ export default function TwintWebViewModal({
   processing,
   onClose,
   onComplete,
+  onCancelDetected,
+  successUrlPatterns,
+  cancelUrlPatterns,
+  autoVerifyEnabled = true,
 }: TwintWebViewModalProps) {
+  const hasHandledRedirectRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (visible) {
+      hasHandledRedirectRef.current = false;
+    }
+  }, [visible, url]);
+
+  const handleNavigationChange = (event: any) => {
+    if (!autoVerifyEnabled || processing || hasHandledRedirectRef.current) {
+      return;
+    }
+
+    const currentUrl = String(event?.url || '').toLowerCase();
+    if (!currentUrl) {
+      return;
+    }
+
+    const cancelPatterns = (cancelUrlPatterns && cancelUrlPatterns.length > 0)
+      ? cancelUrlPatterns
+      : DEFAULT_CANCEL_URL_PATTERNS;
+    const successPatterns = (successUrlPatterns && successUrlPatterns.length > 0)
+      ? successUrlPatterns
+      : DEFAULT_SUCCESS_URL_PATTERNS;
+
+    const isCancel = cancelPatterns.some((pattern) =>
+      currentUrl.includes(String(pattern).toLowerCase())
+    );
+    if (isCancel) {
+      hasHandledRedirectRef.current = true;
+      onCancelDetected?.();
+      return;
+    }
+
+    const isSuccess = successPatterns.some((pattern) =>
+      currentUrl.includes(String(pattern).toLowerCase())
+    );
+    if (isSuccess) {
+      hasHandledRedirectRef.current = true;
+      onComplete();
+    }
+  };
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.container}>
@@ -38,6 +108,7 @@ export default function TwintWebViewModal({
 
         <WebView
           source={{ uri: url }}
+          onNavigationStateChange={handleNavigationChange}
           startInLoadingState
           renderLoading={() => (
             <View style={styles.loadingContainer}>
@@ -55,7 +126,7 @@ export default function TwintWebViewModal({
             {processing ? (
               <ActivityIndicator size="small" color={Colors.dark.text} />
             ) : (
-              <Text style={styles.completeButtonText}>I Completed Payment</Text>
+              <Text style={styles.completeButtonText}>Verify Twint Payment</Text>
             )}
           </TouchableOpacity>
         </View>

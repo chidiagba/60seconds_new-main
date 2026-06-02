@@ -23,6 +23,7 @@ import { useRouter } from "expo-router";
 import {
   formatDistance,
   calculateDistance,
+  calculateRoadDistance,
   getCurrentLocation,
   getCachedLocation,
   getCoordinatesFromAddress,
@@ -113,10 +114,10 @@ export default function VideoInfo({ video }: VideoInfoProps) {
   );
 
   const computeDistanceFromLocation = React.useCallback(
-    (
+    async (
       location: { coords: { latitude: number; longitude: number } },
       target: ResolvedTargetCoords
-    ): string | null => {
+    ): Promise<string | null> => {
       const userLat = parseCoordinate(location.coords.latitude, "latitude");
       const userLon = parseCoordinate(location.coords.longitude, "longitude");
 
@@ -124,7 +125,7 @@ export default function VideoInfo({ video }: VideoInfoProps) {
         return null;
       }
 
-      const distance = calculateDistance(
+      const distance = await calculateRoadDistance(
         userLat,
         userLon,
         target.latitude,
@@ -159,11 +160,11 @@ export default function VideoInfo({ video }: VideoInfoProps) {
       return;
     }
 
-    const applyDistance = (
+    const applyDistance = async (
       location: { coords: { latitude: number; longitude: number } },
       target: ResolvedTargetCoords
     ) => {
-      const formattedDistance = computeDistanceFromLocation(location, target);
+      const formattedDistance = await computeDistanceFromLocation(location, target);
       resolvedDistanceCache.set(distanceLookupKey, formattedDistance);
       if (!isCancelled) {
         setUserDistance(formattedDistance);

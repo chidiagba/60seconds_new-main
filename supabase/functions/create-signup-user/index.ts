@@ -79,6 +79,54 @@ Deno.serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
+    const { data: staleProfile } = await admin
+      .from('profiles')
+      .select('id,email,username,full_name')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (staleProfile) {
+      let authUserExists = false;
+      let page = 1;
+      const perPage = 1000;
+
+      while (!authUserExists && page <= 10) {
+        const { data, error } = await admin.auth.admin.listUsers({ page, per_page: perPage });
+        if (error) {
+          return new Response(JSON.stringify({ success: false, error: error.message || 'Failed to inspect existing users' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        authUserExists = Boolean(data?.users?.find((u) => (u.email || '').trim().toLowerCase() === email));
+
+        if (!data?.users?.length || data.users.length < perPage) {
+          break;
+        }
+
+        page += 1;
+      }
+
+      if (!authUserExists) {
+        const { error: deleteErr } = await admin.from('profiles').delete().eq('email', email);
+        if (deleteErr) {
+          return new Response(JSON.stringify({ success: false, error: deleteErr.message || 'Failed to clear stale profile' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      } else {
+        return new Response(
+          JSON.stringify({ success: false, code: 'existing_user', error: 'User already exists', user_id: staleProfile.id }),
+          {
+            status: 409,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+      }
+    }
+
     let existingUserId: string | null = null;
     let page = 1;
     const perPage = 1000;

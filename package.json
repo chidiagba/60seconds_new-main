@@ -11,9 +11,9 @@
     "start-static": "node start-static-server.js",
     "dev": "concurrently \"npm run start-server\" \"npm run start-web\"",
     "dev-full": "concurrently \"npm run start-static\" \"npm run start-server\" \"npm run start-web\"",
-    "android": "expo run:android",
-    "android:device": "bash scripts/install-android-device.sh",
-    "android:launch-device": "bash scripts/launch-android-device.sh",
+    "android": "bash scripts/setup-android-dev-network.sh && expo run:android",
+    "android:device": "bash scripts/setup-android-dev-network.sh && bash scripts/install-android-device.sh",
+    "android:launch-device": "bash scripts/setup-android-dev-network.sh && bash scripts/launch-android-device.sh",
     "ios": "expo run:ios",
     "ios:device": "expo run:ios --device",
     "ios:launch-device": "bash scripts/launch-ios-device.sh"
@@ -21,6 +21,7 @@
   "dependencies": {
     "@expo/react-native-action-sheet": "^4.1.1",
     "@expo/vector-icons": "^15.0.3",
+    "@fathah_cr/react-native-ffmpeg-kit": "^1.0.8",
     "@hono/node-server": "^1.19.5",
     "@hono/trpc-server": "^0.3.4",
     "@react-native-async-storage/async-storage": "^2.2.0",

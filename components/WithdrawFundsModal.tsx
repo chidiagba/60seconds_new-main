@@ -144,6 +144,11 @@ export default function WithdrawFundsModal({ visible, onClose }: WithdrawFundsMo
                     <Text style={styles.accountName}>{businessBankAccount.accountName}</Text>
                     <Text style={styles.accountNumber}>Account: {businessBankAccount.accountNumber}</Text>
                     <Text style={styles.accountNumber}>Provider: {businessBankAccount.payoutProvider === 'paystack' ? 'Paystack' : 'Stripe'}</Text>
+                    {businessBankAccount.payoutProvider === 'paystack' && (
+                      <Text style={styles.transferHint}>
+                        Direct transfer is enabled for this account. Paystack will create a recipient and send the payout directly.
+                      </Text>
+                    )}
                     
                     {businessBankAccount.isVerified ? (
                       <View style={styles.verifiedBadge}>
@@ -328,6 +333,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.dark.subtext,
     marginBottom: 8,
+  },
+  transferHint: {
+    fontSize: 12,
+    color: '#0BA4DB',
+    marginBottom: 8,
+    lineHeight: 17,
   },
   verifiedBadge: {
     alignSelf: 'flex-start',

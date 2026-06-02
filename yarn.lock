@@ -1186,6 +1186,11 @@
     find-up "^5.0.0"
     js-yaml "^4.1.0"
 
+"@fathah_cr/react-native-ffmpeg-kit@^1.0.8":
+  version "1.0.8"
+  resolved "https://registry.npmjs.org/@fathah_cr/react-native-ffmpeg-kit/-/react-native-ffmpeg-kit-1.0.8.tgz"
+  integrity sha512-ul6poWMjTgubH0MOSxihrU94OcKmJfFrMb3wHb6s0xW7GjoeQvUQxOlSVCW84l+//VF3mrhBE6KzfmDOAx2MDw==
+
 "@hapi/hoek@^9.0.0", "@hapi/hoek@^9.3.0":
   version "9.3.0"
   resolved "https://registry.npmjs.org/@hapi/hoek/-/hoek-9.3.0.tgz"

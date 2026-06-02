@@ -18,6 +18,11 @@ if [[ -z "$DEVICE_SERIAL" ]]; then
   exit 1
 fi
 
+echo "Configuring adb reverse on ${DEVICE_SERIAL}..."
+adb -s "$DEVICE_SERIAL" reverse tcp:8081 tcp:8081 >/dev/null || true
+adb -s "$DEVICE_SERIAL" reverse tcp:19000 tcp:19000 >/dev/null || true
+adb -s "$DEVICE_SERIAL" reverse tcp:19001 tcp:19001 >/dev/null || true
+
 cd "$PROJECT_ROOT"
 echo "Building and installing on Android device ${DEVICE_SERIAL}..."
 npx expo run:android --device "$DEVICE_SERIAL"

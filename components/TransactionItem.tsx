@@ -88,12 +88,21 @@ export default function TransactionItem({ transaction, onPress }: TransactionIte
     }
   };
   
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
+  const formatDateTime = (dateInput?: string) => {
+    if (!dateInput) return 'Date unavailable';
+
+    const date = new Date(dateInput);
+    if (Number.isNaN(date.getTime())) {
+      return 'Date unavailable';
+    }
+
+    return date.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
     });
   };
   
@@ -122,7 +131,7 @@ export default function TransactionItem({ transaction, onPress }: TransactionIte
         <Text style={styles.description} numberOfLines={1}>
           {transaction.description}
         </Text>
-        <Text style={styles.date}>{formatDate(transaction.createdAt)}</Text>
+        <Text style={styles.date}>{formatDateTime(transaction.createdAt)}</Text>
       </View>
       
       <View style={styles.amountContainer}>

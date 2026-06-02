@@ -1,8 +1,35 @@
 import { Platform } from 'react-native';
 import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
-import Constants from 'expo-constants';
-import { APP_WEBSITE_URL } from '@/constants/app-links';
+
+let FFmpegKit: any = null;
+let ReturnCode: any = null;
+let ffmpegModuleLoadAttempted = false;
+
+function ensureFFmpegModuleLoaded() {
+  if (ffmpegModuleLoadAttempted) {
+    return;
+  }
+
+  ffmpegModuleLoadAttempted = true;
+
+  try {
+    const m = require('@fathah_cr/react-native-ffmpeg-kit');
+    FFmpegKit = m.FFmpegKit;
+    ReturnCode = m.ReturnCode;
+    return;
+  } catch {
+    // Fall through to alternate package name.
+  }
+
+  try {
+    const m = require('ffmpeg-kit-react-native');
+    FFmpegKit = m.FFmpegKit;
+    ReturnCode = m.ReturnCode;
+  } catch {
+    // Native ffmpeg is not linked in this build.
+  }
+}
 
 // Bundled logo used as the watermark overlay
 let localWatermark: any = null;
@@ -23,104 +50,54 @@ export interface WatermarkOptions {
   allowFallback?: boolean;
 }
 
-function getCloudinaryGravity(position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'): string {
-  switch (position) {
-    case 'top-left':
-      return 'north_west';
-    case 'top-right':
-      return 'north_east';
-    case 'bottom-left':
-      return 'south_west';
-    case 'center':
-      return 'center';
-    default:
-      return 'south_east';
-  }
-}
-
 export class VideoWatermarkService {
   private static instance: VideoWatermarkService;
   private watermarkUri: string | null = null;
-  private resolvedApiBaseUrl: string | null = null;
-  private lastApiCheckAt = 0;
   private backgroundWatermarkJobs = new Map<string, Promise<string>>();
 
-  private getApiCandidates(videoUri?: string): string[] {
-    const urls: string[] = [];
+  private resolveFileExtension(inputUri: string, fallback: string): string {
+    const normalizedFallback = fallback.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'bin';
+    const lowerUri = inputUri.toLowerCase();
 
-    const explicit = process.env.EXPO_PUBLIC_RORK_API_BASE_URL?.trim();
-    if (explicit) {
-      urls.push(explicit.replace(/\/+$/, ''));
+    if (lowerUri.startsWith('data:image/')) {
+      const mimeExt = lowerUri.split(';')[0].split('/')[1];
+      return (mimeExt || normalizedFallback).replace(/[^a-z0-9]/gi, '').toLowerCase();
     }
 
-    const productionApi = process.env.EXPO_PUBLIC_PRODUCTION_API_BASE_URL?.trim();
-    if (productionApi) {
-      urls.push(productionApi.replace(/\/+$/, ''));
-    }
+    const candidates: string[] = [inputUri];
 
-    const websiteBase = APP_WEBSITE_URL.replace(/\/+$/, '');
-    urls.push(websiteBase);
-    urls.push('https://api.60secondsapp.io');
-
-    if (videoUri?.startsWith('http')) {
-      try {
-        const sourceOrigin = new URL(videoUri).origin;
-        urls.push(sourceOrigin);
-      } catch {
-        // Ignore malformed URI
-      }
-    }
-
-    const hostUri =
-      Constants.expoConfig?.hostUri ||
-      (Constants as any)?.manifest2?.extra?.expoGo?.debuggerHost ||
-      (Constants as any)?.manifest?.debuggerHost ||
-      '';
-    const host = hostUri.split(':')[0];
-    if (host && host !== 'localhost' && host !== '127.0.0.1') {
-      urls.push(`http://${host}:3001`);
-    }
-
-    urls.push('http://localhost:3001');
-    urls.push('http://127.0.0.1:3001');
-
-    if (Platform.OS === 'android') {
-      urls.push('http://10.0.2.2:3001');
-    }
-
-    return Array.from(new Set(urls));
-  }
-
-  private async canReachApi(baseUrl: string): Promise<boolean> {
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 2500);
-      const response = await fetch(`${baseUrl}/`, { signal: controller.signal });
-      clearTimeout(timer);
-      return response.ok;
+      const parsed = new URL(inputUri);
+      candidates.push(parsed.pathname);
+      const queryCandidates = [
+        parsed.searchParams.get('unstable_path'),
+        parsed.searchParams.get('filename'),
+        parsed.searchParams.get('file'),
+        parsed.searchParams.get('name'),
+      ];
+      for (const queryValue of queryCandidates) {
+        if (queryValue) {
+          candidates.push(queryValue);
+        }
+      }
     } catch {
-      return false;
-    }
-  }
-
-  private async resolveApiBaseUrl(): Promise<string | null> {
-    const now = Date.now();
-    if (this.resolvedApiBaseUrl && now - this.lastApiCheckAt < 60_000) {
-      return this.resolvedApiBaseUrl;
+      // Not a standard URL; keep raw input candidate only.
     }
 
-    const candidates = this.getApiCandidates();
     for (const candidate of candidates) {
-      if (await this.canReachApi(candidate)) {
-        this.resolvedApiBaseUrl = candidate;
-        this.lastApiCheckAt = now;
-        return candidate;
+      const withoutQuery = candidate.split('?')[0].split('#')[0];
+      const match = withoutQuery.match(/\.([a-z0-9]{2,5})$/i);
+      if (!match) {
+        continue;
+      }
+
+      const ext = match[1].toLowerCase();
+      if (ext) {
+        return ext;
       }
     }
 
-    this.resolvedApiBaseUrl = null;
-    this.lastApiCheckAt = now;
-    return null;
+    return normalizedFallback;
   }
 
   private async ensureLocalFile(inputUri: string, filePrefix: string): Promise<string> {
@@ -128,9 +105,19 @@ export class VideoWatermarkService {
       return inputUri;
     }
 
-    const cleaned = inputUri.split('?')[0];
-    const extension = cleaned.split('.').pop()?.toLowerCase() || 'mp4';
+    const fallbackExtension = filePrefix.includes('logo') ? 'png' : 'mp4';
+    const extension = this.resolveFileExtension(inputUri, fallbackExtension);
     const outputUri = `${FileSystem.cacheDirectory}${filePrefix}_${Date.now()}.${extension}`;
+
+    if (
+      inputUri.startsWith('content://') ||
+      inputUri.startsWith('ph://') ||
+      inputUri.startsWith('assets-library://')
+    ) {
+      await FileSystem.copyAsync({ from: inputUri, to: outputUri });
+      return outputUri;
+    }
+
     const { uri, status } = await FileSystem.downloadAsync(inputUri, outputUri);
     if (status !== 200) {
       throw new Error(`Failed to download remote file (${status})`);
@@ -285,7 +272,6 @@ export class VideoWatermarkService {
     const position = options.position ?? 'bottom-right';
     const opacity = Math.max(0.15, Math.min(1, options.opacity ?? 0.75));
     const scale = Math.max(0.08, Math.min(0.4, options.scale ?? 0.18));
-    const sourceUrl = options.sourceUrl?.trim() || null;
     const strict = options.strict ?? false;
     const allowFallback = options.allowFallback ?? false;
     const opts = { position, opacity, scale };
@@ -299,92 +285,46 @@ export class VideoWatermarkService {
       if (allowFallback) return videoUri;
     }
 
-    // Strategy 1: Existing watermark API
+    // On-device FFmpeg watermark embedding (no network dependency)
     try {
-      const serverResult = await this.addWatermarkViaServer(videoUri, opts);
-      if (serverResult) {
-        console.log('[Watermark] Successfully applied watermark via API');
-        return serverResult;
+      const localResult = await this.addWatermarkLocally(videoUri, opts);
+      if (localResult) {
+        console.log('[Watermark] Successfully applied watermark locally via FFmpeg');
+        return localResult;
       }
     } catch (error) {
-      console.error('[Watermark] Server watermark threw error:', error);
-      if (strict && !allowFallback) throw error;
+      console.error('[Watermark] Local FFmpeg watermark threw error:', error);
     }
 
-    // Strategy 2: Cloudinary transformation API fallback
-    try {
-      const cloudinaryInput = sourceUrl && sourceUrl.startsWith('http') ? sourceUrl : videoUri;
-      const cloudinaryResult = await this.addWatermarkViaCloudinary(cloudinaryInput, opts);
-      if (cloudinaryResult) {
-        console.log('[Watermark] Successfully applied watermark via Cloudinary API');
-        return cloudinaryResult;
-      }
-    } catch (error) {
-      console.error('[Watermark] Cloudinary watermark threw error:', error);
-      if (strict && !allowFallback) throw error;
-    }
-
-    // API watermark strategy failed
     const msg =
-      'Watermark failed: all watermark API providers are unreachable or processing failed.';
+      'Watermark failed: local on-device watermarking is unavailable on this build.';
     console.warn('[Watermark]', msg, 'Returning original video');
     
     if (strict && !allowFallback) {
-      throw new Error(msg + ' Set EXPO_PUBLIC_PRODUCTION_API_BASE_URL to your deployed backend URL.');
+      throw new Error(msg + ' Install and rebuild with ffmpeg-kit-react-native (or @fathah_cr/react-native-ffmpeg-kit).');
     }
     
     return videoUri;
   }
 
-  // Watermark API strategy ----------------------------------------------------
-
-  private async addWatermarkViaCloudinary(
-    videoUri: string,
-    options: {
-      position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
-      opacity: number;
-      scale: number;
-    }
-  ): Promise<string | null> {
-    const cloudName = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME?.trim();
-    const logoPublicId = process.env.EXPO_PUBLIC_CLOUDINARY_WATERMARK_LOGO_PUBLIC_ID?.trim();
-
-    if (!cloudName || !logoPublicId) {
-      return null;
-    }
-
-    if (!videoUri.startsWith('http')) {
-      return null;
-    }
-
-    try {
-      const gravity = 'south_east';
-      const opacity = Math.round(options.opacity * 100);
-      const encodedLogoId = encodeURIComponent(logoPublicId).replace(/%2F/g, ':');
-      const encodedSource = encodeURIComponent(videoUri);
-      const watermarkSize = Math.max(90, Math.min(180, Math.round(720 * options.scale)));
-      const layerTransform = [
-        `l_${encodedLogoId}`,
-        'e_make_transparent',
-        'c_fit',
-        `w_${watermarkSize}`,
-        `h_${watermarkSize}`,
-        `o_${opacity}`,
-        `g_${gravity}`,
-        'x_20',
-        'y_20',
-        'fl_layer_apply',
-      ].join(',');
-      const transformedUrl = `https://res.cloudinary.com/${cloudName}/video/fetch/${layerTransform}/${encodedSource}`;
-
-      return await this.ensureLocalFile(transformedUrl, 'wm_cloudinary');
-    } catch (error) {
-      console.warn('[Watermark] Cloudinary strategy failed:', error);
-      return null;
+  private getLocalOverlayExpr(
+    position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'
+  ): string {
+    switch (position) {
+      case 'top-left':
+        return '20:20';
+      case 'top-right':
+        return 'main_w-overlay_w-20:20';
+      case 'bottom-left':
+        return '20:main_h-overlay_h-20';
+      case 'center':
+        return '(main_w-overlay_w)/2:(main_h-overlay_h)/2';
+      default:
+        return 'main_w-overlay_w-20:main_h-overlay_h-20';
     }
   }
 
-  private async addWatermarkViaServer(
+  private async addWatermarkLocally(
     videoUri: string,
     options: {
       position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
@@ -392,49 +332,73 @@ export class VideoWatermarkService {
       scale: number;
     }
   ): Promise<string | null> {
-    let apiBaseUrl = await this.resolveApiBaseUrl();
-    if (!apiBaseUrl) {
-      for (const candidate of this.getApiCandidates(videoUri)) {
-        if (await this.canReachApi(candidate)) {
-          apiBaseUrl = candidate;
-          break;
-        }
-      }
-    }
-    if (!apiBaseUrl) return null;
-
-    try {
-      let watermarkedUrl: string | null = null;
-
-      if (videoUri.startsWith('file://')) {
-        const formData = new FormData();
-        formData.append('video', {
-          uri: videoUri,
-          name: `video_${Date.now()}.mp4`,
-          type: 'video/mp4',
-        } as any);
-        formData.append('position', options.position);
-        formData.append('opacity', String(options.opacity));
-        formData.append('scale', String(options.scale));
-        const response = await fetch(`${apiBaseUrl}/api/video/watermark-upload`, { method: 'POST', body: formData });
-        if (!response.ok) throw new Error(`Upload failed (${response.status})`);
-        watermarkedUrl = (await response.json())?.watermarkedUrl ?? null;
-      } else {
-        const response = await fetch(`${apiBaseUrl}/api/video/watermark`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ videoUrl: videoUri, ...options }),
-        });
-        if (!response.ok) throw new Error(`URL request failed (${response.status})`);
-        watermarkedUrl = (await response.json())?.watermarkedUrl ?? null;
-      }
-
-      if (!watermarkedUrl) throw new Error('Server did not return watermarkedUrl');
-      return await this.ensureLocalFile(watermarkedUrl, 'wm_server');
-    } catch (error) {
-      console.warn('[Watermark] Server strategy failed:', error);
+    if (Platform.OS === 'web') {
       return null;
     }
+
+    ensureFFmpegModuleLoaded();
+    if (!FFmpegKit || !ReturnCode) {
+      return null;
+    }
+
+    if (!this.watermarkUri) {
+      await this.preloadWatermark();
+    }
+
+    if (!this.watermarkUri) {
+      return null;
+    }
+
+    const localVideoUri = await this.ensureLocalFile(videoUri, 'wm_local_src');
+    const localWatermarkUri = await this.ensureLocalFile(this.watermarkUri, 'wm_logo');
+
+    const inputPath = localVideoUri.replace(/^file:\/\//, '');
+    const watermarkPath = localWatermarkUri.replace(/^file:\/\//, '');
+    const outputUri = `${FileSystem.cacheDirectory}wm_local_${Date.now()}.mp4`;
+    const outputPath = outputUri.replace(/^file:\/\//, '');
+
+    const overlayExpr = this.getLocalOverlayExpr(options.position);
+    const logoWidth = Math.max(80, Math.min(240, Math.round(1080 * options.scale)));
+    const safeOpacity = Math.max(0.15, Math.min(1, options.opacity));
+
+    const filterComplex = [
+      `[1:v]scale=${logoWidth}:-1,format=rgba,colorchannelmixer=aa=${safeOpacity}[wm]`,
+      `[0:v][wm]overlay=${overlayExpr}:format=auto[v]`,
+    ].join(';');
+
+    const session = await FFmpegKit.executeWithArguments([
+      '-y',
+      '-i',
+      inputPath,
+      '-i',
+      watermarkPath,
+      '-filter_complex',
+      filterComplex,
+      '-map',
+      '[v]',
+      '-map',
+      '0:a?',
+      '-c:v',
+      'mpeg4',
+      '-q:v',
+      '4',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'copy',
+      '-movflags',
+      '+faststart',
+      outputPath,
+    ]);
+
+    const rc = await session.getReturnCode();
+    if (ReturnCode.isSuccess(rc)) {
+      return outputUri;
+    }
+
+    const logs = await session.getAllLogsAsString();
+    console.warn('[Watermark] Local FFmpeg strategy failed logs:', (logs ?? '').slice(-800));
+    return null;
   }
 }
 

@@ -32,7 +32,7 @@ export default function ResetPasswordScreen() {
   const [error, setError] = useState("");
 
   const email = urlParams.email || "";
-  const uid = urlParams.uid || "";
+  const code = urlParams.code || "";
 
   const validatePassword = (password: string) => {
     const minLength = password.length >= 8;
@@ -75,7 +75,7 @@ export default function ResetPasswordScreen() {
       return;
     }
 
-    if (!uid) {
+    if (!email || !code) {
       Alert.alert(
         "Error",
         "Invalid reset request. Please start over from the forgot password screen.",
@@ -103,7 +103,11 @@ export default function ResetPasswordScreen() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${anonKey}`,
         },
-        body: JSON.stringify({ uid, newPassword: newPassword }),
+        body: JSON.stringify({
+          email: String(email).trim().toLowerCase(),
+          code: String(code).trim(),
+          newPassword: newPassword,
+        }),
       });
       const data = await res.json().catch(() => ({}));
 
@@ -111,7 +115,7 @@ export default function ResetPasswordScreen() {
         setError(
           (data as any)?.error ||
             (data as any)?.message ||
-            `Request failed (${res.status}). Check that update-password-by-uid is deployed.`
+            `Request failed (${res.status}). Check that the password reset function is deployed.`
         );
         setIsLoading(false);
         return;
@@ -229,7 +233,7 @@ export default function ResetPasswordScreen() {
             </View>
           )}
 
-          {!uid && (
+          {(!email || !code) && (
             <View style={styles.infoBox}>
               <Text style={styles.infoText}>
                 Invalid reset request. Please start over from the forgot password screen.
@@ -356,7 +360,8 @@ export default function ResetPasswordScreen() {
                 newPassword !== confirmPassword ||
                 !newPassword ||
                 !confirmPassword ||
-                !uid) &&
+                !email ||
+                !code) &&
                 styles.resetButtonDisabled,
             ]}
             onPress={handleSubmit}
@@ -366,7 +371,8 @@ export default function ResetPasswordScreen() {
               newPassword !== confirmPassword ||
               !newPassword ||
               !confirmPassword ||
-              !uid
+              !email ||
+              !code
             }
             activeOpacity={0.7}
           >
@@ -383,7 +389,8 @@ export default function ResetPasswordScreen() {
                     newPassword !== confirmPassword ||
                     !newPassword ||
                     !confirmPassword ||
-                    !uid) &&
+                    !email ||
+                    !code) &&
                     styles.resetButtonTextDisabled,
                 ]}
               >

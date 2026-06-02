@@ -321,22 +321,68 @@ export const formatDistance = (distance: number): string => {
     return '';
   }
 
-  const toTrimmedFixed = (value: number, decimals: number) => {
-    return Number(value.toFixed(decimals)).toString();
-  };
-
-  // Keep exact readable KM values across short and long distances.
-  if (distance >= 100) {
-    return `${toTrimmedFixed(distance, 1)} KM`;
+  // Show distances in whole KM (no decimal), like Google Maps directions.
+  // For distances under 1 km, show in meters (rounded to nearest 10 m).
+  if (distance < 1) {
+    const meters = Math.round(distance * 100) * 10;
+    return `${meters} m`;
   }
 
-  if (distance >= 10) {
-    return `${toTrimmedFixed(distance, 2)} KM`;
+  return `${Math.round(distance)} km`;
+};
+
+// In-memory cache: "lat1,lon1,lat2,lon2" → road distance in km
+const roadDistanceCache = new Map<string, number>();
+
+/**
+ * Returns the road/driving distance in km between two coordinates using the
+ * OSRM public routing engine (OpenStreetMap data, no API key required).
+ * Falls back to Haversine straight-line distance if the route cannot be
+ * resolved or the request fails.
+ */
+export const calculateRoadDistance = async (
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): Promise<number> => {
+  const coords = [lat1, lon1, lat2, lon2];
+  if (coords.some((c) => !Number.isFinite(c))) {
+    return Number.NaN;
   }
 
-  if (distance >= 1) {
-    return `${toTrimmedFixed(distance, 3)} KM`;
+  // Round to ~100 m precision for cache key to avoid near-duplicate fetches.
+  const cacheKey = [lat1, lon1, lat2, lon2]
+    .map((v) => v.toFixed(3))
+    .join(',');
+
+  const cached = roadDistanceCache.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
   }
 
-  return `${toTrimmedFixed(distance, 3)} KM`;
+  try {
+    const url =
+      `https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false`;
+
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data?.code === 'Ok' && typeof data?.routes?.[0]?.distance === 'number') {
+        const distanceKm = data.routes[0].distance / 1000;
+        roadDistanceCache.set(cacheKey, distanceKm);
+        return distanceKm;
+      }
+    }
+  } catch {
+    // Network error or timeout — fall through to Haversine fallback.
+  }
+
+  // Fallback: straight-line Haversine distance.
+  const fallback = calculateDistance(lat1, lon1, lat2, lon2);
+  roadDistanceCache.set(cacheKey, fallback);
+  return fallback;
 };

@@ -13,7 +13,7 @@ export const verifyPaymentProcedure = publicProcedure
   }))
   .query(async ({ input }) => {
     try {
-      const response = await fetch(`${WORLDLINE_BASE_URL}/v1/payments/${input.paymentId}`, {
+      const response = await fetch(`${WORLDLINE_BASE_URL}/payments/${input.paymentId}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${WORLDLINE_API_KEY}`,

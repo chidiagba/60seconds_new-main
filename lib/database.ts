@@ -1309,6 +1309,27 @@ export const ticketReceiptService = {
       return [] as TicketReceipt[];
     }
 
+    // Fail closed: tickets are issued only for successfully paid orders.
+    const { data: orderData, error: orderError } = await supabase
+      .from('orders')
+      .select('id, payment_status')
+      .eq('id', input.orderId)
+      .single();
+
+    if (orderError) {
+      console.warn('Skipping ticket receipt creation; unable to verify order payment status:', orderError);
+      return [] as TicketReceipt[];
+    }
+
+    const normalizedPaymentStatus = String(orderData?.payment_status || '').toLowerCase();
+    if (normalizedPaymentStatus !== 'paid' && normalizedPaymentStatus !== 'completed' && normalizedPaymentStatus !== 'success') {
+      console.warn('Skipping ticket receipt creation; order payment is not successful:', {
+        orderId: input.orderId,
+        paymentStatus: orderData?.payment_status,
+      });
+      return [] as TicketReceipt[];
+    }
+
     const uniqueProductIds = Array.from(
       new Set(input.sourceItems.map((item) => item.productId).filter(Boolean))
     );
@@ -1660,7 +1681,12 @@ export const searchService = {
           event_name: e.event_name,
           description: e.description,
           start_date: e.start_date,
+          end_date: e.end_date,
+          status: e.status,
+          video_id: e.video_id,
+          image_url: e.image_url,
           location_name: e.location_name,
+          location_city: e.location_city,
           profiles: e.profiles
         })) as any;
       }

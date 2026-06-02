@@ -158,7 +158,14 @@ export default function CommentsScreen() {
               onPress={handleSubmitComment}
               disabled={!newComment.trim() || submitting}
             >
-              <Send size={20} color={Colors.dark.text} />
+              {submitting ? (
+                <View style={styles.sendingWrap}>
+                  <ActivityIndicator size="small" color={Colors.dark.text} />
+                  <Text style={styles.sendingText}>Posting...</Text>
+                </View>
+              ) : (
+                <Send size={20} color={Colors.dark.text} />
+              )}
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -208,7 +215,7 @@ const styles = StyleSheet.create({
     maxHeight: 100,
   },
   sendButton: {
-    width: 40,
+    minWidth: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: Colors.dark.primary,
@@ -218,6 +225,17 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: Colors.dark.inactive,
+  },
+  sendingWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+  },
+  sendingText: {
+    color: Colors.dark.text,
+    fontSize: 12,
+    fontWeight: "600",
+    marginLeft: 6,
   },
   closeButton: {
     position: "absolute",

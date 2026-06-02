@@ -70,29 +70,48 @@ class PaystackService {
   }
 
   /**
-   * Initialize a payment transaction
+   * Initialize a payment transaction via Supabase edge function.
+   * Avoids the localhost:3001 tRPC dependency so this works on physical devices.
    */
   async initializePayment(params: PaystackInitializeParams) {
     try {
-      const result = await trpcClient.paystack.initialize.mutate({
-        email: params.email,
-        amount: params.amount,
-        currency: params.currency || 'NGN',
-        reference: params.reference,
-        callback_url: params.callback_url,
-        metadata: params.metadata,
-        channels: params.channels,
-        userId: params.userId,
-        orderId: params.orderId,
-        walletId: params.walletId,
-        paymentType: params.paymentType,
+      const { data, error } = await supabase.functions.invoke('paystack-initialize', {
+        body: {
+          email: params.email,
+          amount: params.amount,
+          currency: params.currency || 'NGN',
+          reference: params.reference,
+          callback_url: params.callback_url,
+          metadata: params.metadata,
+          channels: params.channels,
+          userId: params.userId,
+          orderId: params.orderId,
+          walletId: params.walletId,
+          paymentType: params.paymentType,
+        },
       });
 
-      if (!result?.success || !result.data?.authorization_url) {
-        throw new Error('Failed to initialize payment');
+      if (error) {
+        // Try to extract the real error body from FunctionsHttpError
+        let realMessage = error.message;
+        try {
+          const ctx = (error as any).context;
+          if (ctx) {
+            const body = typeof ctx.json === 'function' ? await ctx.json() : null;
+            if (body?.error) realMessage = body.error;
+          }
+        } catch (_) {}
+        console.error('Paystack edge function error body:', realMessage);
+        throw new Error(realMessage || 'Edge function error');
       }
 
-      return result.data;
+      if (!data?.success || !data.data?.authorization_url) {
+        const msg = data?.error || 'Failed to initialize payment';
+        console.error('Paystack initialize failed:', msg);
+        throw new Error(msg);
+      }
+
+      return data.data;
     } catch (error: any) {
       console.error('Paystack initialization error:', error);
       throw new Error(error.message || 'Failed to initialize payment');
@@ -100,19 +119,22 @@ class PaystackService {
   }
 
   /**
-   * Verify a payment transaction using direct Paystack API
+   * Verify a payment transaction via Supabase edge function.
    */
   async verifyPayment(reference: string): Promise<PaystackVerifyResponse> {
     try {
-      const result = await trpcClient.paystack.verify.query({ reference });
+      const { data, error } = await supabase.functions.invoke('paystack-verify', {
+        body: { reference },
+      });
 
-      if (!result?.success || !result.data?.reference) {
-        throw new Error('Failed to verify payment');
+      if (error) throw new Error(error.message || 'Edge function error');
+      if (!data?.success || !data.data?.reference) {
+        throw new Error(data?.error || 'Failed to verify payment');
       }
 
       return {
         success: true,
-        data: result.data,
+        data: data.data,
       };
     } catch (error: any) {
       console.error('Paystack verification error:', error);

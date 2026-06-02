@@ -160,7 +160,8 @@ const sendOtpEmailWithFailover = async (
   subject: string,
   text: string,
 ): Promise<EmailSendResult> => {
-  const attempts = [sendViaPostmark, sendViaSendGrid, sendViaResend] as const;
+  // Prefer SendGrid first for signup PINs, then fall back if the SMTP provider is unavailable.
+  const attempts = [sendViaSendGrid, sendViaPostmark, sendViaResend] as const;
   let lastResult: EmailSendResult = {
     ok: false,
     provider: "postmark",
@@ -208,7 +209,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const { email, type, user_id } = body;
-    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+    const normalizedEmail = typeof email === "string" ? email.replace(/\s+/g, "").trim().toLowerCase() : "";
     const t = type === "signup" || type === "recovery" ? type : null;
 
     if (!normalizedEmail || !t) {
@@ -237,10 +238,19 @@ Deno.serve(async (req) => {
     let resolvedUser: AuthUserRecord | null = null;
 
     if (typeof user_id === "string" && user_id.trim()) {
-      resolvedUser = await resolveUserById(supabase, user_id.trim());
+      try {
+        resolvedUser = await resolveUserById(supabase, user_id.trim());
+      } catch (resolveErr) {
+        console.warn("send-otp: resolveUserById failed, falling back to email lookup:", resolveErr);
+      }
+
+      if (!resolvedUser) {
+        resolvedUser = await resolveUserByEmail(supabase, normalizedEmail);
+      }
+
       if (!resolvedUser) {
         return new Response(
-          JSON.stringify({ success: false, message: "No account found for this reset request" }),
+          JSON.stringify({ success: false, message: "No account found with this email" }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -302,6 +312,42 @@ Deno.serve(async (req) => {
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Keep the latest OTP visible in Supabase Auth user metadata for support/debug workflows.
+    try {
+      const { data: authUserData, error: authUserErr } = await supabase.auth.admin.getUserById(uid);
+      if (authUserErr) {
+        console.warn("send-otp: failed to load user for metadata OTP stamp:", authUserErr.message);
+      } else {
+        const existingMeta = (authUserData?.user?.app_metadata || {}) as Record<string, unknown>;
+        const stampedMeta: Record<string, unknown> = {
+          ...existingMeta,
+          latest_otp_code: code,
+          latest_otp_type: t,
+          latest_otp_email: normalizedEmail,
+          latest_otp_expires_at: expiresAt,
+          latest_otp_sent_at: new Date().toISOString(),
+          latest_otp_provider: sendResult.provider,
+        };
+
+        if (t === "signup") {
+          stampedMeta.signup_last_otp_code = code;
+          stampedMeta.signup_last_otp_expires_at = expiresAt;
+          stampedMeta.signup_last_otp_sent_at = stampedMeta.latest_otp_sent_at;
+          stampedMeta.signup_last_otp_provider = sendResult.provider;
+        }
+
+        const { error: updateMetaErr } = await supabase.auth.admin.updateUserById(uid, {
+          app_metadata: stampedMeta,
+        });
+
+        if (updateMetaErr) {
+          console.warn("send-otp: failed to stamp OTP metadata:", updateMetaErr.message);
+        }
+      }
+    } catch (metaStampErr) {
+      console.warn("send-otp: unexpected metadata OTP stamp error:", metaStampErr);
     }
 
     return new Response(

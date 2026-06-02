@@ -29,6 +29,11 @@ if [[ -z "$PACKAGE_NAME" ]]; then
   exit 1
 fi
 
+echo "Configuring adb reverse on ${DEVICE_SERIAL}..."
+adb -s "$DEVICE_SERIAL" reverse tcp:8081 tcp:8081 >/dev/null || true
+adb -s "$DEVICE_SERIAL" reverse tcp:19000 tcp:19000 >/dev/null || true
+adb -s "$DEVICE_SERIAL" reverse tcp:19001 tcp:19001 >/dev/null || true
+
 echo "Launching ${PACKAGE_NAME} on ${DEVICE_SERIAL}..."
 adb -s "$DEVICE_SERIAL" shell monkey -p "$PACKAGE_NAME" -c android.intent.category.LAUNCHER 1
 

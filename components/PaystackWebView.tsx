@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,13 +7,34 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  Linking,
   Platform,
+  BackHandler,
+  Linking,
+  ScrollView,
 } from 'react-native';
 import { X, CreditCard, CheckCircle, AlertCircle } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as WebBrowser from 'expo-web-browser';
 import Colors from '@/constants/colors';
-import { usePaystack } from 'react-native-paystack-webview';
+import { WebView } from 'react-native-webview';
 import PaystackService from '@/lib/paystack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+type PaystackChannel = 'card' | 'bank' | 'ussd' | 'qr' | 'mobile_money' | 'bank_transfer';
+type ChannelSelection = 'all' | PaystackChannel;
+const PAYSTACK_EVENT_STORAGE_KEY = '@paystack_payment_events';
+
+const SUPPORTED_CHANNELS: PaystackChannel[] = ['card', 'bank', 'ussd', 'qr', 'mobile_money', 'bank_transfer'];
+
+const CHANNEL_OPTIONS: { key: ChannelSelection; label: string }[] = [
+  { key: 'all', label: 'All Methods' },
+  { key: 'card', label: 'Card' },
+  { key: 'bank', label: 'Bank' },
+  { key: 'bank_transfer', label: 'Direct Transfer' },
+  { key: 'ussd', label: 'USSD' },
+  { key: 'qr', label: 'QR Code' },
+  { key: 'mobile_money', label: 'Mobile Money' },
+];
 
 interface PaystackWebViewProps {
   visible: boolean;
@@ -21,6 +42,8 @@ interface PaystackWebViewProps {
   onSuccess: (reference: string) => void;
   onCancel: () => void;
   amount: number;
+  /** The currency the product/cart is priced in. If not NGN, the edge function converts to NGN automatically. */
+  currency?: string;
   email: string;
   firstName?: string;
   lastName?: string;
@@ -35,6 +58,7 @@ export default function PaystackWebView({
   onSuccess,
   onCancel,
   amount,
+  currency = 'NGN',
   email,
   firstName = '',
   lastName = '',
@@ -45,11 +69,89 @@ export default function PaystackWebView({
   const [isLoading, setIsLoading] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success' | 'failed'>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const paystack = usePaystack();
+  const [selectedChannel, setSelectedChannel] = useState<ChannelSelection>('all');
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const [checkoutReference, setCheckoutReference] = useState<string | null>(null);
+  const [checkoutWebViewReady, setCheckoutWebViewReady] = useState(false);
+  const [externalCheckoutMode, setExternalCheckoutMode] = useState(false);
+  const insets = useSafeAreaInsets();
+
+  // Ref to prevent stale-closure success fire after the user has cancelled/navigated away
+  const isCancelledRef = useRef(false);
+
+  // Register Android back-button handler while this modal is visible
+  useEffect(() => {
+    if (!visible) {
+      isCancelledRef.current = false;
+      return;
+    }
+    setSelectedChannel('all');
+    setPaymentStatus('idle');
+    setErrorMessage('');
+    setCheckoutUrl(null);
+    setCheckoutReference(null);
+    setCheckoutWebViewReady(false);
+    setExternalCheckoutMode(false);
+    const onBackPress = () => {
+      // Treat hardware back as a cancellation — do NOT silently close
+      if (paymentStatus === 'processing') {
+        Alert.alert(
+          'Payment In Progress',
+          'A payment is currently being processed. Please wait or cancel explicitly.',
+          [{ text: 'OK' }]
+        );
+        return true; // consume the event
+      }
+      isCancelledRef.current = true;
+      setIsLoading(false);
+      setPaymentStatus('idle');
+      setErrorMessage('');
+      trackPaymentEvent('cancelled', {
+        message: 'User pressed back button',
+      }).catch(() => undefined);
+      onCancel();
+      return true; // consume the event so navigation does not also fire
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [visible, paymentStatus]);
 
   const buildReference = () => `60seconds_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
-  const verifyHostedCheckoutPayment = async (reference: string) => {
+  const trackPaymentEvent = React.useCallback(async (
+    status: 'started' | 'success' | 'failed' | 'cancelled',
+    details: {
+      reference?: string;
+      message?: string;
+      source?: 'popup' | 'hosted';
+      verifiedStatus?: string;
+    } = {}
+  ) => {
+    try {
+      const existing = await AsyncStorage.getItem(PAYSTACK_EVENT_STORAGE_KEY);
+      const parsed = existing ? JSON.parse(existing) : [];
+      const next = [
+        {
+          id: `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+          timestamp: new Date().toISOString(),
+          platform: Platform.OS,
+          status,
+          amount,
+          email,
+          channel: selectedChannel || 'none',
+          description,
+          ...details,
+        },
+        ...(Array.isArray(parsed) ? parsed : []),
+      ].slice(0, 100);
+
+      await AsyncStorage.setItem(PAYSTACK_EVENT_STORAGE_KEY, JSON.stringify(next));
+    } catch (trackingError) {
+      console.warn('Failed to track Paystack payment event:', trackingError);
+    }
+  }, [amount, description, email, selectedChannel]);
+
+  const verifyReferenceAndComplete = async (reference: string, source: 'popup' | 'hosted') => {
     try {
       setIsLoading(true);
       setPaymentStatus('processing');
@@ -59,7 +161,21 @@ export default function PaystackWebView({
       if (status === 'success') {
         setPaymentStatus('success');
         setIsLoading(false);
-        setTimeout(() => onSuccess(reference), 250);
+        await trackPaymentEvent('success', {
+          reference,
+          source,
+          verifiedStatus: status,
+        });
+        // Guard: if the user cancelled/navigated away before verification finished,
+        // do NOT fire the success callback — it would show a false positive.
+        if (isCancelledRef.current) {
+          return;
+        }
+        setTimeout(() => {
+          if (!isCancelledRef.current) {
+            onSuccess(reference);
+          }
+        }, 250);
         return;
       }
 
@@ -69,18 +185,60 @@ export default function PaystackWebView({
       setPaymentStatus('failed');
       setErrorMessage(message);
       setIsLoading(false);
-      Alert.alert('Verification Pending', message);
+      await trackPaymentEvent('failed', {
+        reference,
+        source,
+        message,
+      });
+      Alert.alert(
+        'Payment Not Successful',
+        message,
+        [
+          {
+            text: 'Payment Cancelled',
+            style: 'cancel',
+            onPress: () => {
+              trackPaymentEvent('cancelled', {
+                reference,
+                source,
+                message: 'User cancelled after verification failure',
+              }).catch(() => undefined);
+              onCancel();
+            },
+          },
+          {
+            text: 'Retry Verification',
+            onPress: () => {
+              verifyReferenceAndComplete(reference, source);
+            },
+          },
+        ]
+      );
     }
   };
 
-  const openHostedCheckoutFlow = async () => {
+  const resolveChannels = (): PaystackChannel[] => {
+    if (selectedChannel === 'all') {
+      return SUPPORTED_CHANNELS;
+    }
+    return [selectedChannel];
+  };
+
+  const openHostedCheckoutFlow = async (channels: PaystackChannel[]) => {
     const reference = buildReference();
+
+    await trackPaymentEvent('started', {
+      reference,
+      source: 'hosted',
+      message: 'Hosted checkout opened',
+    });
 
     const paymentData = await PaystackService.initializePayment({
       email,
       amount,
-      currency: 'NGN',
+      currency: currency || 'NGN',
       reference,
+      callback_url: 'myapp://paystack/callback',
       metadata: {
         ...metadata,
         firstName,
@@ -91,44 +249,54 @@ export default function PaystackWebView({
         checkout_mode: 'hosted_url',
         timestamp: new Date().toISOString(),
       },
-      channels: ['card', 'bank', 'ussd', 'bank_transfer'],
+      channels,
     });
 
     if (!paymentData?.authorization_url) {
       throw new Error('Paystack did not return a checkout URL.');
     }
 
-    const canOpen = await Linking.canOpenURL(paymentData.authorization_url);
-    if (!canOpen) {
-      throw new Error('Could not open Paystack checkout URL on this device.');
-    }
+    const nextCheckoutUrl = String(paymentData.authorization_url);
+    const shouldUseExternal = /checkout\.paystack\.com/i.test(nextCheckoutUrl);
 
-    await Linking.openURL(paymentData.authorization_url);
-
+    setCheckoutReference(paymentData.reference || reference);
+    setCheckoutUrl(nextCheckoutUrl);
+    setCheckoutWebViewReady(false);
+    setExternalCheckoutMode(shouldUseExternal);
     setIsLoading(false);
     setPaymentStatus('idle');
-    Alert.alert(
-      'Complete Payment',
-      'Paystack checkout was opened in your browser. After payment, come back and tap "I have completed payment".',
-      [
-        { text: 'Cancel Payment', style: 'cancel', onPress: onCancel },
-        { text: 'I have completed payment', onPress: () => verifyHostedCheckoutPayment(paymentData.reference || reference) },
-      ],
-      { cancelable: false }
-    );
+
+    if (shouldUseExternal) {
+      // Paystack checkout is often Cloudflare-protected in embedded WebViews.
+      // Launching in browser avoids 403 challenge failures.
+      let openedExternally = false;
+      try {
+        await WebBrowser.openBrowserAsync(nextCheckoutUrl, {
+          showTitle: true,
+          enableBarCollapsing: true,
+        });
+        openedExternally = true;
+      } catch {
+        try {
+          await Linking.openURL(nextCheckoutUrl);
+          openedExternally = true;
+        } catch {
+          openedExternally = false;
+        }
+      }
+
+      if (!openedExternally) {
+        throw new Error('Could not open secure Paystack checkout. Please try again.');
+      }
+    }
   };
-  
+
   const handlePaystackPayment = async () => {
     setIsLoading(true);
     setPaymentStatus('processing');
     setErrorMessage('');
 
     try {
-      const popup = paystack?.popup;
-      if (!popup?.newTransaction && !popup?.checkout) {
-        throw new Error('Paystack checkout is unavailable right now.');
-      }
-
       if (!email) {
         throw new Error('A valid email is required to continue with Paystack.');
       }
@@ -137,95 +305,26 @@ export default function PaystackWebView({
         throw new Error('Invalid amount. Please enter a value greater than 0.');
       }
 
-      // Android WebView can fail on checkout.paystack.com/popup with ERR_BLOCKED_BY_RESPONSE.
-      // Use hosted checkout URL there to guarantee the Paystack screen opens.
-      if (Platform.OS === 'android') {
-        await openHostedCheckoutFlow();
-        return;
-      }
-
-      const reference = buildReference();
-
-      const transactionPayload = {
-        email,
-        amount,
-        reference,
-        metadata: {
-          ...metadata,
-          firstName,
-          lastName,
-          phone,
-          description,
-          platform: 'mobile',
-          timestamp: new Date().toISOString(),
-        },
-        onSuccess: (response: any) => {
-          const completedReference = response?.transactionRef || response?.reference || reference;
-          setPaymentStatus('success');
-          setIsLoading(false);
-          setTimeout(() => {
-            onSuccess(completedReference);
-          }, 300);
-        },
-        onCancel: () => {
-          setPaymentStatus('idle');
-          setIsLoading(false);
-          setErrorMessage('');
-          onCancel();
-        },
-        onError: (err: any) => {
-          const message = err?.message || 'Paystack checkout failed';
-          setPaymentStatus('failed');
-          setErrorMessage(message);
-          setIsLoading(false);
-          Alert.alert(
-            'Payment Unavailable',
-            message,
-            [
-              { text: 'Cancel Payment', style: 'cancel', onPress: onCancel },
-              { text: 'Retry', onPress: handlePaystackPayment },
-            ]
-          );
-        },
-      };
-
-      // On Android WebView, PaystackPop.checkout can route to /popup which may be blocked.
-      // newTransaction keeps the flow in a single transaction view and avoids that blocker.
-      if (popup?.newTransaction) {
-        await popup.newTransaction(transactionPayload);
-      } else {
-        await popup.checkout(transactionPayload);
-      }
+      const channels = resolveChannels();
+      await trackPaymentEvent('started', {
+        source: 'hosted',
+        message: 'Payment initiated from hosted Paystack modal',
+      });
+      await openHostedCheckoutFlow(channels);
     } catch (error: any) {
       console.error('Paystack payment error:', error);
 
-      const errorText = String(error?.message || '').toLowerCase();
-      if (
-        Platform.OS === 'android' &&
-        (errorText.includes('err_blocked_by_response') ||
-          errorText.includes('blocked_by_response') ||
-          errorText.includes('/popup'))
-      ) {
-        try {
-          setErrorMessage('');
-          await openHostedCheckoutFlow();
-          return;
-        } catch (fallbackError: any) {
-          console.error('Paystack hosted fallback error:', fallbackError);
-          setPaymentStatus('failed');
-          setErrorMessage(fallbackError?.message || 'Failed to open hosted checkout.');
-          setIsLoading(false);
-          Alert.alert('Payment Unavailable', fallbackError?.message || 'Failed to open hosted checkout.');
-          return;
-        }
-      }
-
+      const message = error?.message || 'There was an error starting the Paystack payment.';
       setPaymentStatus('failed');
-      setErrorMessage(error.message || 'Payment failed. Please try again.');
+      setErrorMessage(message);
       setIsLoading(false);
+      await trackPaymentEvent('failed', {
+        source: 'hosted',
+        message,
+      });
       Alert.alert(
         'Payment Unavailable',
-        error.message || 'There was an error starting the Paystack payment.',
+        message,
         [
           { text: 'Cancel Payment', style: 'cancel', onPress: onCancel },
           { text: 'Retry', onPress: handlePaystackPayment },
@@ -235,17 +334,86 @@ export default function PaystackWebView({
   };
   
   const handleCancel = () => {
+    isCancelledRef.current = true;
     setIsLoading(false);
     setPaymentStatus('idle');
     setErrorMessage('');
-    onCancel();
+    setCheckoutUrl(null);
+    setCheckoutReference(null);
+    setCheckoutWebViewReady(false);
+    setExternalCheckoutMode(false);
+    trackPaymentEvent('cancelled', {
+      message: 'User cancelled from Paystack modal button',
+    }).catch(() => undefined);
+    Alert.alert('Payment Cancelled', 'Your Paystack payment was cancelled.', [
+      { text: 'OK', onPress: onCancel },
+    ]);
   };
   
   const handleClose = () => {
+    isCancelledRef.current = true;
     setIsLoading(false);
     setPaymentStatus('idle');
     setErrorMessage('');
+    setCheckoutUrl(null);
+    setCheckoutReference(null);
+    setCheckoutWebViewReady(false);
+    setExternalCheckoutMode(false);
     onClose();
+  };
+
+  const handleWebViewError = async (message: string) => {
+    const reason = message || 'Paystack checkout could not be loaded.';
+
+    if (reason.includes('(403)') && checkoutUrl) {
+      setExternalCheckoutMode(true);
+      await trackPaymentEvent('failed', {
+        source: 'hosted',
+        reference: checkoutReference || undefined,
+        message: `${reason} - switching to browser checkout`,
+      });
+      Alert.alert(
+        'Secure Checkout Notice',
+        'Paystack blocked embedded checkout on this device. We will open secure checkout in your browser instead.',
+        [
+          {
+            text: 'Open Browser',
+            onPress: async () => {
+              try {
+                await WebBrowser.openBrowserAsync(checkoutUrl, {
+                  showTitle: true,
+                  enableBarCollapsing: true,
+                });
+              } catch {
+                await Linking.openURL(checkoutUrl);
+              }
+            },
+          },
+        ]
+      );
+      setIsLoading(false);
+      setPaymentStatus('idle');
+      setErrorMessage('Continue payment in browser, then return here and tap "I\'ve completed the payment".');
+      return;
+    }
+
+    setIsLoading(false);
+    setPaymentStatus('failed');
+    setErrorMessage(reason);
+    await trackPaymentEvent('failed', {
+      source: 'hosted',
+      reference: checkoutReference || undefined,
+      message: reason,
+    });
+  };
+
+  const handleChangePaymentMethod = () => {
+    setCheckoutUrl(null);
+    setCheckoutReference(null);
+    setCheckoutWebViewReady(false);
+    setExternalCheckoutMode(false);
+    setPaymentStatus('idle');
+    setErrorMessage('');
   };
   
   const getStatusIcon = () => {
@@ -271,24 +439,34 @@ export default function PaystackWebView({
         return description;
     }
   };
+
+  const selectedChannelLabel =
+    CHANNEL_OPTIONS.find((option) => option.key === selectedChannel)?.label || 'Paystack';
+  const isHostedCheckoutOpen = !!checkoutUrl;
+  const modalBottomPadding = Math.max(insets.bottom, 16);
   
   return (
     <Modal
       visible={visible}
       transparent
       animationType="slide"
-      onRequestClose={onClose}
+      onRequestClose={handleCancel}
     >
       <View style={styles.modalContainer}>
-        <View style={styles.modalContent}>
+        <View style={[styles.modalContent, { paddingBottom: modalBottomPadding }]}>
           <View style={styles.header}>
             <Text style={styles.title}>Paystack Payment</Text>
             <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
               <X size={24} color={Colors.dark.text} />
             </TouchableOpacity>
           </View>
-          
-          <View style={styles.content}>
+
+          <ScrollView
+            style={styles.content}
+            contentContainerStyle={styles.contentScrollContainer}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             <View style={styles.paymentInfo}>
               <View style={[
                 styles.iconContainer,
@@ -301,10 +479,13 @@ export default function PaystackWebView({
               <Text style={styles.amountText}>
                 {new Intl.NumberFormat('en-NG', {
                   style: 'currency',
-                  currency: 'NGN',
+                  currency: currency || 'NGN',
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
                 }).format(amount)}
+                {currency && currency.toUpperCase() !== 'NGN' && (
+                  <Text style={{ fontSize: 12, color: '#888' }}>{`\n(will be converted to NGN)`}</Text>
+                )}
               </Text>
               <Text style={[
                 styles.descriptionText,
@@ -335,17 +516,140 @@ export default function PaystackWebView({
                 )}
               </View>
             </View>
+
+            {isHostedCheckoutOpen && paymentStatus !== 'success' && (
+              <View style={styles.checkoutContainer}>
+                <View style={styles.checkoutWebViewCard}>
+                  {externalCheckoutMode ? (
+                    <View style={styles.externalCheckoutNotice}>
+                      <Text style={styles.externalCheckoutTitle}>Secure Browser Checkout</Text>
+                      <Text style={styles.externalCheckoutText}>
+                        Paystack checkout is opened in your browser for secure verification. Complete payment there,
+                        then return to this app and tap "I've completed the payment".
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.reopenCheckoutButton}
+                        onPress={async () => {
+                          if (!checkoutUrl) return;
+                          try {
+                            await WebBrowser.openBrowserAsync(checkoutUrl, {
+                              showTitle: true,
+                              enableBarCollapsing: true,
+                            });
+                          } catch {
+                            await Linking.openURL(checkoutUrl);
+                          }
+                        }}
+                      >
+                        <Text style={styles.reopenCheckoutButtonText}>Open Paystack Checkout</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <>
+                      {!checkoutWebViewReady && (
+                        <View style={styles.checkoutLoaderOverlay}>
+                          <ActivityIndicator size="large" color="#0BA4DB" />
+                          <Text style={styles.checkoutLoaderText}>Loading Paystack checkout...</Text>
+                        </View>
+                      )}
+                      <WebView
+                        source={{ uri: checkoutUrl }}
+                        style={styles.checkoutWebView}
+                        startInLoadingState
+                        javaScriptEnabled
+                        domStorageEnabled
+                        mixedContentMode="always"
+                        sharedCookiesEnabled
+                        thirdPartyCookiesEnabled
+                        javaScriptCanOpenWindowsAutomatically
+                        setSupportMultipleWindows={false}
+                        userAgent="Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+                        onLoadStart={() => setCheckoutWebViewReady(false)}
+                        onLoadEnd={() => setCheckoutWebViewReady(true)}
+                        onError={(event) => {
+                          const message = event?.nativeEvent?.description || 'Paystack page failed to load.';
+                          handleWebViewError(message).catch(() => undefined);
+                        }}
+                        onHttpError={(event) => {
+                          const statusCode = event?.nativeEvent?.statusCode;
+                          const description = event?.nativeEvent?.description || 'HTTP error while loading Paystack checkout.';
+                          handleWebViewError(`${description} (${statusCode || 'unknown'})`).catch(() => undefined);
+                        }}
+                      />
+                    </>
+                  )}
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.completePaymentButton, (isLoading || !checkoutReference) && styles.disabledButton]}
+                  onPress={() => {
+                    if (!checkoutReference) {
+                      Alert.alert('Payment Unavailable', 'Missing Paystack reference. Please try again.');
+                      return;
+                    }
+                    verifyReferenceAndComplete(checkoutReference, 'hosted');
+                  }}
+                  disabled={isLoading || !checkoutReference}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.completePaymentButtonText}>I've completed the payment</Text>
+                  )}
+                </TouchableOpacity>
+
+                <View style={styles.checkoutActionRow}>
+                  <TouchableOpacity style={styles.changeMethodButton} onPress={handleChangePaymentMethod}>
+                    <Text style={styles.changeMethodButtonText}>Change Payment Method</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.cancelCheckoutButton} onPress={handleCancel}>
+                    <Text style={styles.cancelCheckoutButtonText}>Cancel Payment</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
             
-            {paymentStatus === 'idle' && (
+            {!isHostedCheckoutOpen && paymentStatus === 'idle' && (
               <View style={styles.paymentMethods}>
                 <Text style={styles.methodsTitle}>Supported Payment Methods</Text>
                 <View style={styles.methodsList}>
-                  {['card', 'bank', 'ussd', 'qr', 'mobile_money', 'bank_transfer'].map((channel) => (
+                  {SUPPORTED_CHANNELS.map((channel) => (
                     <Text key={channel} style={styles.methodItem}>
-                      • {channel.replace('_', ' ')}
+                      • {channel === 'bank_transfer' ? 'Direct Transfer' : channel.replace('_', ' ')}
                     </Text>
                   ))}
                 </View>
+                <Text style={styles.selectMethodTitle}>Choose an Option</Text>
+                <View style={styles.channelPills}>
+                  {CHANNEL_OPTIONS.map((option) => {
+                    const selected = selectedChannel === option.key;
+                    return (
+                      <TouchableOpacity
+                        key={option.key}
+                        style={[styles.channelPill, selected && styles.channelPillActive]}
+                        onPress={() => setSelectedChannel(option.key)}
+                      >
+                        <Text style={[styles.channelPillText, selected && styles.channelPillTextActive]}>{option.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.inlineProceedButton,
+                    isLoading && styles.disabledInlineProceedButton,
+                  ]}
+                  onPress={handlePaystackPayment}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator size="small" color={Colors.dark.text} />
+                  ) : (
+                    <Text style={styles.inlineProceedButtonText}>
+                      {selectedChannel ? `Proceed with ${selectedChannelLabel}` : 'Choose Method to Continue'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
               </View>
             )}
             
@@ -354,9 +658,9 @@ export default function PaystackWebView({
                 <Text style={styles.errorText}>{errorMessage}</Text>
               </View>
             )}
-          </View>
-          
-          <View style={styles.footer}>
+          </ScrollView>
+
+          {!isHostedCheckoutOpen && <View style={[styles.footer, { paddingBottom: modalBottomPadding }]}>
             <TouchableOpacity style={styles.cancelButton} onPress={handleCancel} disabled={isLoading}>
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
@@ -372,6 +676,10 @@ export default function PaystackWebView({
               <TouchableOpacity
                 style={styles.retryButton}
                 onPress={() => {
+                  setSelectedChannel('all');
+                  setCheckoutUrl(null);
+                  setCheckoutReference(null);
+                  setCheckoutWebViewReady(false);
                   setPaymentStatus('idle');
                   setErrorMessage('');
                 }}
@@ -387,11 +695,13 @@ export default function PaystackWebView({
                 {isLoading ? (
                   <ActivityIndicator size="small" color={Colors.dark.text} />
                 ) : (
-                  <Text style={styles.payButtonText}>Pay with Paystack</Text>
+                  <Text style={styles.payButtonText}>
+                    {selectedChannel ? `Proceed with ${selectedChannelLabel}` : 'Choose Method to Continue'}
+                  </Text>
                 )}
               </TouchableOpacity>
             )}
-          </View>
+          </View>}
         </View>
       </View>
     </Modal>
@@ -408,9 +718,10 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: Colors.dark.background,
     borderRadius: 16,
-    width: '90%',
+    width: '92%',
     maxWidth: 400,
-    maxHeight: '80%',
+    maxHeight: '92%',
+    overflow: 'hidden',
   },
   header: {
     flexDirection: 'row',
@@ -435,6 +746,9 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+  },
+  contentScrollContainer: {
+    paddingBottom: 20,
   },
   paymentInfo: {
     alignItems: 'center',
@@ -501,12 +815,61 @@ const styles = StyleSheet.create({
     color: Colors.dark.subtext,
     marginBottom: 4,
   },
+  selectMethodTitle: {
+    fontSize: 14,
+    color: Colors.dark.text,
+    marginTop: 12,
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  channelPills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  channelPill: {
+    backgroundColor: Colors.dark.background,
+    borderColor: Colors.dark.divider,
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  channelPillActive: {
+    backgroundColor: 'rgba(11, 164, 219, 0.2)',
+    borderColor: '#0BA4DB',
+  },
+  channelPillText: {
+    fontSize: 13,
+    color: Colors.dark.subtext,
+    fontWeight: '500',
+  },
+  channelPillTextActive: {
+    color: '#0BA4DB',
+  },
+  inlineProceedButton: {
+    marginTop: 12,
+    backgroundColor: '#0BA4DB',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disabledInlineProceedButton: {
+    backgroundColor: Colors.dark.inactive,
+  },
+  inlineProceedButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
   footer: {
     flexDirection: 'row',
     padding: 16,
     borderTopWidth: 1,
     borderTopColor: Colors.dark.divider,
     gap: 12,
+    backgroundColor: Colors.dark.background,
   },
   cancelButton: {
     flex: 1,
@@ -556,6 +919,108 @@ const styles = StyleSheet.create({
   errorText: {
     color: '#EF4444',
     textAlign: 'center',
+    fontSize: 14,
+  },
+  checkoutContainer: {
+    marginBottom: 16,
+  },
+  checkoutWebViewCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.dark.divider,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    height: 360,
+  },
+  checkoutWebView: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  checkoutLoaderOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 2,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  checkoutLoaderText: {
+    color: '#0F172A',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  externalCheckoutNotice: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    gap: 14,
+    backgroundColor: '#FFFFFF',
+  },
+  externalCheckoutTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  externalCheckoutText: {
+    fontSize: 13,
+    color: '#334155',
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+  reopenCheckoutButton: {
+    backgroundColor: '#0BA4DB',
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  reopenCheckoutButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  completePaymentButton: {
+    marginTop: 12,
+    backgroundColor: '#22C55E',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completePaymentButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  checkoutActionRow: {
+    marginTop: 10,
+    gap: 10,
+  },
+  changeMethodButton: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.dark.divider,
+    backgroundColor: Colors.dark.card,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  changeMethodButtonText: {
+    color: Colors.dark.text,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  cancelCheckoutButton: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.35)',
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  cancelCheckoutButtonText: {
+    color: '#EF4444',
+    fontWeight: '700',
     fontSize: 14,
   },
   successButton: {

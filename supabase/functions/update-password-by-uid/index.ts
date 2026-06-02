@@ -14,11 +14,13 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { uid, newPassword } = await req.json();
+    const { uid, email, code, newPassword } = await req.json();
+    const normalizedEmail = typeof email === "string" ? email.replace(/\s+/g, "").trim().toLowerCase() : "";
+    const normalizedCode = typeof code === "string" ? code.replace(/\s+/g, "").trim() : "";
 
-    if (!uid || !newPassword) {
+    if (!newPassword || (!uid && !(normalizedEmail && normalizedCode))) {
       return new Response(
-        JSON.stringify({ error: "UID and newPassword are required" }),
+        JSON.stringify({ error: "newPassword and either uid or email+code are required" }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -54,8 +56,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`🔐 Updating password for user: ${uid}`);
-
     // Create admin client
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
       auth: {
@@ -64,9 +64,50 @@ Deno.serve(async (req) => {
       },
     });
 
+    let targetUid = typeof uid === "string" ? uid.trim() : "";
+
+    if (!targetUid) {
+      const now = new Date().toISOString();
+      const { data: otpRows, error: otpLookupError } = await supabaseAdmin
+        .from("otp_codes")
+        .select("id, user_id")
+        .eq("email", normalizedEmail)
+        .eq("type", "recovery")
+        .eq("code", normalizedCode)
+        .gt("expires_at", now)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (otpLookupError) {
+        console.error("❌ Error validating recovery code:", otpLookupError);
+        return new Response(
+          JSON.stringify({ error: "Failed to validate reset code" }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      const otpRow = otpRows?.[0];
+      if (!otpRow?.user_id) {
+        return new Response(
+          JSON.stringify({ error: "Invalid or expired reset code" }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      targetUid = otpRow.user_id;
+    }
+
+    console.log(`🔐 Updating password for user: ${targetUid}`);
+
     // Update user password using Admin API
     console.log(`🔄 Calling Admin API to update password...`);
-    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(uid, {
+    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(targetUid, {
       password: newPassword,
     });
 
@@ -84,12 +125,25 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`✅ Password updated successfully for user: ${uid}`);
+    if (normalizedEmail && normalizedCode) {
+      const { error: cleanupError } = await supabaseAdmin
+        .from("otp_codes")
+        .delete()
+        .eq("email", normalizedEmail)
+        .eq("type", "recovery")
+        .eq("code", normalizedCode);
+
+      if (cleanupError) {
+        console.warn("⚠️ Password updated but failed to delete consumed recovery code:", cleanupError);
+      }
+    }
+
+    console.log(`✅ Password updated successfully for user: ${targetUid}`);
     return new Response(
       JSON.stringify({ 
         success: true, 
         message: "Password updated successfully",
-        userId: uid
+        userId: targetUid
       }),
       {
         status: 200,

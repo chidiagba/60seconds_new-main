@@ -19,17 +19,17 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const { email, code, type, user_id } = body;
-    const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+    const normalizedEmail = typeof email === "string" ? email.replace(/\s+/g, "").trim().toLowerCase() : "";
     const requestType = typeof type === "string" ? type.trim() : "";
     const t = requestType === "signup" || requestType === "recovery" ? requestType : null;
-    const c = typeof code === "string" ? code.trim() : "";
+    const c = typeof code === "string" ? code.replace(/\s+/g, "").trim() : "";
 
     // signup_email_otp is the new flow where Supabase auth.verifyOtp is done client-side.
     // This endpoint only stamps app_metadata after that verification.
     if (!normalizedEmail) {
       return new Response(
         JSON.stringify({ success: false, error: "email is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -93,6 +93,16 @@ Deno.serve(async (req) => {
           ...existingMeta,
           signup_otp_verified_at: otpVerifiedAt,
           signup_otp_verified: true,
+          latest_otp_code: null,
+          latest_otp_type: null,
+          latest_otp_email: null,
+          latest_otp_expires_at: null,
+          latest_otp_sent_at: null,
+          latest_otp_provider: null,
+          signup_last_otp_code: null,
+          signup_last_otp_expires_at: null,
+          signup_last_otp_sent_at: null,
+          signup_last_otp_provider: null,
         },
       });
 
@@ -115,22 +125,17 @@ Deno.serve(async (req) => {
           Authorization: `Bearer ${token}`,
         },
       });
-      if (welcomeErr) {
-        return new Response(
-          JSON.stringify({ success: false, error: `Welcome email failed: ${welcomeErr.message || "unknown error"}` }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      if (!welcomeData?.success) {
-        return new Response(
-          JSON.stringify({ success: false, error: "Welcome email failed to send" }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      if (welcomeErr || !welcomeData?.success) {
+        console.warn("Welcome email could not be sent after PIN verification:", welcomeErr?.message || welcomeData?.error || "unknown error");
       }
 
       return new Response(
-        JSON.stringify({ success: true, uid: tokenUser.id, otp_verified: true }),
+        JSON.stringify({
+          success: true,
+          uid: tokenUser.id,
+          otp_verified: true,
+          welcome_email_sent: Boolean(welcomeData?.success),
+        }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -138,7 +143,7 @@ Deno.serve(async (req) => {
     if (!t || !c) {
       return new Response(
         JSON.stringify({ success: false, error: "code and type (signup|recovery) are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -155,7 +160,7 @@ Deno.serve(async (req) => {
     if (selErr || !rows?.length) {
       return new Response(
         JSON.stringify({ success: false, error: "Invalid or expired OTP" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -178,6 +183,16 @@ Deno.serve(async (req) => {
           ...existingMeta,
           signup_otp_verified_at: otpVerifiedAt,
           signup_otp_verified: true,
+          latest_otp_code: null,
+          latest_otp_type: null,
+          latest_otp_email: null,
+          latest_otp_expires_at: null,
+          latest_otp_sent_at: null,
+          latest_otp_provider: null,
+          signup_last_otp_code: null,
+          signup_last_otp_expires_at: null,
+          signup_last_otp_sent_at: null,
+          signup_last_otp_provider: null,
         },
       });
 
@@ -203,12 +218,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    await supabase.from("otp_codes").delete().eq("id", row.id);
+    if (t !== "recovery") {
+      await supabase.from("otp_codes").delete().eq("id", row.id);
+    }
 
     return new Response(
       JSON.stringify({
         success: true,
         uid: uid || undefined,
+        code: t === "recovery" ? c : undefined,
         otp_verified: true,
         email_confirmation_required: t === "signup",
       }),

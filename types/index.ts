@@ -37,6 +37,9 @@ export interface Video {
   caption?: string;
   shareAnalytics?: ShareAnalytics;
   eventId?: string; // Add event ID to link to products
+  eventStartDate?: string;
+  eventEndDate?: string;
+  eventStatus?: 'open' | 'closed';
   taggedUsers?: TaggedUser[]; // Added tagged users
   attendees?: Attendee[]; // Added attendees
   attendeeCount?: number; // Total number of attendees

@@ -18,6 +18,8 @@ import Colors from "@/constants/colors";
 import { OtpInput } from "@/components/OtpInput";
 import { supabase } from "@/lib/supabase";
 
+const normalizeEmailInput = (value: string) => value.replace(/\s+/g, "").trim().toLowerCase();
+
 export default function ForgotPasswordScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -32,7 +34,7 @@ export default function ForgotPasswordScreen() {
   const [verifyLoading, setVerifyLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const normalizedEmail = useMemo(() => email.trim().toLowerCase(), [email]);
+  const normalizedEmail = useMemo(() => normalizeEmailInput(email), [email]);
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -114,16 +116,20 @@ export default function ForgotPasswordScreen() {
 
     try {
       const { data, error: invokeError } = await supabase.functions.invoke("verify-otp", {
-        body: { email: normalizedEmail, code: otp, type: "recovery" },
+        body: { email: normalizedEmail, code: otp.trim(), type: "recovery" },
       });
 
       if (invokeError) {
-        setError((data as any)?.error || (data as any)?.message || invokeError.message || "Invalid or expired code");
+        const rawMessage = (data as any)?.error || (data as any)?.message || invokeError.message || "";
+        const fallback = /non-2xx/i.test(rawMessage)
+          ? "Could not verify code. Please try again."
+          : "Invalid or expired code";
+        setError(rawMessage || fallback);
         return;
       }
 
-      if (data?.success && data?.uid) {
-        router.push(`/reset-password?email=${encodeURIComponent(normalizedEmail)}&uid=${data.uid}`);
+      if (data?.success && data?.code) {
+        router.push(`/reset-password?email=${encodeURIComponent(normalizedEmail)}&code=${encodeURIComponent(data.code)}`);
       } else {
         setError((data as any)?.error || "Invalid or expired code");
       }

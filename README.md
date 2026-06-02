@@ -52,3 +52,4 @@ sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 sudo xcodebuild -runFirstLaunch
 ```
 # 60seconds_new_2.0
+# 60seconds_new-main

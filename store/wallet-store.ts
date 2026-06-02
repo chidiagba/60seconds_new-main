@@ -57,6 +57,50 @@ type BusinessBankAccountMetadata = {
   updated_at?: string;
 };
 
+type TransactionRow = {
+  id: string;
+  wallet_id?: string;
+  walletId?: string;
+  amount?: number;
+  type?: Transaction['type'];
+  status?: Transaction['status'];
+  description?: string;
+  transaction_fee?: number;
+  transactionFee?: number;
+  metadata?: Record<string, any>;
+  created_at?: string;
+  createdAt?: string;
+};
+
+const mapTransactionRow = (row: TransactionRow): Transaction => {
+  const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+
+  return {
+    id: row.id,
+    walletId: row.wallet_id || row.walletId || '',
+    amount: Number(row.amount || 0),
+    type: (row.type as Transaction['type']) || 'payment',
+    status: (row.status as Transaction['status']) || 'pending',
+    description: row.description || 'Transaction',
+    transactionFee: row.transaction_fee ?? row.transactionFee,
+    metadata: {
+      ...metadata,
+      paymentProvider: metadata.paymentProvider || metadata.payment_provider,
+      paystackReference: metadata.paystackReference || metadata.payment_reference,
+      twintTransactionId: metadata.twintTransactionId || metadata.payment_transaction_id,
+      businessId: metadata.businessId || metadata.owner_id,
+      videoId: metadata.videoId || metadata.video_id,
+      productId: metadata.productId || metadata.product_id,
+      recipientId: metadata.recipientId || metadata.recipient_id,
+      senderId: metadata.senderId || metadata.sender_id,
+      paymentMethodId: metadata.paymentMethodId || metadata.payment_method_id,
+      originalTransactionId: metadata.originalTransactionId || metadata.original_transaction_id,
+      feeRecipientId: metadata.feeRecipientId || metadata.fee_recipient_id,
+    },
+    createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+  };
+};
+
 const mapBusinessBankAccountRow = (row: BusinessBankAccountRow): BusinessBankAccount => ({
   id: row.id,
   userId: row.user_id,
@@ -466,8 +510,10 @@ export const useWalletStore = create<WalletState>()(
           if (transactionsError) {
             throw new Error(`Failed to fetch transactions: ${transactionsError.message}`);
           }
-          
-          set({ transactions: transactionsData || [], isLoading: false });
+
+          const mappedTransactions = (transactionsData || []).map((row: TransactionRow) => mapTransactionRow(row));
+
+          set({ transactions: mappedTransactions, isLoading: false });
           console.log('✅ Transactions fetched successfully:', transactionsData);
         } catch (error: any) {
           console.error('❌ Transactions fetch error:', error);
@@ -908,6 +954,30 @@ export const useWalletStore = create<WalletState>()(
           }
 
           if (isTwintPayment || isPaystackPayment) {
+            if (metadata.externalPaymentVerified === true) {
+              if (metadata.orderId) {
+                const { error: orderUpdateError } = await supabase
+                  .from('orders')
+                  .update({
+                    payment_status: 'paid',
+                    status: 'completed',
+                    payment_provider: isTwintPayment ? 'twint' : 'paystack',
+                    payment_reference: metadata.twintPaymentId || metadata.twintTransactionId || metadata.paystackReference || null,
+                    payment_transaction_id: metadata.twintTransactionId || metadata.paystackReference || null,
+                    payment_metadata: metadata,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', metadata.orderId);
+
+                if (orderUpdateError) {
+                  throw new Error(`Failed to update verified external order: ${orderUpdateError.message}`);
+                }
+              }
+
+              set({ isLoading: false });
+              return true;
+            }
+
             // Create order in Supabase for external payments
             const { user } = useAuthStore.getState();
             if (!user) {
@@ -1194,7 +1264,7 @@ export const useWalletStore = create<WalletState>()(
           }
 
           if (usesPaystackPayout) {
-            const { data: payoutData, error: payoutError } = await supabase.functions.invoke('paystack-withdraw-business-bank-account', {
+            const { data: payoutData, error: payoutError } = await supabase.functions.invoke('paystack-direct-transfer', {
               body: {
                 amount,
                 withdrawalRequestId: data.id,

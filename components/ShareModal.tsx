@@ -39,7 +39,6 @@ const VIDEO_MIME_MAP: Record<string, string> = {
   m4v: 'video/x-m4v',
   webm: 'video/webm',
 };
-const MAX_WATERMARK_WAIT_MS = 30000; // User can cancel via button; show progress bar instead of timing out fast
 
 type ShareVideoFileResult = {
   success: boolean;
@@ -133,9 +132,6 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
     return lines.filter(Boolean).join('\n');
   }, [video.eventName, locationText, eventDateText, shortDescription, videoShareLink]);
 
-  // X (Twitter) share text: same dynamic format
-  const xShareText = useMemo(() => shareMessage, [shareMessage]);
-
   const handleHapticFeedback = () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -151,6 +147,13 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
     lastBusyNoticeAtRef.current = now;
     handleHapticFeedback();
     Alert.alert('Preparing Share', 'Please wait while watermarking completes, or tap Cancel to close this sheet.');
+  };
+
+  const notifyWatermarkRequired = () => {
+    Alert.alert(
+      'Watermark Required',
+      'Could not prepare a watermarked video right now. Please try again in a moment.'
+    );
   };
 
   const isLikelyShareCancelled = (value: any): boolean => {
@@ -268,8 +271,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
   }, [visible, video.id, videoUrl]);
 
   /**
-   * Prepare watermark quickly for share.
-   * If watermark is slow, fallback to original so share sheet opens faster.
+   * Prepare a local video that is guaranteed to be watermarked.
    */
   const prepareVideoForShare = async (): Promise<{ uri: string | null; mimeType: string; isWatermarked: boolean }> => {
     if (!videoUrl || Platform.OS === 'web') {
@@ -292,48 +294,23 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
         return { uri: preparedOriginal.uri, mimeType: preparedOriginal.mimeType, isWatermarked: true };
       }
 
-      const watermarkPromise = videoWatermarkService
-        .addWatermarkToVideo(preparedOriginal.uri, {
-          position: 'bottom-right',
-          opacity: 0.8,
-          scale: 0.18,
-          sourceUrl: videoUrl,
-          strict: false,
-          allowFallback: true,
-        })
-        .catch((error) => {
-          console.warn('[Share] Watermark request failed, using share fallback:', error);
-          return null;
-        });
-
-      const timeoutPromise = new Promise<null>((resolve) => {
-        setTimeout(() => resolve(null), MAX_WATERMARK_WAIT_MS);
+      const watermarkedUri = await videoWatermarkService.addWatermarkToVideo(preparedOriginal.uri, {
+        position: 'bottom-right',
+        opacity: 0.8,
+        scale: 0.18,
+        sourceUrl: videoUrl,
+        strict: true,
+        allowFallback: false,
       });
 
-      const watermarkedUri = await Promise.race<string | null>([
-        watermarkPromise,
-        timeoutPromise,
-      ]);
-
       if (!watermarkedUri || watermarkedUri === preparedOriginal.uri) {
-        void videoWatermarkService.startBackgroundWatermark(preparedOriginal.uri, getWatermarkCacheKey(), {
-          position: 'bottom-right',
-          opacity: 0.8,
-          scale: 0.18,
-        });
-
-        console.warn('[Share] Watermark not ready yet; sharing original video as fallback.');
-        return { uri: preparedOriginal.uri, mimeType: preparedOriginal.mimeType, isWatermarked: false };
+        return { uri: null, mimeType: preparedOriginal.mimeType, isWatermarked: false };
       }
 
       const cachedUri = await videoWatermarkService.cacheWatermarkedVideo(getWatermarkCacheKey(), watermarkedUri);
       return { uri: cachedUri, mimeType: 'video/mp4', isWatermarked: true };
     } catch (error) {
       console.error('[Share] Failed to prepare watermarked video for share:', error);
-      const preparedOriginal = await ensureOriginalVideoCached().catch(() => ({ uri: null, mimeType: 'video/mp4' }));
-      if (preparedOriginal.uri) {
-        return { uri: preparedOriginal.uri, mimeType: preparedOriginal.mimeType, isWatermarked: false };
-      }
       return { uri: null, mimeType: 'video/mp4', isWatermarked: false };
     }
   };
@@ -405,9 +382,6 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
       }
 
       console.log('[Share] ✓ Share dialog opened with video attached');
-      if (!isWatermarked) {
-        Alert.alert('Watermark Pending', 'Video was shared, but watermark is not added yet in this share.');
-      }
       return { success: true, cancelled: false };
     } catch (error: any) {
       console.error('[Share] Failed to share video:', error);
@@ -456,16 +430,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
       }
 
       if (shouldShareVideoFile) {
-        // Video file sharing failed, but allow fallback to text + link sharing
-        // Show warning if watermark couldn't be applied
-        // Video share failed — fallback to text-only share sheet
-        try {
-          await Share.share({ message: shareMessage, title: video.eventName });
-          shareVideo(video.id, source);
-          onClose();
-        } catch (linkErr) {
-          console.error('[Share] Fallback text share failed:', linkErr);
-        }
+        notifyWatermarkRequired();
         return;
       }
 
@@ -481,31 +446,6 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
     } catch (error) {
       console.error('[Share] Error sharing via system sheet', error);
       Alert.alert('Share Error', 'Could not share. Please try again.');
-    }
-  };
-
-  const openLinkOrShare = async (targetUrl: string, fallbackUrl?: string): Promise<boolean> => {
-    try {
-      if (Platform.OS !== 'web') {
-        const canOpen = await Linking.canOpenURL(targetUrl);
-        if (canOpen) {
-          await Linking.openURL(targetUrl);
-          return true;
-        }
-      } else {
-        await Linking.openURL(targetUrl);
-        return true;
-      }
-
-      if (fallbackUrl) {
-        await Linking.openURL(fallbackUrl);
-        return true;
-      }
-
-      return false;
-    } catch (error) {
-      console.error('Error opening link', error);
-      return false;
     }
   };
 
@@ -561,12 +501,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
         return;
       }
 
-      // Video share failed — fallback to text-only
-      try {
-        await Share.share({ message: shareMessage, title: video.eventName });
-        shareVideo(video.id, 'instagram');
-        onClose();
-      } catch { /* user dismissed */ }
+      notifyWatermarkRequired();
       return;
     } catch (err: any) {
       console.error('[Share] Instagram share error', err);
@@ -593,17 +528,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
       return;
     }
 
-    // Fallback: open Facebook web share with website URL
-    const facebookQuote = encodeURIComponent(`${video.eventName} • ${video.location.name}`);
-    const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(videoShareLink)}&quote=${facebookQuote}`;
-    const opened = await openLinkOrShare(facebookUrl);
-    if (opened) {
-      shareVideo(video.id, 'facebook');
-      onClose();
-      return;
-    }
-
-    await shareViaSystem('facebook');
+    notifyWatermarkRequired();
   };
 
   const handleShareToTwitter = async () => {
@@ -626,34 +551,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
       return;
     }
 
-    // Fallback 1: native X/Twitter app deep-link
-    const encodedText = encodeURIComponent(xShareText);
-    for (const appUrl of [`twitter://post?message=${encodedText}`, `x://post?message=${encodedText}`]) {
-      const opened = await openLinkOrShare(appUrl);
-      if (opened) {
-        shareVideo(video.id, 'twitter');
-        onClose();
-        return;
-      }
-    }
-
-    // Fallback 2: web intent
-    const openedWeb = await openLinkOrShare(
-      `https://twitter.com/intent/tweet?text=${encodedText}`,
-      `https://x.com/intent/tweet?text=${encodedText}`
-    );
-    if (openedWeb) {
-      shareVideo(video.id, 'twitter');
-      onClose();
-      return;
-    }
-
-    // Fallback 3: system share sheet
-    try {
-      await Share.share({ message: xShareText, title: '' });
-      shareVideo(video.id, 'twitter');
-      onClose();
-    } catch { /* user dismissed */ }
+    notifyWatermarkRequired();
   };
 
   const handleShareToWhatsApp = async () => {
@@ -677,26 +575,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
         return;
       }
 
-      // Fallback: WhatsApp deep-link with message text
-      const encodedMessage = encodeURIComponent(shareMessage);
-      const nativeWhatsappUrl = `whatsapp://send?text=${encodedMessage}`;
-
-      if (Platform.OS !== 'web') {
-        try {
-          const canOpen = await Linking.canOpenURL(nativeWhatsappUrl);
-          if (canOpen) {
-            await Linking.openURL(nativeWhatsappUrl);
-            shareVideo(video.id, 'whatsapp');
-            setTimeout(() => onClose(), 300);
-            return;
-          }
-        } catch { /* ignore */ }
-      }
-
-      // WhatsApp Web fallback
-      await Linking.openURL(`https://wa.me/?text=${encodedMessage}`);
-      shareVideo(video.id, 'whatsapp');
-      setTimeout(() => onClose(), 300);
+      notifyWatermarkRequired();
     } catch (error) {
       console.error('[Share] WhatsApp share failed:', error);
       Alert.alert('Share Error', 'Unable to open WhatsApp. Please make sure WhatsApp is installed.');

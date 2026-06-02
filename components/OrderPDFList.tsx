@@ -4,22 +4,20 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  FlatList,
   Alert,
   Linking,
   Platform,
   ActivityIndicator,
   Share,
-  ImageBackground,
 } from 'react-native';
 import { Calendar, ExternalLink, Download, Share2 } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 
 import Colors from '@/constants/colors';
 import { ticketReceiptService } from '@/lib/database';
-
-const localTicketTemplate = require('../assets/images/ticket-template.jpeg');
 
 type TicketRow = {
   id: string;
@@ -45,6 +43,39 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
+  const getSafePdfFileName = (ticket: TicketRow) => {
+    const rawName = `${ticket.order_number || ticket.id}-ticket.pdf`;
+    return rawName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  };
+
+  const getLocalPdfUri = async (ticket: TicketRow) => {
+    if (!ticket.pdf_url) {
+      throw new Error('PDF_NOT_AVAILABLE');
+    }
+
+    const rootDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
+    if (!rootDir) {
+      throw new Error('STORAGE_NOT_AVAILABLE');
+    }
+
+    const ticketsDir = `${rootDir}tickets`;
+    const localUri = `${ticketsDir}/${getSafePdfFileName(ticket)}`;
+
+    await FileSystem.makeDirectoryAsync(ticketsDir, { intermediates: true });
+
+    const existing = await FileSystem.getInfoAsync(localUri, { size: true });
+    if (existing.exists && (existing.size ?? 0) > 0) {
+      return localUri;
+    }
+
+    const result = await FileSystem.downloadAsync(ticket.pdf_url, localUri);
+    if (result.status < 200 || result.status >= 300) {
+      throw new Error(`PDF_DOWNLOAD_FAILED_${result.status}`);
+    }
+
+    return result.uri;
+  };
+
   const loadTickets = React.useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -64,6 +95,30 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
     void loadTickets();
   }, [loadTickets]);
 
+  const handleDownloadPdf = async (ticket: TicketRow) => {
+    if (!ticket.pdf_url) {
+      Alert.alert('PDF Not Available', 'This ticket does not have a PDF yet.');
+      return;
+    }
+
+    try {
+      if (Platform.OS === 'web') {
+        const canOpen = await Linking.canOpenURL(ticket.pdf_url);
+        if (canOpen) {
+          await Linking.openURL(ticket.pdf_url);
+          return;
+        }
+        Alert.alert('Unable to Download', 'Could not open the PDF URL.');
+        return;
+      }
+
+      await getLocalPdfUri(ticket);
+      Alert.alert('Download Complete', 'Ticket PDF downloaded successfully.');
+    } catch (e) {
+      Alert.alert('Error', 'Could not download the ticket PDF.');
+    }
+  };
+
   const handleOpenPdf = async (ticket: TicketRow) => {
     if (!ticket.pdf_url) {
       Alert.alert('PDF Not Available', 'This ticket does not have a PDF yet.');
@@ -71,8 +126,17 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
     }
 
     try {
-      const canOpen = await Linking.canOpenURL(ticket.pdf_url);
-      if (canOpen) {
+      if (Platform.OS !== 'web') {
+        const localUri = await getLocalPdfUri(ticket);
+        const canOpenLocal = await Linking.canOpenURL(localUri);
+        if (canOpenLocal) {
+          await Linking.openURL(localUri);
+          return;
+        }
+      }
+
+      const canOpenRemote = await Linking.canOpenURL(ticket.pdf_url);
+      if (canOpenRemote) {
         await Linking.openURL(ticket.pdf_url);
       } else {
         Alert.alert('Unable to Open', 'Could not open this ticket PDF.');
@@ -84,7 +148,12 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
 
   const handleShareTicket = async (ticket: TicketRow) => {
     try {
-      const shareUrl = ticket.pdf_url || ticket.ticket_image_url || '';
+      if (!ticket.pdf_url) {
+        Alert.alert('PDF Not Available', 'This ticket does not have a PDF yet.');
+        return;
+      }
+
+      const shareUrl = ticket.pdf_url || '';
       const shareMessage = [
         `60seconds Ticket: ${ticket.ticket_title}`,
         ticket.event_name ? `Event: ${ticket.event_name}` : null,
@@ -94,9 +163,23 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
         .filter(Boolean)
         .join('\n');
 
+      if (Platform.OS !== 'web') {
+        const localPdfUri = await getLocalPdfUri(ticket);
+        const canShareFile = await Sharing.isAvailableAsync();
+
+        if (canShareFile) {
+          await Sharing.shareAsync(localPdfUri, {
+            mimeType: 'application/pdf',
+            dialogTitle: `Share ${ticket.ticket_title}`,
+            UTI: 'com.adobe.pdf',
+          });
+          return;
+        }
+      }
+
       await Share.share({
         message: shareMessage,
-        url: shareUrl || undefined,
+        url: shareUrl,
         title: ticket.ticket_title,
       });
     } catch (e) {
@@ -134,72 +217,66 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
     };
   };
 
-  const renderTicket = ({ item }: { item: TicketRow }) => {
+  const renderTicket = (item: TicketRow) => {
     const { dateLabel, timeLabel } = formatTicketDate(item.event_start_date || item.issued_at);
 
     return (
       <View style={styles.ticketWrap}>
         <View style={styles.ticketCard}>
-          <ImageBackground
-            source={localTicketTemplate}
+          <LinearGradient
+            colors={['#0A1733', '#10264F', '#173163']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
             style={styles.ticketBackground}
-            imageStyle={styles.ticketBackgroundImage}
           >
-            <LinearGradient
-              colors={['rgba(4, 10, 30, 0.32)', 'rgba(8, 20, 48, 0.44)', 'rgba(10, 18, 40, 0.55)']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.ticketOverlay}
-            >
-              <View style={styles.ticketFrame}>
-                <Text style={styles.brandText}>60seconds</Text>
+            <View style={styles.ticketFrame}>
+              <Text style={styles.brandText}>60seconds</Text>
 
-                <View style={styles.qrPanel}>
-                  <QRCode
-                    value={item.qr_code_data || item.order_number}
-                    size={170}
-                    backgroundColor="#ffffff"
-                    color="#0A1733"
-                  />
-                </View>
-
-                <View style={styles.dateRow}>
-                  <Text style={styles.dateValue}>{dateLabel}</Text>
-                  <Text style={styles.dateValue}>{timeLabel}</Text>
-                </View>
-
-                <View style={styles.ticketDivider} />
-
-                <View style={styles.locationSection}>
-                  <Text style={styles.sectionLabel}>LOCATION</Text>
-                  <Text style={styles.locationTitle}>{item.event_name || '60seconds Event'}</Text>
-                  <Text style={styles.locationSubtitle}>{item.location_name || 'Location not specified'}</Text>
-                </View>
-
-                <View style={styles.bottomRow}>
-                  <View style={styles.bottomCol}>
-                    <Text style={styles.sectionLabel}>TICKET</Text>
-                    <Text style={styles.primaryBottomText}>{item.ticket_title}</Text>
-                    <Text style={styles.sectionLabel}>ORDER NO.</Text>
-                    <Text style={styles.secondaryBottomText}>{item.order_number}</Text>
-                    <Text style={styles.sectionLabel}>SEAT</Text>
-                    <Text style={styles.secondaryBottomText}>{item.seat_no || '-'}</Text>
-                  </View>
-
-                  <View style={styles.bottomColRight}>
-                    <Text style={styles.sectionLabel}>STATUS</Text>
-                    <Text style={styles.performingText}>{item.is_active ? 'ACTIVE' : 'EXPIRED'}</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.brandFooter}>60seconds</Text>
+              <View style={styles.qrPanel}>
+                <QRCode
+                  value={item.qr_code_data || item.order_number}
+                  size={168}
+                  backgroundColor="#ffffff"
+                  color="#0A1733"
+                />
               </View>
-            </LinearGradient>
-          </ImageBackground>
+
+              <View style={styles.dateRow}>
+                <Text style={styles.dateValue}>{dateLabel}</Text>
+                <Text style={styles.dateValue}>{timeLabel}</Text>
+              </View>
+
+              <View style={styles.ticketDivider} />
+
+              <View style={styles.locationSection}>
+                <Text style={styles.sectionLabel}>LOCATION</Text>
+                <Text style={styles.locationTitle}>{item.event_name || '60seconds Event'}</Text>
+                <Text style={styles.locationSubtitle}>{item.location_name || 'Location not specified'}</Text>
+              </View>
+
+              <View style={styles.bottomRow}>
+                <View style={styles.bottomCol}>
+                  <Text style={styles.sectionLabel}>TICKET</Text>
+                  <Text style={styles.primaryBottomText}>{item.ticket_title}</Text>
+                  <Text style={styles.sectionLabel}>ORDER NO.</Text>
+                  <Text style={styles.secondaryBottomText}>{item.order_number}</Text>
+                  <Text style={styles.sectionLabel}>SEAT</Text>
+                  <Text style={styles.secondaryBottomText}>{item.seat_no || '-'}</Text>
+                </View>
+
+                <View style={styles.bottomColRight}>
+                  <Text style={styles.sectionLabel}>STATUS</Text>
+                  <Text style={styles.performingText}>{item.is_active ? 'ACTIVE' : 'EXPIRED'}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.brandFooter}>60seconds</Text>
+            </View>
+          </LinearGradient>
         </View>
 
         <View style={styles.orderActions}>
-          <TouchableOpacity style={styles.actionButton} onPress={() => handleOpenPdf(item)}>
+          <TouchableOpacity style={styles.actionButton} onPress={() => handleDownloadPdf(item)}>
             <Download size={16} color={Colors.dark.text} />
             <Text style={styles.actionButtonText}>Download PDF</Text>
           </TouchableOpacity>
@@ -264,13 +341,11 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
         </Text>
       </View>
 
-      <FlatList
-        data={tickets}
-        renderItem={renderTicket}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-      />
+      <View style={styles.listContainer}>
+        {tickets.map((ticket) => (
+          <View key={ticket.id}>{renderTicket(ticket)}</View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -308,11 +383,6 @@ const styles = StyleSheet.create({
   },
   ticketBackground: {
     width: '100%',
-  },
-  ticketBackgroundImage: {
-    resizeMode: 'cover',
-  },
-  ticketOverlay: {
     padding: 14,
   },
   ticketFrame: {
@@ -324,10 +394,11 @@ const styles = StyleSheet.create({
   },
   brandText: {
     color: '#ffffff',
-    fontSize: 42,
+    fontSize: 34,
     fontWeight: '800',
-    marginBottom: 14,
+    marginBottom: 12,
     letterSpacing: 0.3,
+    includeFontPadding: false,
   },
   qrPanel: {
     backgroundColor: '#ffffff',
@@ -343,8 +414,9 @@ const styles = StyleSheet.create({
   },
   dateValue: {
     color: '#ffffff',
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
+    includeFontPadding: false,
   },
   ticketDivider: {
     width: '100%',
@@ -365,9 +437,10 @@ const styles = StyleSheet.create({
   },
   locationTitle: {
     color: '#ffffff',
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     marginBottom: 2,
+    includeFontPadding: false,
   },
   locationSubtitle: {
     color: 'rgba(255,255,255,0.86)',
@@ -390,28 +463,32 @@ const styles = StyleSheet.create({
   },
   primaryBottomText: {
     color: '#ffffff',
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '800',
     marginBottom: 4,
+    includeFontPadding: false,
   },
   secondaryBottomText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     marginBottom: 4,
+    includeFontPadding: false,
   },
   performingText: {
     color: '#ffffff',
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '900',
     textAlign: 'right',
+    includeFontPadding: false,
   },
   brandFooter: {
     marginTop: 8,
     color: 'rgba(255,255,255,0.92)',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     letterSpacing: 0.5,
+    includeFontPadding: false,
   },
   orderActions: {
     marginTop: 10,

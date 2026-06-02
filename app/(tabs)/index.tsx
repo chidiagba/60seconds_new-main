@@ -2,7 +2,7 @@
 
 
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { View, StyleSheet, FlatList, Dimensions, ActivityIndicator, Text, TouchableOpacity, Alert, Platform, AppState } from 'react-native';
+import { View, StyleSheet, FlatList, Dimensions, ActivityIndicator, Text, TouchableOpacity, Alert, Platform, AppState, Modal } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useVideoStore } from '@/store/video-store';
 import { useContentModerationStore } from '@/store/content-moderation-store';
@@ -51,6 +51,7 @@ export default function HomeScreen() {
   const [pendingSelectedVideoId, setPendingSelectedVideoId] = useState<string | null>(null);
   const [unavailableVideoIds, setUnavailableVideoIds] = useState<Set<string>>(new Set());
   const [isPreloadingVideo, setIsPreloadingVideo] = useState(false);
+  const [videoMessage, setVideoMessage] = useState<{ title: string; message: string; icon: string } | null>(null);
   const hasCheckedMissingVideoRef = useRef<Set<string>>(new Set());
   const lastVisibleIndexRef = useRef(-1);
   const lastEngagedVideoIdRef = useRef<string | null>(null);
@@ -483,7 +484,11 @@ export default function HomeScreen() {
 
           if (isDeletedVideo) {
             markVideoUnavailable(pendingSelectedVideoId);
-            Alert.alert('Video unavailable', 'Video has been deleted by the owner.');
+            setVideoMessage({
+              icon: '🗑️',
+              title: 'Video Removed',
+              message: 'This video has been deleted by the owner and is no longer available.',
+            });
           }
           setPendingSelectedVideoId(null);
         }
@@ -665,6 +670,25 @@ export default function HomeScreen() {
           </View>
         </View>
       )}
+
+      {/* Beautiful video message modal */}
+      <Modal
+        visible={!!videoMessage}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setVideoMessage(null)}
+      >
+        <View style={styles.messageOverlay}>
+          <View style={styles.messageCard}>
+            <Text style={styles.messageIcon}>{videoMessage?.icon}</Text>
+            <Text style={styles.messageTitle}>{videoMessage?.title}</Text>
+            <Text style={styles.messageBody}>{videoMessage?.message}</Text>
+            <TouchableOpacity style={styles.messageDismissButton} onPress={() => setVideoMessage(null)}>
+              <Text style={styles.messageDismissText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -792,5 +816,55 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     maxWidth: '80%',
+  },
+  messageOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  messageCard: {
+    backgroundColor: '#1C1C1E',
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  messageIcon: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  messageTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  messageBody: {
+    color: 'rgba(255,255,255,0.65)',
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  messageDismissButton: {
+    backgroundColor: Colors.dark.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 36,
+  },
+  messageDismissText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 16,
   },
 });

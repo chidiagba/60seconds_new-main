@@ -315,6 +315,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (error || !data?.success) {
+        if ((data as any)?.code === 'existing_user' && (data as any)?.user_id) {
+          console.log('ℹ️ Existing signup user detected, continuing with PIN verification flow:', (data as any)?.user_id);
+          return {
+            error: null,
+            needsVerification: true,
+            userId: (data as any).user_id,
+          };
+        }
+
+        try {
+          const { data: existingUserData } = await supabase.functions.invoke('get-uid-by-email', {
+            body: { email: normalizedEmail },
+          });
+
+          if (existingUserData?.uid) {
+            const alreadyOtpVerified = existingUserData.otp_verified === true;
+
+            if (!alreadyOtpVerified) {
+              console.log('ℹ️ Existing account found after signup failure, continuing with PIN verification flow:', existingUserData.uid);
+              return {
+                error: null,
+                needsVerification: true,
+                userId: existingUserData.uid,
+              };
+            }
+
+            return {
+              error: new Error('This email is already registered. Please sign in with your password.'),
+            };
+          }
+        } catch (lookupErr) {
+          console.warn('Existing user recovery lookup failed:', lookupErr);
+        }
+
         const remoteError = (data as any)?.error || error?.message || 'Signup failed';
         console.error('❌ Supabase auth signup error:', remoteError);
         return { error: new Error(remoteError) };

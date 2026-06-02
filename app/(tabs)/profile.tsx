@@ -19,6 +19,7 @@ import {
 import Colors from '@/constants/colors';
 import { useAuthStore } from '@/store/auth-store';
 import { useAuth } from '@/lib/auth';
+import { EventQueries } from '@/lib/event-queries';
 import { followService, FollowProfile, videoService, interactionService } from '@/lib/database';
 import { LinearGradient } from 'expo-linear-gradient';
 import OrderPDFList from '@/components/OrderPDFList';
@@ -61,6 +62,7 @@ export default function ProfileScreen() {
   const [deletingVideoId, setDeletingVideoId] = useState<string | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [avatarGender, setAvatarGender] = useState<'male' | 'female' | null>(null);
+  const [createdEventsCount, setCreatedEventsCount] = useState(0);
   const { showActionSheetWithOptions } = useActionSheet();
 
   const { videos: allVideos, userLikedVideos, deletedVideoIds, fetchVideos, loadUserLikes, removeVideo } = useVideoStore();
@@ -271,6 +273,28 @@ export default function ProfileScreen() {
     loadFollowData();
   }, [authUser?.id, followedUsers.length, followVersion]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    const loadCreatedEvents = async () => {
+      if (!authUser?.id) {
+        if (mounted) setCreatedEventsCount(0);
+        return;
+      }
+
+      const result = await EventQueries.getUserEvents(authUser.id);
+      if (!mounted) return;
+
+      setCreatedEventsCount(result.events?.length || 0);
+    };
+
+    loadCreatedEvents();
+
+    return () => {
+      mounted = false;
+    };
+  }, [authUser?.id]);
+
   // ── DERIVED VALUES (safe after hooks) ──────────────────────────────────
   const likedVideos = (likedVideosData.length > 0
     ? likedVideosData
@@ -405,6 +429,7 @@ export default function ProfileScreen() {
   const handleManageVouchers = () => router.push('/vouchers');
   const handleViewAnalytics = () => router.push('/business/analytics');
   const handleManageGuestLists = () => router.push('/guest-list-management');
+  const handleMyEventsPress = () => router.push('/my-events');
   const handleFollowingPress = () => setActiveTab('following');
   const handleFollowersPress = () => {
     if (!authUser?.id) return;
@@ -554,6 +579,29 @@ export default function ProfileScreen() {
                 ) : (
                   <View style={[styles.gradientButton, styles.smallButton, { backgroundColor: Colors.dark.primary }]}>
                     <Text style={styles.actionButtonText}>Legal &amp; Info</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionButton} onPress={handleMyEventsPress}>
+                {Platform.OS !== 'web' ? (
+                  <LinearGradient
+                    colors={['#F97316', '#EA580C']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[styles.gradientButton, styles.smallButton]}
+                  >
+                    <FileText size={16} color={Colors.dark.text} />
+                    <Text style={styles.actionButtonText}>
+                      My Events{createdEventsCount > 0 ? ` (${createdEventsCount})` : ''}
+                    </Text>
+                  </LinearGradient>
+                ) : (
+                  <View style={[styles.gradientButton, styles.smallButton, { backgroundColor: '#F97316' }]}>
+                    <FileText size={16} color={Colors.dark.text} />
+                    <Text style={styles.actionButtonText}>
+                      My Events{createdEventsCount > 0 ? ` (${createdEventsCount})` : ''}
+                    </Text>
                   </View>
                 )}
               </TouchableOpacity>

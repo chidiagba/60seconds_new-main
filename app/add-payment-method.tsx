@@ -22,13 +22,20 @@ import {
 import Colors from "@/constants/colors";
 import { useWalletStore } from "@/store/wallet-store";
 import { useAuthStore } from "@/store/auth-store";
+import { useAuth } from "@/lib/auth";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
+
+const isNigerianCountryValue = (value?: string | null): boolean => {
+  const normalized = String(value || "").trim().toUpperCase();
+  return normalized === "NG" || normalized === "NGA" || normalized === "NIGERIA";
+};
 
 export default function AddPaymentMethodScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { addPaymentMethod, isLoading } = useWalletStore();
   const { user, isAuthenticated } = useAuthStore();
+  const { profile, user: authUser } = useAuth();
 
   const [paymentType, setPaymentType] = useState<
     "credit_card" | "bank_account" | "twint" | "paystack"
@@ -48,6 +55,23 @@ export default function AddPaymentMethodScreen() {
   const [twintCvv, setTwintCvv] = useState("");
   const [twintCardholderName, setTwintCardholderName] = useState("");
   const [paystackEmail, setPaystackEmail] = useState("");
+
+  const isLoggedInNigerianUser =
+    !!(user?.id || authUser?.id) &&
+    [
+      profile?.country_code,
+      profile?.country,
+      (authUser as any)?.user_metadata?.country_code,
+      (authUser as any)?.user_metadata?.country,
+      (user as any)?.countryCode,
+      (user as any)?.country,
+    ].some((value) => isNigerianCountryValue(value));
+
+  useEffect(() => {
+    if (!isLoggedInNigerianUser && paymentType === "paystack") {
+      setPaymentType("credit_card");
+    }
+  }, [isLoggedInNigerianUser, paymentType]);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -91,6 +115,11 @@ export default function AddPaymentMethodScreen() {
         name: "Test User",
         username: "testuser",
       };
+    }
+
+    if (paymentType === "paystack" && !isLoggedInNigerianUser) {
+      Alert.alert("Unavailable", "Paystack is only available for Nigerian users.");
+      return;
     }
 
     // Input Validation
@@ -244,23 +273,25 @@ export default function AddPaymentMethodScreen() {
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[
-                styles.paymentTypeOption,
-                paymentType === "paystack" && styles.selectedPaystackType,
-              ]}
-              onPress={() => setPaymentType("paystack")}
-            >
-              <DollarSign size={24} color={paymentType === "paystack" ? "#FFFFFF" : "#0BA4DB"} />
-              <Text
+            {isLoggedInNigerianUser && (
+              <TouchableOpacity
                 style={[
-                  styles.paymentTypeText,
-                  paymentType === "paystack" && styles.selectedPaystackTypeText,
+                  styles.paymentTypeOption,
+                  paymentType === "paystack" && styles.selectedPaystackType,
                 ]}
+                onPress={() => setPaymentType("paystack")}
               >
-                Paystack
-              </Text>
-            </TouchableOpacity>
+                <DollarSign size={24} color={paymentType === "paystack" ? "#FFFFFF" : "#0BA4DB"} />
+                <Text
+                  style={[
+                    styles.paymentTypeText,
+                    paymentType === "paystack" && styles.selectedPaystackTypeText,
+                  ]}
+                >
+                  Paystack
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 

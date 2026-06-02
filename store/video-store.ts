@@ -9,12 +9,15 @@ import { mockVideos } from '@/mocks/videos';
 
 import { calculateDistance } from '@/utils/location';
 import { DEFAULT_AVATAR_URL, resolveAvatarUrl } from '@/utils/avatar';
+import { getEventLifecycleStatus } from '@/utils/event-status';
 import { useAuthStore } from '@/store/auth-store';
 import { videoService, storageService, productService, commentService, ratingService, interactionService } from '@/lib/database';
 import { supabase } from '@/lib/supabase';
 
 const VIDEO_FEED_CACHE_KEY = 'video-feed-cache-v2';
 const VIDEO_FEED_CACHE_LIMIT = 3;
+const FEED_PAGE_SIZE = 20;
+const LOCATION_FILTER_BATCH_SIZE = 100;
 
 const resolveProfileAvatar = (profile?: any): string =>
   resolveAvatarUrl({
@@ -49,6 +52,31 @@ const persistVideoFeedCache = async (videos: Video[]) => {
   }
 };
 
+const enrichVideoEventStatus = (
+  video: Video,
+  source?: {
+    status?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    eventDate?: string | null;
+  }
+): Video => {
+  const eventStartDate = source?.startDate || video.eventStartDate || video.eventDate || null;
+  const eventEndDate = source?.endDate || video.eventEndDate || null;
+
+  return {
+    ...video,
+    eventStartDate: eventStartDate || undefined,
+    eventEndDate: eventEndDate || undefined,
+    eventStatus: getEventLifecycleStatus({
+      status: source?.status,
+      startDate: eventStartDate,
+      endDate: eventEndDate,
+      eventDate: source?.eventDate || video.eventDate || null,
+    }),
+  };
+};
+
 const readVideoFeedCache = async (): Promise<Video[]> => {
   try {
     const rawValue = await AsyncStorage.getItem(VIDEO_FEED_CACHE_KEY);
@@ -62,6 +90,28 @@ const readVideoFeedCache = async (): Promise<Video[]> => {
     console.warn('Failed to read video feed cache:', error);
     return [];
   }
+};
+
+const fetchAllVideoRows = async (batchSize = LOCATION_FILTER_BATCH_SIZE) => {
+  const allVideos: any[] = [];
+  let offset = 0;
+
+  while (true) {
+    const batch = await videoService.getVideos(batchSize, offset);
+    if (batch.length === 0) {
+      break;
+    }
+
+    allVideos.push(...batch);
+
+    if (batch.length < batchSize) {
+      break;
+    }
+
+    offset += batchSize;
+  }
+
+  return allVideos;
 };
 
 
@@ -131,7 +181,9 @@ export const useVideoStore = create<VideoState>((set, get) => ({
     }
 
     const { deletedVideoIds } = get();
-    const visibleVideos = cachedVideos.filter((video) => video?.id && !deletedVideoIds.has(video.id));
+    const visibleVideos = cachedVideos
+      .filter((video) => video?.id && !deletedVideoIds.has(video.id))
+      .map((video) => enrichVideoEventStatus(video as Video));
     if (visibleVideos.length === 0) {
       return false;
     }
@@ -151,11 +203,10 @@ export const useVideoStore = create<VideoState>((set, get) => ({
   },
   
   fetchVideos: async () => {
-    const PAGE_SIZE = 20;
     console.log('📹 VideoStore: Fetching videos from database...');
     set({ isLoading: true, error: null });
     try {
-      const videosData = await videoService.getVideos(PAGE_SIZE, 0);
+      const videosData = await videoService.getVideos(FEED_PAGE_SIZE, 0);
       console.log('📹 VideoStore: Fetched', videosData.length, 'videos from database');
       
       if (videosData.length === 0) {
@@ -171,7 +222,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         try {
           const { data } = await supabase
             .from('events')
-            .select('id, video_id, currency')
+            .select('id, video_id, currency, start_date, end_date, status')
             .in('video_id', videoIds);
           if (data) eventsData = data;
         } catch (e) { console.warn('📹 VideoStore: Error fetching batched events:', e); }
@@ -179,6 +230,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
 
       const eventIdByVideoId = new Map<string, string>();
       const eventCurrencyByEventId = new Map<string, string>();
+      const eventDetailsByVideoId = new Map<string, { status?: string | null; startDate?: string | null; endDate?: string | null }>();
       const eventIds: string[] = [];
       eventsData.forEach(e => {
         if (e.video_id && e.id) {
@@ -187,6 +239,11 @@ export const useVideoStore = create<VideoState>((set, get) => ({
           if (e.currency) {
             eventCurrencyByEventId.set(e.id, String(e.currency).trim().toUpperCase());
           }
+          eventDetailsByVideoId.set(e.video_id, {
+            status: e.status,
+            startDate: e.start_date,
+            endDate: e.end_date,
+          });
         }
       });
 
@@ -215,7 +272,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         const eventId = eventIdByVideoId.get(videoData.id) || undefined;
         let products = eventId ? (productsByEventId.get(eventId) || []) : [];
         products = products.map(p => ({ ...p, videoId: videoData.id }));
-        return {
+        return enrichVideoEventStatus({
           id: videoData.id, url: resolvedVideoUrl,
           thumbnail: resolvedThumbnailUrl || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=300&q=80',
           description: videoData.description || undefined, likes: videoData.likes_count || 0, comments: videoData.comments_count || 0, shares: videoData.shares_count || 0, rating: videoData.rating || 0, ratingCount: videoData.rating_count || 0, userId: videoData.user_id,
@@ -223,7 +280,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
           createdAt: videoData.created_at,
           location: { name: videoData.location_name || '', address: '', state: '', latitude: normalizeLocationCoordinate(videoData.location_latitude), longitude: normalizeLocationCoordinate(videoData.location_longitude), city: videoData.location_city || '', country: videoData.location_country || '' },
           eventName: videoData.event_name || '', eventDate: videoData.event_date || undefined, products, hashtags: videoData.hashtags || [], caption: videoData.description || undefined, eventId,
-        } as Video;
+        } as Video, eventDetailsByVideoId.get(videoData.id));
       });
       
       const { deletedVideoIds } = get();
@@ -231,7 +288,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       console.log('📹 VideoStore: Transformed', visibleVideos.length, 'videos successfully');
       await persistVideoFeedCache(visibleVideos);
       // Reset pagination state on a fresh fetch
-      set({ videos: visibleVideos, isLoading: false, _feedOffset: PAGE_SIZE, hasMoreVideos: videosData.length >= PAGE_SIZE });
+      set({ videos: visibleVideos, isLoading: false, _feedOffset: FEED_PAGE_SIZE, hasMoreVideos: videosData.length >= FEED_PAGE_SIZE });
     } catch (error) {
       console.error('📹 VideoStore: Error fetching videos:', error);
       const { deletedVideoIds } = get();
@@ -242,14 +299,13 @@ export const useVideoStore = create<VideoState>((set, get) => ({
   },
 
   fetchMoreVideos: async () => {
-    const PAGE_SIZE = 20;
     const { isFetchingMore, hasMoreVideos, _feedOffset, deletedVideoIds } = get();
     if (isFetchingMore || !hasMoreVideos) return;
 
     console.log('📹 VideoStore: Fetching more videos, offset =', _feedOffset);
     set({ isFetchingMore: true });
     try {
-      const videosData = await videoService.getVideos(PAGE_SIZE, _feedOffset);
+      const videosData = await videoService.getVideos(FEED_PAGE_SIZE, _feedOffset);
       console.log('📹 VideoStore: Fetched', videosData.length, 'more videos');
 
       if (videosData.length === 0) {
@@ -263,13 +319,14 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         try {
           const { data } = await supabase
             .from('events')
-            .select('id, video_id, currency')
+            .select('id, video_id, currency, start_date, end_date, status')
             .in('video_id', videoIds);
           if (data) eventsData = data;
         } catch (e) {}
       }
       const eventIdByVideoId = new Map<string, string>();
       const eventCurrencyByEventId = new Map<string, string>();
+      const eventDetailsByVideoId = new Map<string, { status?: string | null; startDate?: string | null; endDate?: string | null }>();
       const eventIds: string[] = [];
       eventsData.forEach(e => {
         if (e.video_id && e.id) {
@@ -278,6 +335,11 @@ export const useVideoStore = create<VideoState>((set, get) => ({
           if (e.currency) {
             eventCurrencyByEventId.set(e.id, String(e.currency).trim().toUpperCase());
           }
+          eventDetailsByVideoId.set(e.video_id, {
+            status: e.status,
+            startDate: e.start_date,
+            endDate: e.end_date,
+          });
         }
       });
 
@@ -302,7 +364,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         const eventId = eventIdByVideoId.get(videoData.id) || undefined;
         let products = eventId ? (productsByEventId.get(eventId) || []) : [];
         products = products.map(p => ({ ...p, videoId: videoData.id }));
-        return {
+        return enrichVideoEventStatus({
           id: videoData.id, url: resolvedVideoUrl,
           thumbnail: resolvedThumbnailUrl || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=300&q=80',
           description: videoData.description || undefined, likes: videoData.likes_count || 0, comments: videoData.comments_count || 0, shares: videoData.shares_count || 0, rating: videoData.rating || 0, ratingCount: videoData.rating_count || 0, userId: videoData.user_id,
@@ -310,7 +372,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
           createdAt: videoData.created_at,
           location: { name: videoData.location_name || '', address: '', state: '', latitude: normalizeLocationCoordinate(videoData.location_latitude), longitude: normalizeLocationCoordinate(videoData.location_longitude), city: videoData.location_city || '', country: videoData.location_country || '' },
           eventName: videoData.event_name || '', eventDate: videoData.event_date || undefined, products, hashtags: videoData.hashtags || [], caption: videoData.description || undefined, eventId,
-        } as Video;
+        } as Video, eventDetailsByVideoId.get(videoData.id));
       }).filter(v => !deletedVideoIds.has(v.id));
 
       // Deduplicate against existing videos
@@ -319,8 +381,8 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       
       set((state) => ({
         videos: [...state.videos, ...uniqueNew],
-        _feedOffset: _feedOffset + PAGE_SIZE,
-        hasMoreVideos: videosData.length >= PAGE_SIZE,
+        _feedOffset: _feedOffset + FEED_PAGE_SIZE,
+        hasMoreVideos: videosData.length >= FEED_PAGE_SIZE,
         isFetchingMore: false,
       }));
     } catch (error) {
@@ -398,15 +460,17 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       // Fetch related event
       let eventId = undefined;
       let eventCurrency: string | null = null;
+      let eventData: { id: string; currency?: string | null; start_date?: string | null; end_date?: string | null; status?: string | null } | null = null;
       try {
-        const { data: eventData } = await supabase
+        const { data } = await supabase
           .from('events')
-          .select('id, currency')
+          .select('id, currency, start_date, end_date, status')
           .eq('video_id', id)
           .maybeSingle();
-        if (eventData) {
-          eventId = eventData.id;
-          eventCurrency = eventData.currency || null;
+        if (data) {
+          eventData = data;
+          eventId = data.id;
+          eventCurrency = data.currency || null;
         }
       } catch (e) {}
 
@@ -436,7 +500,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         currency: resolveProductCurrency(p, eventCurrency),
       }));
 
-      const formattedVideo: Video = {
+      const formattedVideo: Video = enrichVideoEventStatus({
         id: videoData.id,
         url: resolvedVideoUrl,
         thumbnail: resolvedThumbnailUrl || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=300&q=80',
@@ -475,7 +539,11 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         hashtags: videoData.hashtags || [],
         caption: videoData.description || undefined,
         eventId: eventId,
-      };
+      }, eventData ? {
+        status: eventData.status,
+        startDate: eventData.start_date,
+        endDate: eventData.end_date,
+      } : undefined);
 
       // Add the explicitly fetched video to the front of the feed
       console.log('📹 VideoStore: Successfully formatted explicitly fetched video:', {
@@ -966,8 +1034,8 @@ export const useVideoStore = create<VideoState>((set, get) => ({
   filterVideosByLocation: async (latitude: number, longitude: number, radiusKm: number) => {
     set({ isLoading: true, error: null });
     try {
-      // First, fetch all videos from Supabase
-      const supabaseVideos = await videoService.getVideos(100, 0);
+      // Fetch the full feed in batches so location mode can still reach older videos.
+      const supabaseVideos = await fetchAllVideoRows();
       
       // Transform and filter videos by location
       const transformedAndFilteredVideos: Video[] = [];
@@ -1070,10 +1138,12 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         set({
           videos: fallbackVideos,
           isLoading: false,
+          _feedOffset: 0,
+          hasMoreVideos: false,
         });
       } else {
         await persistVideoFeedCache(visibleVideos);
-        set({ videos: visibleVideos, isLoading: false });
+        set({ videos: visibleVideos, isLoading: false, _feedOffset: visibleVideos.length, hasMoreVideos: false });
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);

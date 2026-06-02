@@ -41,10 +41,13 @@ import { useAuthStore } from "@/store/auth-store";
 import { orderService, ticketReceiptService } from "@/lib/database";
 import { supabase } from '@/lib/supabase';
 import { settleStripePayment } from '@/lib/stripe-settlement';
+import { settleExternalOrderPayment } from '@/lib/external-payment-settlement';
 import PaystackWebView from '@/components/PaystackWebView';
 import TwintPaymentModal from '@/components/TwintPaymentModal';
 import TwintWebViewModal from '@/components/TwintWebViewModal';
-import { canOpenTwintApp, getTwintWebCheckoutUrl, openTwintApp } from '@/lib/twint';
+import { canOpenTwintApp, openTwintApp } from '@/lib/twint';
+import WorldlineService from '@/lib/worldline';
+import { useAuth } from "@/lib/auth";
 
 let stripeUseHook: null | (() => {
   presentPaymentSheet: (options?: any) => Promise<{ error?: { message?: string } | null }>;
@@ -78,6 +81,11 @@ const formatAmount = (amount: number, currency?: string | null): string => {
   } catch {
     return `${code} ${amount.toFixed(2)}`;
   }
+};
+
+const isNigerianCountryValue = (value?: string | null): boolean => {
+  const normalized = String(value || "").trim().toUpperCase();
+  return normalized === "NG" || normalized === "NGA" || normalized === "NIGERIA";
 };
 
 export default function CartScreen() {
@@ -114,6 +122,7 @@ export default function CartScreen() {
     useVoucherStore();
 
   const { user: currentUser } = useAuthStore();
+  const { profile, user: authUser } = useAuth();
   const generatePDFMutation = trpc.orders.generatePDF.useMutation();
 
   const [showVoucherModal, setShowVoucherModal] = useState(false);
@@ -126,6 +135,9 @@ export default function CartScreen() {
   const [showTwintWebViewModal, setShowTwintWebViewModal] = useState(false);
   const [twintReference, setTwintReference] = useState<string>(`twint_cart_${Date.now()}`);
   const [twintOpeningApp, setTwintOpeningApp] = useState(false);
+  const [twintCheckoutUrl, setTwintCheckoutUrl] = useState<string | null>(null);
+  const [twintPaymentId, setTwintPaymentId] = useState<string | null>(null);
+  const [twintOrderId, setTwintOrderId] = useState<string | null>(null);
 
   // payment method is a simple string; specific values are controlled by UI
   const [paymentMethod, setPaymentMethod] = useState<string>("bankTransfer");
@@ -156,17 +168,43 @@ export default function CartScreen() {
   const discountedSubtotal = Math.max(0, cartSubtotal - discountAmount);
   const finalTotal = discountedSubtotal; // ✅ no separate platform fee anymore
 
-  // Detect Nigerian payment: use Paystack when cart or wallet currency is NGN
-  const isNigerianCart = (): boolean => {
-    const walletCurrency = String(wallet?.currency || '').trim().toUpperCase();
-    return cartCurrency === 'NGN' || walletCurrency === 'NGN';
-  };
+  const isLoggedInNigerianUser =
+    !!(currentUser?.id || authUser?.id) &&
+    [
+      profile?.country_code,
+      profile?.country,
+      (authUser as any)?.user_metadata?.country_code,
+      (authUser as any)?.user_metadata?.country,
+      (wallet as any)?.country,
+      (wallet as any)?.countryCode,
+      (currentUser as any)?.country,
+      (currentUser as any)?.countryCode,
+    ].some((value) => isNigerianCountryValue(value));
+
+  const primaryPaymentOptions = React.useMemo(() => {
+    const options =
+      Platform.OS === "ios"
+        ? ["stripe", "applePay", "bankTransfer", "creditCard"]
+        : ["stripe", "gpay", "bankTransfer", "creditCard"];
+
+    if (isLoggedInNigerianUser) {
+      options.unshift("paystack");
+    }
+
+    return options;
+  }, [isLoggedInNigerianUser]);
 
   // Fetch wallet and payment methods when component mounts
   React.useEffect(() => {
     fetchWallet();
     fetchPaymentMethods();
   }, []);
+
+  React.useEffect(() => {
+    if (!isLoggedInNigerianUser && paymentMethod === "paystack") {
+      setPaymentMethod("stripe");
+    }
+  }, [isLoggedInNigerianUser, paymentMethod]);
 
   // Helper function to create order in Supabase
   const createOrder = async (
@@ -248,6 +286,10 @@ export default function CartScreen() {
       sourceItems,
       fallbackVideoId: cart[0]?.product?.videoId,
     });
+  };
+
+  const getBusinessNetAmount = (grossAmount: number) => {
+    return Number((grossAmount / (1 + PRICE_MARKUP_RATE)).toFixed(2));
   };
 
   // Check available payment methods
@@ -361,28 +403,74 @@ export default function CartScreen() {
         throw new Error("No Twint payment method found");
       }
 
-      const order = await createOrder("twint", "paid");
-      const success = await makePayment(finalTotal, `Purchase of ${cart.length} items via Twint`, {
-        cartItems: cart.map((item) => ({
+      if (!twintPaymentId || !twintOrderId) {
+        throw new Error("Twint checkout session is missing. Please restart payment.");
+      }
+
+      const verification = await WorldlineService.verifyPayment(twintPaymentId);
+      if (verification.data.status !== "SUCCESS") {
+        throw new Error(`Twint payment is ${verification.data.status}. Complete payment and try verify again.`);
+      }
+
+      const { data: orderData, error: orderFetchError } = await supabase
+        .from("orders")
+        .select("id")
+        .eq("id", twintOrderId)
+        .single();
+
+      if (orderFetchError || !orderData) {
+        throw new Error("Order not found for verified Twint payment");
+      }
+
+      const { error: orderUpdateError } = await supabase
+        .from("orders")
+        .update({
+          payment_status: "paid",
+          payment_method: "twint",
+          status: "completed",
+          updated_at: new Date().toISOString(),
+          notes: `Twint payment verified: ${verification.data.paymentId}`,
+        })
+        .eq("id", twintOrderId);
+
+      if (orderUpdateError) {
+        throw new Error(`Failed to update order status: ${orderUpdateError.message}`);
+      }
+
+      const settlement = await settleExternalOrderPayment({
+        orderId: twintOrderId,
+        provider: 'twint',
+        paymentReference: verification.data.paymentId,
+        paymentTransactionId: verification.data.transactionId || verification.data.paymentId,
+        recipientId: cartOwnerId,
+        grossAmount: finalTotal,
+        netAmount: getBusinessNetAmount(finalTotal),
+        currency: cartCurrency,
+        videoId: cart[0]?.product?.videoId,
+        items: cart.map((item) => ({
           productId: item.product.id,
           quantity: item.quantity,
+          unitPrice: item.product.price,
+          currency: item.product.currency || cartCurrency,
+          ownerId: resolveProductOwnerId(item.product),
         })),
-        discountApplied: discountAmount > 0,
-        voucherId: activeVoucher?.id,
-        recipientId: cartOwnerId,
-        paymentProvider: "twint",
-        paymentMethodId: twintPaymentMethod.id,
-        twintTransactionId: twintReference,
-        orderId: order.id,
+        metadata: {
+          discountApplied: discountAmount > 0,
+          discountAmount,
+          voucherId: activeVoucher?.id,
+          cartItems: cart.map((item) => ({
+            productId: item.product.id,
+            quantity: item.quantity,
+          })),
+        },
       });
 
-      if (!success) {
-        showPaymentNotProcessedAlert("Twint");
-        return;
+      if (!settlement.success) {
+        throw new Error(settlement.error || 'Twint settlement failed.');
       }
 
       try {
-        await issueTicketsForOrder(order);
+        await issueTicketsForOrder(orderData);
       } catch (ticketError) {
         console.warn('Ticket generation failed after Twint payment:', ticketError);
       }
@@ -396,10 +484,13 @@ export default function CartScreen() {
       setDiscountAmount(0);
       setShowTwintPaymentModal(false);
       setShowTwintWebViewModal(false);
+      setTwintCheckoutUrl(null);
+      setTwintPaymentId(null);
+      setTwintOrderId(null);
 
       Alert.alert(
         "Payment Successful",
-        `Payment has been done successfully with Twint.\nOrder ID: ${order.id}`,
+        `Payment has been done successfully with Twint.\nOrder ID: ${twintOrderId}`,
         [{ text: "OK", onPress: () => router.push("/") }]
       );
     } catch (error) {
@@ -459,6 +550,45 @@ export default function CartScreen() {
           onPress: async () => {
             const reference = `twint_cart_${Date.now()}`;
             setTwintReference(reference);
+
+            if (!currentUser?.email) {
+              Alert.alert("Twint Payment", "A valid account email is required for Twint checkout.");
+              return;
+            }
+
+            setProcessingPayment(true);
+            try {
+              const order = await createOrder("twint", "pending");
+              const initialized = await WorldlineService.initializePayment({
+                amount: finalTotal,
+                currency: cartCurrency,
+                orderId: order.id,
+                customerEmail: currentUser.email,
+                customerName: currentUser.name || currentUser.email,
+                description: `Cart purchase (${cart.length} item${cart.length === 1 ? "" : "s"}) via Twint`,
+                metadata: {
+                  paymentProvider: "twint",
+                  reference,
+                  orderId: order.id,
+                  userId: currentUser.id,
+                  recipientId: cartOwnerId,
+                  type: "order_payment",
+                },
+              });
+
+              setTwintPaymentId(initialized.data.paymentId);
+              setTwintCheckoutUrl(initialized.data.redirectUrl);
+              setTwintOrderId(order.id);
+            } catch (error) {
+              console.error("Twint initialization error:", error);
+              Alert.alert(
+                "Twint Initialization Failed",
+                error instanceof Error ? error.message : "Unable to initialize Twint payment."
+              );
+              return;
+            } finally {
+              setProcessingPayment(false);
+            }
 
             const isInstalled = await canOpenTwintApp();
             if (isInstalled) {
@@ -569,8 +699,7 @@ export default function CartScreen() {
       return;
     }
 
-    // Route Nigerian users to Paystack
-    if (isNigerianCart()) {
+    if (paymentMethod === "paystack") {
       setShowPaystackModal(true);
       return;
     }
@@ -865,11 +994,7 @@ export default function CartScreen() {
               <FlatList
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                data={
-                  Platform.OS === "ios"
-                    ? ["applePay", "bankTransfer", "creditCard"]
-                    : ["gpay", "bankTransfer", "creditCard"]
-                }
+                data={primaryPaymentOptions}
                 renderItem={({ item }) => (
                   <TouchableOpacity
                     style={[
@@ -884,15 +1009,24 @@ export default function CartScreen() {
                     {item === "gpay" && (
                       <Text style={styles.paymentOptionText}>GPay</Text>
                     )}
+                    {item === "stripe" && (
+                      <Text style={styles.paymentOptionText}>Stripe</Text>
+                    )}
+                    {item === "paystack" && (
+                      <Text style={styles.paymentOptionText}>Paystack</Text>
+                    )}
                     {item === "bankTransfer" && (
                       <Text style={styles.paymentOptionText}>Bank Transfer</Text>
                     )}
                     {item === "creditCard" && (
-                      <DollarSign
-                        size={16}
-                        color={paymentMethod === "creditCard" ? "#FFFFFF" : "#0066CC"}
-                        style={{ marginRight: 4 }}
-                      />
+                      <View style={styles.creditCardOptionWrap}>
+                        <DollarSign
+                          size={16}
+                          color={paymentMethod === "creditCard" ? "#FFFFFF" : "#0066CC"}
+                          style={{ marginRight: 4 }}
+                        />
+                        <Text style={styles.paymentOptionText}>Credit Card</Text>
+                      </View>
                     )}
                   </TouchableOpacity>
                 )}
@@ -968,21 +1102,39 @@ export default function CartScreen() {
           try {
             setProcessingPayment(true);
             const order = await createOrder('paystack', 'paid');
-            await makePayment(
-              finalTotal,
-              `Purchase of ${cart.length} items via Paystack`,
-              {
+
+            const settlement = await settleExternalOrderPayment({
+              orderId: order.id,
+              provider: 'paystack',
+              paymentReference: reference,
+              paymentTransactionId: reference,
+              recipientId: cartOwnerId,
+              grossAmount: finalTotal,
+              netAmount: getBusinessNetAmount(finalTotal),
+              currency: cartCurrency,
+              videoId: cart[0]?.product?.videoId,
+              items: cart.map((item) => ({
+                productId: item.product.id,
+                quantity: item.quantity,
+                unitPrice: item.product.price,
+                currency: item.product.currency || cartCurrency,
+                ownerId: resolveProductOwnerId(item.product),
+              })),
+              metadata: {
+                discountApplied: discountAmount > 0,
+                discountAmount,
+                voucherId: activeVoucher?.id,
                 cartItems: cart.map((item) => ({
                   productId: item.product.id,
                   quantity: item.quantity,
                 })),
-                discountApplied: discountAmount > 0,
-                voucherId: activeVoucher?.id,
-                recipientId: cartOwnerId,
-                paymentProvider: 'paystack',
-                orderId: order.id,
-              }
-            );
+              },
+            });
+
+            if (!settlement.success) {
+              throw new Error(settlement.error || 'Paystack settlement failed.');
+            }
+
             try {
               await issueTicketsForOrder(order);
             } catch (ticketError) {
@@ -1008,7 +1160,8 @@ export default function CartScreen() {
           }
         }}
         onCancel={() => setShowPaystackModal(false)}
-        amount={Math.round(finalTotal * 100)}
+        amount={finalTotal}
+        currency={cartCurrency}
         email={currentUser?.email || ''}
         description={`Cart purchase (${cart.length} item${cart.length !== 1 ? 's' : ''})`}
         metadata={{ cartItems: cart.map((i) => ({ productId: i.product.id, qty: i.quantity })) }}
@@ -1028,14 +1181,29 @@ export default function CartScreen() {
 
       <TwintWebViewModal
         visible={showTwintWebViewModal}
-        url={getTwintWebCheckoutUrl({
-          amount: finalTotal,
-          currency: cartCurrency,
-          reference: twintReference,
-          note: `Cart payment for ${cart.length} item${cart.length === 1 ? '' : 's'}`,
-        })}
+        url={twintCheckoutUrl || "about:blank"}
         processing={processingPayment}
         onClose={() => setShowTwintWebViewModal(false)}
+        onCancelDetected={() => {
+          setShowTwintWebViewModal(false);
+          Alert.alert("Twint Payment", "Payment was cancelled or failed. Please try again.");
+        }}
+        successUrlPatterns={[
+          "myapp://payment/success",
+          "/payment/success",
+          "status=success",
+          "result=success",
+          "success=true",
+        ]}
+        cancelUrlPatterns={[
+          "myapp://payment/cancel",
+          "/payment/cancel",
+          "status=cancel",
+          "status=failed",
+          "result=failed",
+          "canceled",
+          "cancelled",
+        ]}
         onComplete={finalizeTwintPayment}
       />
     </SafeAreaView>
@@ -1260,6 +1428,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginHorizontal: 4,
     borderRadius: 8,
+  },
+  creditCardOptionWrap: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   selectedPaymentOption: {
     backgroundColor: "rgba(138, 43, 226, 0.2)",
