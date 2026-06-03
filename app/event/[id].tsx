@@ -451,8 +451,20 @@ export default function EventScreen() {
             <ArrowLeft size={24} color={Colors.dark.text} />
           </TouchableOpacity>
         </View>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Event not found</Text>
+        <View style={styles.endedStateContainer}>
+          <View style={styles.endedStateCard}>
+            <View style={styles.endedStateIcon}>
+              <Clock size={32} color={Colors.dark.text} />
+            </View>
+            <Text style={styles.endedStateKicker}>Event closed</Text>
+            <Text style={styles.endedStateTitle}>This event has ended</Text>
+            <Text style={styles.endedStateMessage}>
+              The live event page is no longer available. Closed events remain visible in organizer history.
+            </Text>
+            <TouchableOpacity style={styles.endedStateButton} onPress={() => router.back()}>
+              <Text style={styles.endedStateButtonText}>Go Back</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </SafeAreaView>
     );
@@ -861,6 +873,70 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginLeft: 8,
   },
+  endedStateContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  endedStateCard: {
+    width: "100%",
+    maxWidth: 380,
+    borderRadius: 24,
+    padding: 24,
+    backgroundColor: "#111827",
+    borderWidth: 1,
+    borderColor: "rgba(129,140,248,0.42)",
+    alignItems: "center",
+    shadowColor: Colors.dark.primary,
+    shadowOpacity: 0.28,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 12,
+  },
+  endedStateIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: Colors.dark.primary,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  endedStateKicker: {
+    color: Colors.dark.primaryLight,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginBottom: 8,
+  },
+  endedStateTitle: {
+    color: Colors.dark.text,
+    fontSize: 24,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  endedStateMessage: {
+    color: Colors.dark.subtext,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  endedStateButton: {
+    width: "100%",
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: "center",
+    backgroundColor: Colors.dark.primary,
+  },
+  endedStateButtonText: {
+    color: Colors.dark.text,
+    fontSize: 15,
+    fontWeight: "800",
+  },
   videoContainer: {
     width: "100%",
     aspectRatio: 16 / 9,
@@ -971,7 +1047,7 @@ const styles = StyleSheet.create({
     color: Colors.dark.primary,
   },
   disabledButtonText: {
-    color: Colors.dark.textSecondary,
+    color: Colors.dark.subtext,
   },
   viewAttendeesButton: {
     flexDirection: "row",
@@ -1549,7 +1625,7 @@ const styles = StyleSheet.create({
 //           </TouchableOpacity>
 //         </View>
 //         <View style={styles.errorContainer}>
-//           <Text style={styles.errorText}>Event not found</Text>
+//           <Text style={styles.errorText}>This event has ended</Text>
 //         </View>
 //       </SafeAreaView>
 //     );

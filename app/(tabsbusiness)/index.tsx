@@ -49,6 +49,7 @@ export default function HomeScreen() {
   const [manuallyPausedIndex, setManuallyPausedIndex] = useState<number | null>(null);
   const [pendingSelectedVideoId, setPendingSelectedVideoId] = useState<string | null>(null);
   const [unavailableVideoIds, setUnavailableVideoIds] = useState<Set<string>>(new Set());
+  const [isPreloadingVideo, setIsPreloadingVideo] = useState(false);
   const [videoMessage, setVideoMessage] = useState<{ title: string; message: string; icon: string } | null>(null);
   const hasCheckedMissingVideoRef = useRef<Set<string>>(new Set());
   const lastVisibleIndexRef = useRef(-1);
@@ -186,12 +187,19 @@ export default function HomeScreen() {
 
     (async () => {
       setPendingSelectedVideoId(selectedVideoIdFromParams);
+      setIsPreloadingVideo(true);
       setShowAllVideos(true);
       try {
         await fetchVideos();
+        const { fetchVideoById } = useVideoStore.getState();
+        const video = await fetchVideoById(selectedVideoIdFromParams);
+        if (!video && !cancelled) {
+          setIsPreloadingVideo(false);
+        }
       } catch (error) {
         if (!cancelled) {
           console.error('Error preloading selected profile video:', error);
+          setIsPreloadingVideo(false);
         }
       }
     })();
@@ -371,6 +379,7 @@ export default function HomeScreen() {
 
     const focusSelectedVideo = async () => {
       if (!pendingSelectedVideoId) {
+        setIsPreloadingVideo(false);
         return;
       }
 
@@ -383,11 +392,13 @@ export default function HomeScreen() {
         setCurrentVideoIndex(selectedIndex);
         setManuallyPausedIndex(null);
         setPendingSelectedVideoId(null);
+        setIsPreloadingVideo(false);
         return;
       }
 
       if (hasCheckedMissingVideoRef.current.has(pendingSelectedVideoId)) {
         setPendingSelectedVideoId(null);
+        setIsPreloadingVideo(false);
         return;
       }
 
@@ -416,6 +427,7 @@ export default function HomeScreen() {
             });
           }
           setPendingSelectedVideoId(null);
+          setIsPreloadingVideo(false);
         }
       }
     };
@@ -583,6 +595,14 @@ export default function HomeScreen() {
         refreshing={isRefreshing}
         contentContainerStyle={styles.flatListContent}
       />
+      {isPreloadingVideo && (
+        <View style={StyleSheet.absoluteFillObject}>
+          <View style={styles.preloadOverlay}>
+            <ActivityIndicator size="large" color={Colors.dark.primary} />
+            <Text style={styles.preloadText}>Preparing video...</Text>
+          </View>
+        </View>
+      )}
 
       {/* Beautiful video message modal */}
       <Modal
@@ -613,6 +633,18 @@ const styles = StyleSheet.create({
   },
   flatListContent: {
     flexGrow: 1,
+  },
+  preloadOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.85)',
+  },
+  preloadText: {
+    color: Colors.dark.text,
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
   },
   locationBanner: {
     backgroundColor: Colors.dark.card,

@@ -1601,6 +1601,37 @@ export const eventService = {
 
 // Unified Search operations
 export const searchService = {
+  async resolveFirstVideoForEvents(events: any[]) {
+    const missingVideoEvents = events.filter((event) => !event.video_id && event.event_name);
+    if (missingVideoEvents.length === 0) {
+      return events;
+    }
+
+    const eventNames = [...new Set(missingVideoEvents.map((event) => event.event_name).filter(Boolean))];
+    const resolvedVideoIdsByEventName = new Map<string, string>();
+
+    await Promise.all(
+      eventNames.map(async (eventName) => {
+        const { data, error } = await supabase
+          .from('videos')
+          .select('id, event_name, created_at')
+          .ilike('event_name', eventName)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (!error && data?.id) {
+          resolvedVideoIdsByEventName.set(eventName, data.id);
+        }
+      })
+    );
+
+    return events.map((event) => ({
+      ...event,
+      video_id: event.video_id || resolvedVideoIdsByEventName.get(event.event_name) || null,
+    }));
+  },
+
   async searchAll(query: string, filters?: {
     location?: string;
     category?: string;
@@ -1637,7 +1668,7 @@ export const searchService = {
       if (eventsError) {
         console.error('Error fetching events in unified search:', eventsError);
       } else if (events) {
-        searchResults.events = events;
+        searchResults.events = await this.resolveFirstVideoForEvents(events);
       }
 
       if (!query.trim()) {
@@ -1676,7 +1707,7 @@ export const searchService = {
         .limit(15);
 
       if (!unifiedEventsError && unifiedEventsData) {
-        searchResults.events = unifiedEventsData.map(e => ({
+        const mappedEvents = unifiedEventsData.map(e => ({
           id: e.id,
           event_name: e.event_name,
           description: e.description,
@@ -1689,6 +1720,8 @@ export const searchService = {
           location_city: e.location_city,
           profiles: e.profiles
         })) as any;
+
+        searchResults.events = await this.resolveFirstVideoForEvents(mappedEvents);
       }
 
       searchResults.totalResults = searchResults.videos.length + searchResults.users.length + searchResults.events.length;

@@ -34,6 +34,8 @@ import { useAuthStore } from "@/store/auth-store";
 import { SearchFilters } from "@/types";
 import * as Location from "expo-location";
 import SearchResultItem from "@/components/SearchResultItem";
+import EventClosedDialog from "@/components/EventClosedDialog";
+import { isEventClosed } from "@/utils/event-status";
 
 const { width } = Dimensions.get("window");
 
@@ -63,6 +65,7 @@ export default function SearchScreen() {
   const [userLocation, setUserLocation] =
     useState<Location.LocationObject | null>(null);
   const [advancedFilters, setAdvancedFilters] = useState<SearchFilters>({});
+  const [closedEvent, setClosedEvent] = useState<any | null>(null);
   const [mapRegion, setMapRegion] = useState({
     latitude: 40.7128,
     longitude: -74.006,
@@ -154,45 +157,41 @@ export default function SearchScreen() {
     addToSearchHistory(query);
   };
 
-  // ✅ FIXED: open correct route for user profile
   const handleResultPress = (id: string, type: string, data?: any) => {
     if (!id) return;
 
+    const openHomeVideo = (videoId: string) => {
+      router.push({ pathname: "/(tabsbusiness)" as any, params: { selectedVideoId: videoId } });
+    };
+
     if (type === "event") {
       const videoId = data?.video_id;
-      const endDate = data?.end_date;
-      const now = new Date();
 
-      if (!videoId) {
-        Alert.alert(
-          '🎬 No Video Yet',
-          'This event doesn\'t have a video uploaded yet. Check back later!',
-          [{ text: 'OK', style: 'default' }]
-        );
+      if (videoId) {
+        openHomeVideo(videoId);
         return;
       }
 
-      if (endDate && new Date(endDate) < now) {
-        Alert.alert(
-          '⏰ Event Has Ended',
-          `This event ended on ${new Date(endDate).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}. You can still watch the recorded video.`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Watch Video',
-              onPress: () => router.push({ pathname: '/', params: { selectedVideoId: videoId } } as any),
-            },
-          ]
-        );
+      if (isEventClosed({
+        status: data?.status,
+        startDate: data?.start_date,
+        endDate: data?.end_date,
+        eventDate: data?.event_date,
+      })) {
+        setClosedEvent(data);
         return;
       }
 
-      router.push({ pathname: '/', params: { selectedVideoId: videoId } } as any);
+      Alert.alert(
+        "No Video Yet",
+        "This event is available, but it does not have a video uploaded yet.",
+        [{ text: "OK", style: "default" }]
+      );
       return;
     }
 
     if (type === "video") {
-      router.push({ pathname: '/', params: { selectedVideoId: id } } as any);
+      openHomeVideo(id);
       return;
     }
 
@@ -446,6 +445,13 @@ export default function SearchScreen() {
 
           {activeFilter === "hashtag" &&
             renderSearchSection("Videos", searchResults.videos, "video", Video)}
+          {activeFilter === "recent" && (
+            <>
+              {renderSearchSection("Events", searchResults.events, "event", CalendarIcon)}
+              {renderSearchSection("Videos", searchResults.videos, "video", Video)}
+              {renderSearchSection("Users", searchResults.users, "user", Users)}
+            </>
+          )}
         </ScrollView>
       ) : (
         <View style={styles.noResultsContainer}>
@@ -548,6 +554,16 @@ export default function SearchScreen() {
           </View>
         </View>
       </Modal>
+      <EventClosedDialog
+        visible={!!closedEvent}
+        event={closedEvent}
+        onClose={() => setClosedEvent(null)}
+        onWatchVideo={closedEvent?.video_id ? () => {
+          const videoId = closedEvent.video_id;
+          setClosedEvent(null);
+          router.push({ pathname: "/(tabsbusiness)" as any, params: { selectedVideoId: videoId } });
+        } : undefined}
+      />
     </View>
   );
 }

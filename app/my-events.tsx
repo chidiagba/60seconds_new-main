@@ -1,8 +1,8 @@
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { CalendarDays, ChevronRight, MapPin, CircleOff, CircleCheck } from 'lucide-react-native';
+import { CalendarDays, ChevronRight, MapPin, CircleOff, CircleCheck, X, Clock } from 'lucide-react-native';
 
 import Colors from '@/constants/colors';
 import { EventQueries, EventWithProducts } from '@/lib/event-queries';
@@ -15,6 +15,7 @@ export default function MyEventsScreen() {
   const [events, setEvents] = useState<EventWithProducts[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [endedEvent, setEndedEvent] = useState<EventWithProducts | null>(null);
 
   const loadEvents = useCallback(async () => {
     if (!user?.id) {
@@ -49,6 +50,12 @@ export default function MyEventsScreen() {
   );
 
   const openEvent = (event: EventWithProducts) => {
+    const closed = isEventClosed({ status: event.status, startDate: event.start_date, endDate: event.end_date });
+    if (closed) {
+      setEndedEvent(event);
+      return;
+    }
+
     const targetId = event.video_id || event.video?.id || event.id;
     router.push({ pathname: '/event/[id]', params: { id: targetId } });
   };
@@ -74,6 +81,7 @@ export default function MyEventsScreen() {
   }
 
   return (
+    <>
     <ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.hero}>
         <Text style={styles.kicker}>Organizer tools</Text>
@@ -155,6 +163,42 @@ export default function MyEventsScreen() {
 
       <View style={styles.footerSpace} />
     </ScrollView>
+
+    <Modal
+      visible={!!endedEvent}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setEndedEvent(null)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.endedDialog}>
+          <TouchableOpacity
+            style={styles.dialogCloseButton}
+            onPress={() => setEndedEvent(null)}
+            accessibilityLabel="Close ended event dialog"
+          >
+            <X size={18} color={Colors.dark.text} />
+          </TouchableOpacity>
+
+          <View style={styles.dialogIconWrap}>
+            <Clock size={30} color={Colors.dark.text} />
+          </View>
+
+          <Text style={styles.dialogKicker}>Event closed</Text>
+          <Text style={styles.dialogTitle}>This event has ended</Text>
+          <Text style={styles.dialogMessage}>
+            {endedEvent?.event_name ? `${endedEvent.event_name} is no longer active.` : 'This event is no longer active.'} Closed events stay in your organizer history, but the live event page is not available anymore.
+          </Text>
+
+          <View style={styles.dialogDivider} />
+
+          <TouchableOpacity style={styles.dialogPrimaryButton} onPress={() => setEndedEvent(null)}>
+            <Text style={styles.dialogPrimaryText}>Back to My Events</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -190,7 +234,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   subtitle: {
-    color: Colors.dark.textSecondary,
+    color: Colors.dark.subtext,
     fontSize: 14,
     lineHeight: 20,
   },
@@ -212,7 +256,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   summaryLabel: {
-    color: Colors.dark.textSecondary,
+    color: Colors.dark.subtext,
     marginTop: 4,
     fontSize: 12,
   },
@@ -224,7 +268,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loadingText: {
-    color: Colors.dark.textSecondary,
+    color: Colors.dark.subtext,
   },
   emptyCard: {
     borderRadius: 20,
@@ -238,7 +282,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   emptyText: {
-    color: Colors.dark.textSecondary,
+    color: Colors.dark.subtext,
     lineHeight: 20,
   },
   eventCard: {
@@ -296,7 +340,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   eventDescription: {
-    color: Colors.dark.textSecondary,
+    color: Colors.dark.subtext,
     fontSize: 13,
     lineHeight: 18,
   },
@@ -312,7 +356,7 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   metaText: {
-    color: Colors.dark.textSecondary,
+    color: Colors.dark.subtext,
     fontSize: 12,
     flexShrink: 1,
   },
@@ -329,5 +373,86 @@ const styles = StyleSheet.create({
   },
   footerSpace: {
     height: 24,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    backgroundColor: 'rgba(0,0,0,0.76)',
+  },
+  endedDialog: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 24,
+    padding: 24,
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: 'rgba(129,140,248,0.42)',
+    alignItems: 'center',
+    shadowColor: Colors.dark.primary,
+    shadowOpacity: 0.32,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 12,
+  },
+  dialogCloseButton: {
+    position: 'absolute',
+    right: 14,
+    top: 14,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dialogIconWrap: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: Colors.dark.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  dialogKicker: {
+    color: Colors.dark.primaryLight,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  dialogTitle: {
+    color: Colors.dark.text,
+    fontSize: 24,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  dialogMessage: {
+    color: Colors.dark.subtext,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  dialogDivider: {
+    width: '100%',
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginVertical: 20,
+  },
+  dialogPrimaryButton: {
+    width: '100%',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    backgroundColor: Colors.dark.primary,
+  },
+  dialogPrimaryText: {
+    color: Colors.dark.text,
+    fontSize: 15,
+    fontWeight: '800',
   },
 });

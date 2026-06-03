@@ -38,6 +38,121 @@ interface OrderPDFListProps {
   userId: string;
 }
 
+const sanitizePdfText = (value: string) => {
+  return value
+    .replace(/[^\x20-\x7E]/g, '?')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
+};
+
+const encodeBase64 = (input: string) => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let output = '';
+  let i = 0;
+
+  while (i < input.length) {
+    const byte1 = input.charCodeAt(i++) & 0xff;
+    const byte2 = i < input.length ? input.charCodeAt(i++) & 0xff : Number.NaN;
+    const byte3 = i < input.length ? input.charCodeAt(i++) & 0xff : Number.NaN;
+
+    output += chars[byte1 >> 2];
+    output += chars[((byte1 & 3) << 4) | (Number.isNaN(byte2) ? 0 : byte2 >> 4)];
+    output += Number.isNaN(byte2) ? '=' : chars[((byte2 & 15) << 2) | (Number.isNaN(byte3) ? 0 : byte3 >> 6)];
+    output += Number.isNaN(byte3) ? '=' : chars[byte3 & 63];
+  }
+
+  return output;
+};
+
+const buildTicketPdfBase64 = (ticket: TicketRow) => {
+  const eventDate = ticket.event_start_date || ticket.issued_at;
+  const issuedDate = ticket.issued_at ? new Date(ticket.issued_at).toLocaleString() : 'N/A';
+  const rows = [
+    ['Event', ticket.event_name || '60seconds Event'],
+    ['Ticket', ticket.ticket_title || 'Ticket'],
+    ['Order number', ticket.order_number || ticket.id],
+    ['Seat', ticket.seat_no || '-'],
+    ['Location', ticket.location_name || 'Location not specified'],
+    ['Event date', eventDate ? new Date(eventDate).toLocaleString() : 'Date TBA'],
+    ['Status', ticket.is_active ? 'ACTIVE' : 'EXPIRED'],
+    ['Issued', issuedDate],
+    ['QR data', ticket.qr_code_data || ticket.order_number || ticket.id],
+  ];
+
+  const textLines = [
+    { size: 28, x: 54, y: 760, text: '60seconds Ticket' },
+    { size: 12, x: 54, y: 736, text: 'Official ticket receipt' },
+    ...rows.flatMap((row, index) => {
+      const y = 690 - index * 44;
+      return [
+        { size: 10, x: 54, y, text: row[0].toUpperCase() },
+        { size: 16, x: 54, y: y - 20, text: row[1] },
+      ];
+    }),
+    { size: 10, x: 54, y: 84, text: 'Keep this PDF with you. Venue staff may verify the ticket using the QR data above.' },
+  ];
+
+  const content = [
+    'q',
+    '0.039 0.039 0.059 rg',
+    '0 0 612 792 re f',
+    '0.098 0.098 0.122 rg',
+    '36 44 540 704 re f',
+    '0.388 0.4 0.945 rg',
+    '36 704 540 88 re f',
+    '1 1 1 rg',
+    ...textLines.map((line) => `BT /F1 ${line.size} Tf ${line.x} ${line.y} Td (${sanitizePdfText(line.text)}) Tj ET`),
+    'Q',
+  ].join('\n');
+
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+  ];
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  });
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return encodeBase64(pdf);
+};
+
+const openDataUriInBrowser = (dataUri: string, fileName: string, download: boolean) => {
+  const documentRef = (globalThis as any).document;
+  if (!documentRef) {
+    return false;
+  }
+
+  const link = documentRef.createElement('a');
+  link.href = dataUri;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  if (download) {
+    link.download = fileName;
+  }
+
+  documentRef.body.appendChild(link);
+  link.click();
+  documentRef.body.removeChild(link);
+  return true;
+};
+
 export default function OrderPDFList({ userId }: OrderPDFListProps) {
   const [tickets, setTickets] = React.useState<TicketRow[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -49,10 +164,6 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
   };
 
   const getLocalPdfUri = async (ticket: TicketRow) => {
-    if (!ticket.pdf_url) {
-      throw new Error('PDF_NOT_AVAILABLE');
-    }
-
     const rootDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
     if (!rootDir) {
       throw new Error('STORAGE_NOT_AVAILABLE');
@@ -63,17 +174,26 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
 
     await FileSystem.makeDirectoryAsync(ticketsDir, { intermediates: true });
 
-    const existing = await FileSystem.getInfoAsync(localUri, { size: true });
-    if (existing.exists && (existing.size ?? 0) > 0) {
+    const existing = await FileSystem.getInfoAsync(localUri);
+    if (existing.exists && (((existing as any).size as number | undefined) ?? 0) > 0) {
       return localUri;
     }
 
-    const result = await FileSystem.downloadAsync(ticket.pdf_url, localUri);
-    if (result.status < 200 || result.status >= 300) {
-      throw new Error(`PDF_DOWNLOAD_FAILED_${result.status}`);
+    const remotePdfUrl = ticket.pdf_url?.trim();
+    if (remotePdfUrl) {
+      const result = await FileSystem.downloadAsync(remotePdfUrl, localUri);
+      if (result.status < 200 || result.status >= 300) {
+        throw new Error(`PDF_DOWNLOAD_FAILED_${result.status}`);
+      }
+
+      return result.uri;
     }
 
-    return result.uri;
+    await FileSystem.writeAsStringAsync(localUri, buildTicketPdfBase64(ticket), {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+
+    return localUri;
   };
 
   const loadTickets = React.useCallback(async () => {
@@ -96,23 +216,38 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
   }, [loadTickets]);
 
   const handleDownloadPdf = async (ticket: TicketRow) => {
-    if (!ticket.pdf_url) {
-      Alert.alert('PDF Not Available', 'This ticket does not have a PDF yet.');
-      return;
-    }
-
     try {
       if (Platform.OS === 'web') {
-        const canOpen = await Linking.canOpenURL(ticket.pdf_url);
+        const remotePdfUrl = ticket.pdf_url?.trim();
+        if (!remotePdfUrl) {
+          const dataUri = `data:application/pdf;base64,${buildTicketPdfBase64(ticket)}`;
+          if (openDataUriInBrowser(dataUri, getSafePdfFileName(ticket), true)) {
+            return;
+          }
+          Alert.alert('Unable to Download', 'Could not create the ticket PDF.');
+          return;
+        }
+
+        const canOpen = await Linking.canOpenURL(remotePdfUrl);
         if (canOpen) {
-          await Linking.openURL(ticket.pdf_url);
+          await Linking.openURL(remotePdfUrl);
           return;
         }
         Alert.alert('Unable to Download', 'Could not open the PDF URL.');
         return;
       }
 
-      await getLocalPdfUri(ticket);
+      const localUri = await getLocalPdfUri(ticket);
+      const canShareFile = await Sharing.isAvailableAsync();
+      if (canShareFile) {
+        await Sharing.shareAsync(localUri, {
+          mimeType: 'application/pdf',
+          dialogTitle: `Save ${ticket.ticket_title}`,
+          UTI: 'com.adobe.pdf',
+        });
+        return;
+      }
+
       Alert.alert('Download Complete', 'Ticket PDF downloaded successfully.');
     } catch (e) {
       Alert.alert('Error', 'Could not download the ticket PDF.');
@@ -120,24 +255,38 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
   };
 
   const handleOpenPdf = async (ticket: TicketRow) => {
-    if (!ticket.pdf_url) {
-      Alert.alert('PDF Not Available', 'This ticket does not have a PDF yet.');
-      return;
-    }
-
     try {
       if (Platform.OS !== 'web') {
         const localUri = await getLocalPdfUri(ticket);
-        const canOpenLocal = await Linking.canOpenURL(localUri);
-        if (canOpenLocal) {
+        try {
           await Linking.openURL(localUri);
           return;
+        } catch {
+          const canShareFile = await Sharing.isAvailableAsync();
+          if (canShareFile) {
+            await Sharing.shareAsync(localUri, {
+              mimeType: 'application/pdf',
+              dialogTitle: `Open ${ticket.ticket_title}`,
+              UTI: 'com.adobe.pdf',
+            });
+            return;
+          }
         }
       }
 
-      const canOpenRemote = await Linking.canOpenURL(ticket.pdf_url);
+      const remotePdfUrl = ticket.pdf_url?.trim();
+      if (!remotePdfUrl) {
+        const dataUri = `data:application/pdf;base64,${buildTicketPdfBase64(ticket)}`;
+        if (openDataUriInBrowser(dataUri, getSafePdfFileName(ticket), false)) {
+          return;
+        }
+        Alert.alert('Unable to Open', 'Could not create this ticket PDF.');
+        return;
+      }
+
+      const canOpenRemote = await Linking.canOpenURL(remotePdfUrl);
       if (canOpenRemote) {
-        await Linking.openURL(ticket.pdf_url);
+        await Linking.openURL(remotePdfUrl);
       } else {
         Alert.alert('Unable to Open', 'Could not open this ticket PDF.');
       }
@@ -148,12 +297,7 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
 
   const handleShareTicket = async (ticket: TicketRow) => {
     try {
-      if (!ticket.pdf_url) {
-        Alert.alert('PDF Not Available', 'This ticket does not have a PDF yet.');
-        return;
-      }
-
-      const shareUrl = ticket.pdf_url || '';
+      const shareUrl = ticket.pdf_url?.trim() || '';
       const shareMessage = [
         `60seconds Ticket: ${ticket.ticket_title}`,
         ticket.event_name ? `Event: ${ticket.event_name}` : null,

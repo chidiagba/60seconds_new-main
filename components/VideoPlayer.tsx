@@ -23,6 +23,11 @@ interface VideoPlayerProps {
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+const isBackgroundAudioFocusError = (error: unknown) => {
+  const message = String((error as any)?.message || error || '');
+  return /AudioFocusNotAcquiredException|currently in the background|audio focus could not be acquired/i.test(message);
+};
+
 export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWithSound = true, onPress, taggedUsers, showWatermark = true, onLoadError }: VideoPlayerProps) {
   const router = useRouter();
   const isFocused = useIsFocused();
@@ -38,6 +43,9 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
   const [videoInstanceKey, setVideoInstanceKey] = useState(0);
   const [androidImplementation, setAndroidImplementation] = useState<'MediaPlayer' | 'ExoPlayer'>('MediaPlayer');
   const hasRetriedDecoderFallbackRef = useRef(false);
+  const canPlay = !paused && appState === 'active' && isFocused;
+  const canPlayWithSound = autoplayWithSound && canPlay;
+  const androidVideoProps = Platform.OS === 'android' ? ({ androidImplementation } as any) : {};
 
   const tryAndroidCodecFallback = (errorMessage: string, source: 'status' | 'onError') => {
     if (Platform.OS !== 'android') {
@@ -93,26 +101,55 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
   }, [paused, appState]);
 
   useEffect(() => {
-    if (
-      Platform.OS === 'web' ||
-      !autoplay ||
-      !autoplayWithSound ||
-      paused ||
-      appState !== 'active' ||
-      !isFocused ||
-      !videoRef.current
-    ) {
+    if (Platform.OS === 'web' || !autoplay || !canPlayWithSound || !videoRef.current) {
       return;
     }
 
-    // Keep feed autoplay explicitly unmuted so users hear video audio without tapping first.
-    videoRef.current.setIsMutedAsync(false).catch((error) => {
-      console.warn('🎬 VideoPlayer: Failed to unmute autoplay video:', error);
-    });
-    videoRef.current.setVolumeAsync(1.0).catch((error) => {
-      console.warn('🎬 VideoPlayer: Failed to set autoplay volume:', error);
-    });
-  }, [autoplay, autoplayWithSound, paused, appState, isFocused, uri]);
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const applyAutoplaySound = async (attempt = 0) => {
+      if (
+        cancelled ||
+        AppState.currentState !== 'active' ||
+        appState !== 'active' ||
+        paused ||
+        !isFocused ||
+        !videoRef.current
+      ) {
+        return;
+      }
+
+      // Foreground transitions can briefly report active before native audio focus is ready.
+      try {
+        await videoRef.current.setIsMutedAsync(false);
+        await videoRef.current.setVolumeAsync(1.0);
+      } catch (error) {
+        if (isBackgroundAudioFocusError(error) && attempt < 4) {
+          retryTimer = setTimeout(() => {
+            applyAutoplaySound(attempt + 1);
+          }, 350);
+          return;
+        }
+
+        if (!isBackgroundAudioFocusError(error)) {
+          console.warn('🎬 VideoPlayer: Failed to prepare autoplay audio:', error);
+        }
+      }
+    };
+
+    const timer = setTimeout(() => {
+      applyAutoplaySound();
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+      }
+    };
+  }, [autoplay, canPlayWithSound, paused, appState, isFocused, uri]);
 
   const handlePlaybackStatusUpdate = (status: any) => {
     if (status.isLoaded) {
@@ -207,9 +244,9 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
             source={{ uri }}
             style={styles.video}
             resizeMode={ResizeMode.COVER}
-            androidImplementation={androidImplementation}
-            shouldPlay={Platform.OS === 'web' ? isPlaying : (!paused && appState === 'active' && isFocused)}
-            isMuted={!autoplayWithSound}
+            {...androidVideoProps}
+            shouldPlay={Platform.OS === 'web' ? isPlaying : canPlay}
+            isMuted={!canPlayWithSound}
             volume={1.0}
             isLooping
             onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
