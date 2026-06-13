@@ -21,6 +21,7 @@ import PaystackWebView from './PaystackWebView';
 import { PaymentMethod } from '@/types/wallet';
 import { useAuthStore } from '@/store/auth-store';
 import { formatCurrency, getCurrencySymbol } from '@/constants/currencies';
+import PaystackService from '@/lib/paystack';
 
 interface AddFundsModalProps {
   visible: boolean;
@@ -179,12 +180,26 @@ export default function AddFundsModal({ visible, onClose }: AddFundsModalProps) 
     setShowPaystackWebView(false);
     
     if (selectedPaymentMethod) {
-      const success = await addFunds(parseFloat(amount), selectedPaymentMethod.id, 'paystack');
+      const verification = await PaystackService.verifyPayment(reference);
+      const verifiedStatus = String(verification?.data?.status || '').toLowerCase();
+      if (verifiedStatus !== 'success') {
+        Alert.alert('Verification Failed', 'Paystack payment could not be verified as successful.');
+        return;
+      }
+
+      const paidAmountMinor = Number(verification?.data?.amount || 0);
+      const paidAmount = paidAmountMinor > 0 ? Number((paidAmountMinor / 100).toFixed(2)) : 0;
+      if (!(paidAmount > 0)) {
+        Alert.alert('Verification Failed', 'Verified payment amount is invalid.');
+        return;
+      }
+
+      const success = await addFunds(paidAmount, selectedPaymentMethod.id, 'paystack');
       
       if (success) {
         Alert.alert(
           'Paystack Payment Successful',
-          `${formatCurrency(parseFloat(amount), selectedCurrency)} has been added to your wallet via Paystack.\nReference: ${reference}`,
+          `${formatCurrency(paidAmount, selectedCurrency)} has been added to your wallet via Paystack.\nReference: ${reference}`,
           [{ text: 'OK', onPress: onClose }]
         );
       }

@@ -88,6 +88,11 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
 
   const videoUrl = useMemo(() => (video.url || '').trim(), [video.url]);
   const videoShareLink = useMemo(() => buildVideoShareUrl(video.id), [video.id]);
+  const uploaderUsername = useMemo(() => {
+    const rawUsername = String(video.user?.username || '').trim();
+    if (!rawUsername) return null;
+    return `@${rawUsername.replace(/^@+/, '')}`;
+  }, [video.user?.username]);
 
   const shortDescription = useMemo(() => {
     const value = (video.description || '').trim();
@@ -123,6 +128,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
   const shareMessage = useMemo(() => {
     const lines: (string | null)[] = [
       `🎉 ${video.eventName}`,
+      uploaderUsername ? `👤 Uploaded by ${uploaderUsername}` : null,
       locationText ? `📍 ${locationText}` : null,
       eventDateText ? `🗓️ ${eventDateText}` : null,
       shortDescription || null,
@@ -130,7 +136,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
       `🌐 Website: ${APP_WEBSITE_URL}`,
     ];
     return lines.filter(Boolean).join('\n');
-  }, [video.eventName, locationText, eventDateText, shortDescription, videoShareLink]);
+  }, [video.eventName, uploaderUsername, locationText, eventDateText, shortDescription, videoShareLink]);
 
   const handleHapticFeedback = () => {
     if (Platform.OS !== 'web') {
@@ -369,7 +375,9 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
 
       const shareResponse = await ShareOpen.open({
         title: video.eventName,
-        subject: `Check out: ${video.eventName}`,
+        subject: uploaderUsername
+          ? `Check out: ${video.eventName} by ${uploaderUsername}`
+          : `Check out: ${video.eventName}`,
         message: shareMessage,
         url: localUri,
         type: mimeType,
@@ -600,6 +608,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
 
     const webpageMessage = [
       `🎉 ${video.eventName}`,
+      uploaderUsername ? `👤 Uploaded by ${uploaderUsername}` : null,
       locationText ? `📍 ${locationText}` : null,
       eventDateText ? `🗓️ ${eventDateText}` : null,
       shortDescription || null,

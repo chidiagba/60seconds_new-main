@@ -46,24 +46,44 @@ const normalizeProvider = (value: string) => {
   throw new Error(`Unsupported provider: ${value}`);
 };
 
-const deriveNetAmount = (grossAmount: number, explicitNetAmount?: number | null) => {
-  if (Number.isFinite(Number(explicitNetAmount)) && Number(explicitNetAmount) > 0) {
-    return roundMoney(Number(explicitNetAmount));
+const deriveNetAmount = (
+  grossAmount: number,
+  explicitNetAmount?: number | null,
+  explicitPlatformFeeAmount?: number | null
+) => {
+  const parsedGross = Number(grossAmount || 0);
+  const parsedNet = Number(explicitNetAmount);
+  const parsedFee = Number(explicitPlatformFeeAmount);
+
+  if (Number.isFinite(parsedGross) && parsedGross > 0 && Number.isFinite(parsedNet) && parsedNet > 0) {
+    // Guardrail: never allow net to exceed gross due to bad client payloads.
+    const clampedNet = Math.min(parsedNet, parsedGross);
+
+    if (Number.isFinite(parsedFee) && parsedFee >= 0) {
+      const expectedNet = roundMoney(Math.max(0, parsedGross - parsedFee));
+      // If client payload net/fee pair does not match gross, fall back to server-side derivation.
+      if (Math.abs(expectedNet - clampedNet) <= 0.01) {
+        return expectedNet;
+      }
+    } else {
+      return roundMoney(clampedNet);
+    }
   }
 
-  if (!Number.isFinite(Number(grossAmount)) || Number(grossAmount) <= 0) {
+  if (!Number.isFinite(parsedGross) || parsedGross <= 0) {
     return 0;
   }
 
-  return roundMoney(Number(grossAmount) / (1 + DEFAULT_PLATFORM_FEE_RATE));
+  return roundMoney(parsedGross / (1 + DEFAULT_PLATFORM_FEE_RATE));
 };
 
 const resolveOwnerId = async (recipientId: string | null | undefined, orderRow: any, items: SettlementItem[]) => {
-  if (recipientId) return recipientId;
   if (orderRow?.business_id) return orderRow.business_id;
 
   const ownerFromItem = items.find((item) => item.ownerId)?.ownerId;
   if (ownerFromItem) return ownerFromItem;
+
+  if (recipientId) return recipientId;
 
   const productIds = Array.from(
     new Set(
@@ -233,6 +253,10 @@ Deno.serve(async (req) => {
       Number(
         body?.netAmount ??
           null
+      ),
+      Number(
+        body?.platformFeeAmount ??
+          null
       )
     );
 
@@ -345,14 +369,45 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { error: orderUpdateError } = await supabaseAdmin
+    let orderUpdatePayload: Record<string, any> = {
+      status: "completed",
+      payment_status: "paid",
+      payment_method: provider,
+      payment_provider: provider,
+      payment_reference: paymentReference,
+      payment_transaction_id: paymentTransactionId,
+      payment_metadata: {
+        ...(metadata || {}),
+        settlement_entry: "owner_credit",
+        owner_id: ownerId,
+        gross_amount: grossAmount,
+        platform_fee_amount: platformFeeAmount,
+        net_amount: netAmount,
+        currency,
+      },
+      business_id: ownerId,
+      updated_at: nowIso,
+    };
+
+    let { error: orderUpdateError } = await supabaseAdmin
       .from("orders")
-      .update({
+      .update(orderUpdatePayload)
+      .eq("id", orderId);
+
+    if (orderUpdateError && /column|payment_provider|payment_reference|payment_transaction_id|payment_metadata|payment_status/i.test(orderUpdateError.message || "")) {
+      // Backward-compatible fallback for projects that still use the older orders schema.
+      orderUpdatePayload = {
         status: "completed",
+        payment_method: provider,
         business_id: ownerId,
         updated_at: nowIso,
-      })
-      .eq("id", orderId);
+      };
+
+      ({ error: orderUpdateError } = await supabaseAdmin
+        .from("orders")
+        .update(orderUpdatePayload)
+        .eq("id", orderId));
+    }
 
     if (orderUpdateError) {
       throw new Error(`Failed to update order settlement fields: ${orderUpdateError.message}`);

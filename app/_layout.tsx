@@ -469,6 +469,14 @@ function AppContent() {
                     animation: "fade",
                   }}
                 />
+                <Stack.Screen
+                  name="transaction-details"
+                  options={{
+                    title: "Transaction Details",
+                    headerShown: false,
+                    animation: "fade",
+                  }}
+                />
                  <Stack.Screen
                   name="bank-accounts"
                   options={{

@@ -13,12 +13,13 @@ import {
 import { X, Tag, Check, AlertCircle } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useVoucherStore } from '@/store/voucher-store';
+import { Voucher } from '@/types';
 import * as Haptics from 'expo-haptics';
 
 interface ApplyVoucherModalProps {
   visible: boolean;
   onClose: () => void;
-  onApply: (discountAmount: number) => void;
+  onApply: (discountAmount: number, voucher?: Voucher) => void;
   totalAmount: number;
   productId?: string;
 }
@@ -35,6 +36,7 @@ export default function ApplyVoucherModal({
   const [voucherCode, setVoucherCode] = useState('');
   const [validationResult, setValidationResult] = useState<{
     valid: boolean;
+    voucher?: Voucher;
     discountAmount?: number;
     errorMessage?: string;
   } | null>(null);
@@ -65,7 +67,7 @@ export default function ApplyVoucherModal({
   
   const handleApplyVoucher = () => {
     if (validationResult?.valid && validationResult.discountAmount) {
-      onApply(validationResult.discountAmount);
+      onApply(validationResult.discountAmount, validationResult.voucher);
       handleClose();
     }
   };

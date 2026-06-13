@@ -184,7 +184,7 @@ export default function ProfileScreen() {
       const liked = (videos || []).filter((video: any) => likedSet.has(video.id) && !deletedVideoIds.has(video.id));
       setLikedVideosData(liked);
     } catch (error) {
-      console.error('Error loading liked videos:', error);
+      console.warn('Unable to load liked videos:', error);
       setLikedVideosData([]);
     } finally {
       setLikedVideosLoading(false);

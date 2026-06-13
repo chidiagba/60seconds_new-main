@@ -27,6 +27,7 @@ import { DEFAULT_CURRENCY } from "@/constants/currencies";
 import { Product } from "@/types";
 import { useProductStore } from "@/store/product-store";
 import { useWalletStore } from "@/store/wallet-store";
+import { useVoucherStore } from "@/store/voucher-store";
 import { useAuthStore } from "@/store/auth-store";
 import { useAuth } from "@/lib/auth";
 import { orderService, ticketReceiptService } from "@/lib/database";
@@ -36,18 +37,20 @@ import { settleExternalOrderPayment } from "@/lib/external-payment-settlement";
 import PaystackWebView from "@/components/PaystackWebView";
 import TwintPaymentModal from "@/components/TwintPaymentModal";
 import TwintWebViewModal from "@/components/TwintWebViewModal";
+import ApplyVoucherModal from "@/components/ApplyVoucherModal";
 import { canOpenTwintApp, openTwintApp } from "@/lib/twint";
 import WorldlineService from "@/lib/worldline";
+import { resolveCurrencyFromCountry } from "@/utils/country-currency";
 
 // Constants
 const PLATFORM_FEE_PERCENTAGE = 0.04;
 
-const normalizeCurrencyCode = (currency?: string | null): string => {
+const normalizeCurrencyCode = (currency?: string | null, fallbackCurrency: string = DEFAULT_CURRENCY): string => {
   const code = String(currency || "").trim().toUpperCase();
   if (/^[A-Z]{3}$/.test(code)) {
     return code;
   }
-  return DEFAULT_CURRENCY;
+  return fallbackCurrency;
 };
 
 const formatAmount = (amount: number, currency?: string | null): string => {
@@ -91,6 +94,14 @@ const ProductsList = ({
 }: ProductsListProps) => {
   const { products: storeProducts, fetchProducts, addToCart, isLoading } = useProductStore();
   const { makePayment, fetchPaymentMethods } = useWalletStore();
+  const {
+    vouchers,
+    activeVoucher,
+    fetchVouchers,
+    clearActiveVoucher,
+    incrementUsageCount,
+    applyVoucher,
+  } = useVoucherStore();
   const user = useAuthStore((s) => s.user);
   const { profile, user: authUser } = useAuth();
   const router = useRouter();
@@ -124,6 +135,8 @@ const ProductsList = ({
   const [paymentMethod, setPaymentMethod] = React.useState<string | null>(null);
   const [showPaymentOptions, setShowPaymentOptions] = React.useState(false);
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null);
+  const [showVoucherModal, setShowVoucherModal] = React.useState(false);
+  const [discountAmount, setDiscountAmount] = React.useState(0);
   const [showMoreOptions, setShowMoreOptions] = React.useState(false); // Track if "More" is clicked
   // Apple Pay is deliberately disabled in the UI; the Stripe PaymentSheet will
   // itself expose wallet buttons when appropriate, but we do not configure
@@ -148,6 +161,13 @@ const ProductsList = ({
   const [twintOrderId, setTwintOrderId] = React.useState<string | null>(null);
 
   const { wallet } = useWalletStore();
+  const buyerFallbackCurrency = resolveCurrencyFromCountry({
+    countryCode: (profile as any)?.country_code || (authUser as any)?.user_metadata?.country_code || (user as any)?.countryCode,
+    country: (profile as any)?.country || (authUser as any)?.user_metadata?.country || (user as any)?.country,
+    fallbackCurrency: (wallet as any)?.currency || DEFAULT_CURRENCY,
+  });
+  const resolveProductCurrency = (currency?: string | null) =>
+    normalizeCurrencyCode(currency, buyerFallbackCurrency);
   const isLoggedInNigerianUser =
     !!(user?.id || authUser?.id || buyerId) &&
     [
@@ -167,6 +187,13 @@ const ProductsList = ({
     if (!products.length) fetchProducts(videoId); // Only fetch if products is empty
     if (user) fetchPaymentMethods();
   }, [videoId, products, fetchProducts, fetchPaymentMethods, user]);
+
+  React.useEffect(() => {
+    if (!showPaymentOptions || !selectedProduct) return;
+    const businessId = resolveProductOwnerId(selectedProduct);
+    if (!businessId) return;
+    fetchVouchers(businessId);
+  }, [showPaymentOptions, selectedProduct, fetchVouchers]);
 
   // We assume wallet availability based on platform; deeper runtime checks can be added if needed.
 
@@ -192,10 +219,45 @@ const ProductsList = ({
       product?.creatorId ||
       product?.business_id ||
       product?.businessId ||
-      product?.userId ||
       null
     );
   };
+
+  const getDiscountedPlatformFee = (grossAmount: number) => {
+    return Number((grossAmount - getBusinessNetAmount(grossAmount)).toFixed(2));
+  };
+
+  const isVoucherUsableForProduct = React.useCallback((voucher: any, product?: Product | null) => {
+    if (!voucher || !voucher.isActive) return false;
+    if (voucher.usageCount >= voucher.usageLimit) return false;
+    if (voucher.productId && product?.id && voucher.productId !== product.id) return false;
+    if (voucher.productId && !product?.id) return false;
+    const expiryDate = new Date(voucher.expiryDate);
+    return !Number.isNaN(expiryDate.getTime()) && expiryDate.getTime() > Date.now();
+  }, []);
+
+  const availableVouchers = React.useMemo(
+    () => vouchers.filter((voucher) => isVoucherUsableForProduct(voucher, selectedProduct)),
+    [vouchers, selectedProduct, isVoucherUsableForProduct]
+  );
+
+  const hasAvailableVouchers = availableVouchers.length > 0;
+
+  const getDiscountedCheckoutTotal = React.useCallback(
+    (product: Product) => {
+      const { fee, total } = getTotalPayableAmount(product.price);
+      const cappedDiscount = Math.min(discountAmount, total);
+      const discountedTotal = Math.max(0, total - cappedDiscount);
+
+      return {
+        fee,
+        subtotalWithFee: total,
+        discount: cappedDiscount,
+        total: discountedTotal,
+      };
+    },
+    [discountAmount]
+  );
 
   const canEditProduct = (product: any) => {
     return !!user?.id && resolveProductOwnerId(product) === user.id;
@@ -294,9 +356,10 @@ const ProductsList = ({
       return;
     }
 
-    const { fee, total } = getTotalPayableAmount(selectedProduct.price);
     const productForPayment = selectedProduct;
-    const productCurrency = normalizeCurrencyCode(productForPayment.currency);
+    const { subtotalWithFee, total, discount } = getDiscountedCheckoutTotal(productForPayment);
+    const discountedPlatformFee = getDiscountedPlatformFee(total);
+    const productCurrency = resolveProductCurrency(productForPayment.currency);
 
     try {
       setIsPaying(true);
@@ -317,7 +380,7 @@ const ProductsList = ({
       const data = await createPaymentSheetSession({
         amount: Math.round(total * 100),
         currency: productCurrency.toLowerCase(),
-        platformFeeAmount: Math.round(fee * 100),
+        platformFeeAmount: Math.round(discountedPlatformFee * 100),
         customerEmail: buyerEmail || undefined,
         productId: productForPayment.id,
         productName: productForPayment.name,
@@ -405,8 +468,11 @@ const ProductsList = ({
           buyerId: buyerId || undefined,
           recipientId: ownerId,
           platformFeePercentage: PLATFORM_FEE_PERCENTAGE,
-          platformFeeAmount: fee,
+          platformFeeAmount: discountedPlatformFee,
           baseAmount: productForPayment.price,
+          amountBeforeDiscount: subtotalWithFee,
+          discountAmount: discount,
+          voucherId: activeVoucher?.id,
           totalAmount: total,
           stripePaymentIntentClientSecret: paymentIntentClientSecret,
         });
@@ -429,7 +495,7 @@ const ProductsList = ({
                 name: productForPayment.name,
               },
             ],
-            notes: 'Generated from direct product checkout',
+            notes: activeVoucher ? `Generated from direct product checkout. Voucher applied: ${activeVoucher.code}` : 'Generated from direct product checkout',
           });
 
           const settlement = await settleStripePayment({
@@ -437,7 +503,7 @@ const ProductsList = ({
             orderId: order.id,
             recipientId: ownerId,
             grossAmountCents: Math.round(total * 100),
-            platformFeeAmountCents: Math.round(fee * 100),
+            platformFeeAmountCents: Math.round(discountedPlatformFee * 100),
             currency: productCurrency,
             videoId: productForPayment.videoId,
             items: [
@@ -504,7 +570,7 @@ const ProductsList = ({
             paymentIntentClientSecret,
             recipientId: ownerId,
             grossAmountCents: Math.round(total * 100),
-            platformFeeAmountCents: Math.round(fee * 100),
+            platformFeeAmountCents: Math.round(discountedPlatformFee * 100),
             currency: productCurrency,
             videoId: productForPayment.videoId,
             items: [
@@ -531,8 +597,13 @@ const ProductsList = ({
       }
 
       Alert.alert("Purchase Successful", "You have successfully made the payment.");
+      if (activeVoucher && discount > 0) {
+        incrementUsageCount(activeVoucher.id);
+      }
       setShowPaymentOptions(false);
       setSelectedProduct(null);
+      setDiscountAmount(0);
+      clearActiveVoucher();
       onClose();
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : "Payment failed. Please try again.";
@@ -554,7 +625,7 @@ const ProductsList = ({
       return;
     }
 
-    const { fee, total } = getTotalPayableAmount(twintProduct.price);
+    const { total, discount, subtotalWithFee } = getDiscountedCheckoutTotal(twintProduct);
     const ownerId = resolveProductOwnerId(twintProduct);
     const currentAuthId = buyerId || user?.id;
 
@@ -588,21 +659,24 @@ const ProductsList = ({
         paymentTransactionId: verification.data.transactionId || verification.data.paymentId,
         recipientId: ownerId,
         grossAmount: total,
-        netAmount: twintProduct.price,
-        currency: normalizeCurrencyCode(twintProduct.currency),
+        netAmount: getBusinessNetAmount(total),
+        currency: resolveProductCurrency(twintProduct.currency),
         videoId: twintProduct.videoId,
         items: [
           {
             productId: twintProduct.id,
             quantity: 1,
             unitPrice: twintProduct.price,
-            currency: normalizeCurrencyCode(twintProduct.currency),
+            currency: resolveProductCurrency(twintProduct.currency),
             ownerId,
           },
         ],
         metadata: {
           productId: twintProduct.id,
           baseAmount: twintProduct.price,
+          amountBeforeDiscount: subtotalWithFee,
+          discountAmount: discount,
+          voucherId: activeVoucher?.id,
           totalAmount: total,
         },
       });
@@ -638,7 +712,7 @@ const ProductsList = ({
               name: twintProduct.name,
               quantity: 1,
               unitPrice: total,
-              currency: normalizeCurrencyCode(twintProduct.currency),
+              currency: resolveProductCurrency(twintProduct.currency),
               type: twintProduct.type,
               videoId: twintProduct.videoId,
             },
@@ -647,11 +721,16 @@ const ProductsList = ({
       }
 
       Alert.alert("Purchase Successful", "Twint payment completed successfully.");
+      if (activeVoucher && discount > 0) {
+        incrementUsageCount(activeVoucher.id);
+      }
       setShowTwintPaymentModal(false);
       setShowTwintWebViewModal(false);
       setTwintProduct(null);
       setSelectedProduct(null);
       setShowPaymentOptions(false);
+      setDiscountAmount(0);
+      clearActiveVoucher();
       setTwintCheckoutUrl(null);
       setTwintPaymentId(null);
       setTwintOrderId(null);
@@ -671,7 +750,7 @@ const ProductsList = ({
       setTwintOpeningApp(true);
       const opened = await openTwintApp({
         amount: getTotalPayableAmount(twintProduct.price).total,
-        currency: normalizeCurrencyCode(twintProduct.currency),
+        currency: resolveProductCurrency(twintProduct.currency),
         reference: twintReference,
         note: `Payment for ${twintProduct.name}`,
       });
@@ -712,8 +791,8 @@ const ProductsList = ({
       return;
     }
 
-    const { total } = getTotalPayableAmount(product.price);
-    const currency = normalizeCurrencyCode(product.currency);
+    const { total, discount, subtotalWithFee } = getDiscountedCheckoutTotal(product);
+    const currency = resolveProductCurrency(product.currency);
 
     setIsPaying(true);
     try {
@@ -725,7 +804,9 @@ const ProductsList = ({
         payment_method: "twint",
         payment_status: "pending",
         items: [{ product_id: product.id, quantity: 1, price: total, name: product.name }],
-        notes: `Twint reference: ${reference}`,
+        notes: activeVoucher
+          ? `Twint reference: ${reference}. Voucher applied: ${activeVoucher.code}`
+          : `Twint reference: ${reference}`,
       });
 
       const ownerId = resolveProductOwnerId(product);
@@ -744,6 +825,9 @@ const ProductsList = ({
           recipientId: ownerId,
           productId: product.id,
           type: "order_payment",
+          amountBeforeDiscount: subtotalWithFee,
+          discountAmount: discount,
+          voucherId: activeVoucher?.id,
         },
       });
 
@@ -790,6 +874,18 @@ const ProductsList = ({
         },
       ]
     );
+  };
+
+  const handleApplyVoucher = (amount: number, voucher?: { code: string }) => {
+    setDiscountAmount(amount);
+    if (voucher?.code) {
+      applyVoucher(voucher.code);
+    }
+  };
+
+  const handleClearVoucher = () => {
+    setDiscountAmount(0);
+    clearActiveVoucher();
   };
 
   const renderPaymentOptions = () => {
@@ -840,6 +936,17 @@ const ProductsList = ({
             Apple&nbsp;Pay/PassKit integration.
           </Text>
         )}
+        {hasAvailableVouchers && (
+          <TouchableOpacity
+            style={styles.voucherMethodButton}
+            onPress={() => setShowVoucherModal(true)}
+          >
+            <Tag size={16} color={Colors.dark.text} style={{ marginRight: 6 }} />
+            <Text style={styles.paymentMethodText}>
+              {activeVoucher && discountAmount > 0 ? `Voucher: ${activeVoucher.code}` : "Use Voucher"}
+            </Text>
+          </TouchableOpacity>
+        )}
         {primary.map(renderButton)}
         {!showMoreOptions && (
           <TouchableOpacity onPress={() => setShowMoreOptions(true)} style={styles.moreOptionsButton}>
@@ -863,7 +970,8 @@ const ProductsList = ({
 
   const renderProductItem = ({ item }: { item: Product }) => {
     const { fee, total } = getTotalPayableAmount(item.price);
-    const itemCurrency = normalizeCurrencyCode(item.currency);
+    const itemCurrency = resolveProductCurrency(item.currency);
+    const isOwnerView = canEditProduct(item);
 
     return (
       <View style={styles.productCard}>
@@ -908,14 +1016,16 @@ const ProductsList = ({
             <View style={styles.priceContainer}>
               <Text style={styles.productPrice}>{formatAmount(item.price, itemCurrency)}</Text>
 
-              <View style={styles.feeContainer}>
-                <Text style={styles.feeText}>
-                  {formatAmount(item.price, itemCurrency)} + {formatAmount(fee, itemCurrency)} platform fee
-                </Text>
-                <TouchableOpacity onPress={() => setShowPaymentOptions(true)}>
-                  <Info size={12} color={Colors.dark.subtext} />
-                </TouchableOpacity>
-              </View>
+              {!isOwnerView && (
+                <View style={styles.feeContainer}>
+                  <Text style={styles.feeText}>
+                    {formatAmount(item.price, itemCurrency)} + {formatAmount(fee, itemCurrency)} platform fee
+                  </Text>
+                  <TouchableOpacity onPress={() => setShowPaymentOptions(true)}>
+                    <Info size={12} color={Colors.dark.subtext} />
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
 
             <View style={styles.buttonGroup}>
@@ -933,6 +1043,10 @@ const ProductsList = ({
               <TouchableOpacity
                 style={[styles.actionButton, styles.buyButton]}
                 onPress={() => {
+                  if (selectedProduct?.id && selectedProduct.id !== item.id) {
+                    setDiscountAmount(0);
+                    clearActiveVoucher();
+                  }
                   setSelectedProduct(item);
                   setShowMoreOptions(false);
                   setShowPaymentOptions(true);
@@ -978,17 +1092,30 @@ const ProductsList = ({
 
       {showPaymentOptions && selectedProduct && (
         <View style={styles.paymentOptionsContainer}>
+          {(() => {
+            const checkout = getDiscountedCheckoutTotal(selectedProduct);
+            const productCurrency = resolveProductCurrency(selectedProduct.currency);
+            return (
+              <>
           <View style={styles.paymentSummary}>
             <Text style={styles.paymentOptionsTitle}>Pay for: {selectedProduct.name}</Text>
             <Text style={styles.paymentAmount}>
-              {formatAmount(
-                getTotalPayableAmount(selectedProduct.price).total,
-                normalizeCurrencyCode(selectedProduct.currency)
-              )} total
+              {formatAmount(checkout.total, productCurrency)} total
             </Text>
+            {checkout.discount > 0 && activeVoucher && (
+              <Text style={styles.discountCaption}>
+                {activeVoucher.code}: -{formatAmount(checkout.discount, productCurrency)}
+              </Text>
+            )}
           </View>
           <Text style={styles.paymentMethodLabel}>Select Payment Method</Text>
+          {!hasAvailableVouchers && (
+            <Text style={styles.noVoucherText}>No active vouchers available for this product.</Text>
+          )}
           {renderPaymentOptions()}
+              </>
+            );
+          })()}
         </View>
       )}
     </>
@@ -1010,7 +1137,7 @@ const ProductsList = ({
     // Read from the ref so we always get the latest product even from stale closures.
     const product = paystackProductRef.current;
     if (!product) return;
-    const { total } = getTotalPayableAmount(product.price);
+    const { total, discount, subtotalWithFee } = getDiscountedCheckoutTotal(product);
     const currentAuthId = buyerId || user?.id;
     try {
       setIsPaying(true);
@@ -1023,7 +1150,7 @@ const ProductsList = ({
         user_id: currentAuthId,
         video_id: product.videoId,
         total_amount: total,
-        currency: normalizeCurrencyCode(product.currency),
+        currency: resolveProductCurrency(product.currency),
         payment_method: 'paystack',
         payment_status: 'paid',
         items: [{ product_id: product.id, quantity: 1, price: total, name: product.name }],
@@ -1037,21 +1164,24 @@ const ProductsList = ({
         paymentTransactionId: reference,
         recipientId: ownerId,
         grossAmount: total,
-        netAmount: product.price,
-        currency: normalizeCurrencyCode(product.currency),
+        netAmount: getBusinessNetAmount(total),
+        currency: resolveProductCurrency(product.currency),
         videoId: product.videoId,
         items: [
           {
             productId: product.id,
             quantity: 1,
             unitPrice: product.price,
-            currency: normalizeCurrencyCode(product.currency),
+            currency: resolveProductCurrency(product.currency),
             ownerId,
           },
         ],
         metadata: {
           productId: product.id,
           baseAmount: product.price,
+          amountBeforeDiscount: subtotalWithFee,
+          discountAmount: discount,
+          voucherId: activeVoucher?.id,
           totalAmount: total,
         },
       });
@@ -1074,7 +1204,7 @@ const ProductsList = ({
           name: product.name,
           quantity: 1,
           unitPrice: total,
-          currency: normalizeCurrencyCode(product.currency),
+          currency: resolveProductCurrency(product.currency),
           type: product.type,
           videoId: product.videoId,
         }],
@@ -1087,8 +1217,13 @@ const ProductsList = ({
     // Only show success if we haven't been cancelled in the meantime.
     if (paystackCancelledRef.current) return;
     Alert.alert('Purchase Successful', 'Your Paystack payment was completed successfully.');
+    if (activeVoucher && discount > 0) {
+      incrementUsageCount(activeVoucher.id);
+    }
     paystackProductRef.current = null;
     setPaystackProduct(null);
+    setDiscountAmount(0);
+    clearActiveVoucher();
     onClose();
   };
 
@@ -1121,10 +1256,15 @@ const ProductsList = ({
             setShowPaystackModal(false);
             setPaystackProduct(null);
           }}
-          amount={getTotalPayableAmount(paystackProduct.price).total}
+          amount={getDiscountedCheckoutTotal(paystackProduct).total}
           email={buyerEmail || user?.email || ''}
           description={`Purchase: ${paystackProduct.name}`}
-          metadata={{ productId: paystackProduct.id, videoId }}
+          metadata={{
+            productId: paystackProduct.id,
+            videoId,
+            voucherId: activeVoucher?.id,
+            discountAmount,
+          }}
         />
       )}
 
@@ -1132,8 +1272,8 @@ const ProductsList = ({
         <TwintPaymentModal
           visible={showTwintPaymentModal}
           amountLabel={formatAmount(
-            getTotalPayableAmount(twintProduct.price).total,
-            normalizeCurrencyCode(twintProduct.currency)
+            getDiscountedCheckoutTotal(twintProduct).total,
+            resolveProductCurrency(twintProduct.currency)
           )}
           reference={twintReference}
           description={`Pay for ${twintProduct.name} with Twint app, then confirm after successful payment.`}
@@ -1172,6 +1312,16 @@ const ProductsList = ({
             "cancelled",
           ]}
           onComplete={completeTwintPayment}
+        />
+      )}
+
+      {selectedProduct && (
+        <ApplyVoucherModal
+          visible={showVoucherModal}
+          onClose={() => setShowVoucherModal(false)}
+          onApply={handleApplyVoucher}
+          totalAmount={getTotalPayableAmount(selectedProduct.price).total}
+          productId={selectedProduct.id}
         />
       )}
     </>
@@ -1216,6 +1366,12 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: Colors.dark.primary,
   },
+  discountCaption: {
+    fontSize: 12,
+    color: "#4CAF50",
+    marginTop: 6,
+    fontWeight: "600",
+  },
   noticeText: {
     fontSize: 12,
     color: Colors.dark.subtext,
@@ -1241,6 +1397,22 @@ const styles = StyleSheet.create({
   paymentMethodText: {
     fontSize: 14,
     color: Colors.dark.text,
+  },
+  voucherMethodButton: {
+    padding: 12,
+    backgroundColor: "rgba(76, 175, 80, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(76, 175, 80, 0.4)",
+    borderRadius: 8,
+    marginVertical: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+  },
+  noVoucherText: {
+    fontSize: 12,
+    color: Colors.dark.subtext,
+    marginBottom: 8,
   },
 
   moreOptionsButton: {

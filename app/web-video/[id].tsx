@@ -22,6 +22,12 @@ export default function WebVideoScreen() {
   const router = useRouter();
   const [video, setVideo] = useState<Video | null>(null);
 
+  const getUploaderUsername = (inputVideo: Video | null) => {
+    const rawUsername = String(inputVideo?.user?.username || '').trim();
+    if (!rawUsername) return null;
+    return `@${rawUsername.replace(/^@+/, '')}`;
+  };
+
   useEffect(() => {
     if (id) {
       const foundVideo = mockVideos.find((v) => v.id === id);
@@ -32,9 +38,18 @@ export default function WebVideoScreen() {
   const handleShare = async () => {
     if (!video) return;
     const shareLink = buildVideoShareUrl(video.id);
+    const uploaderUsername = getUploaderUsername(video);
+    const shareMessage = [
+      `Check out this event: ${video.eventName} at ${video.location.name}`,
+      uploaderUsername ? `Uploaded by ${uploaderUsername}` : null,
+      shareLink,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
     try {
       await Share.share({
-        message: `Check out this event: ${video.eventName} at ${video.location.name}\n\n${shareLink}`,
+        message: shareMessage,
         title: video.eventName,
         url: shareLink,
       });
@@ -61,6 +76,7 @@ export default function WebVideoScreen() {
   }
 
   const pageUrl = buildVideoShareUrl(video.id);
+  const uploaderUsername = getUploaderUsername(video);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -136,6 +152,7 @@ export default function WebVideoScreen() {
             <View style={styles.userCard}>
               <Text style={styles.userLabel}>Hosted by</Text>
               <Text style={styles.userName}>{video.user?.displayName || video.user?.name}</Text>
+              {uploaderUsername && <Text style={styles.userUsername}>{uploaderUsername}</Text>}
               {video.user?.avatar && (
                 <Text style={styles.userAvatar}>👤</Text>
               )}
@@ -273,6 +290,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: Colors.dark.text,
+  },
+  userUsername: {
+    fontSize: 14,
+    color: Colors.dark.subtext,
+    marginTop: 2,
   },
   userAvatar: {
     fontSize: 32,

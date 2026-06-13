@@ -464,3 +464,18 @@ entrypoint = "./functions/paystack-bank-list/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/paystack-withdraw-business-bank-account/index.ts"
+
+[functions.paystack-webhook-settlement]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/paystack-webhook-settlement/index.ts"
+
+[functions.backfill-external-settlements]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/backfill-external-settlements/index.ts"
+
+[functions.repair-single-external-settlement]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/repair-single-external-settlement/index.ts"

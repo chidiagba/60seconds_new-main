@@ -167,11 +167,6 @@ export default function SearchScreen() {
     if (type === "event") {
       const videoId = data?.video_id;
 
-      if (videoId) {
-        openHomeVideo(videoId);
-        return;
-      }
-
       if (isEventClosed({
         status: data?.status,
         startDate: data?.start_date,
@@ -179,6 +174,11 @@ export default function SearchScreen() {
         eventDate: data?.event_date,
       })) {
         setClosedEvent(data);
+        return;
+      }
+
+      if (videoId) {
+        openHomeVideo(videoId);
         return;
       }
 

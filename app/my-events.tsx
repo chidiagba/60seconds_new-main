@@ -50,14 +50,27 @@ export default function MyEventsScreen() {
   );
 
   const openEvent = (event: EventWithProducts) => {
-    const closed = isEventClosed({ status: event.status, startDate: event.start_date, endDate: event.end_date });
+    const closed = isEventClosed({
+      status: event.status,
+      startDate: event.start_date,
+      endDate: event.end_date,
+      eventDate: (event as any).event_date,
+    });
     if (closed) {
       setEndedEvent(event);
       return;
     }
 
-    const targetId = event.video_id || event.video?.id || event.id;
-    router.push({ pathname: '/event/[id]', params: { id: targetId } });
+    const videoId = event.video_id || event.video?.id;
+    if (videoId) {
+      router.push({
+        pathname: (user?.isBusinessAccount ? '/(tabsbusiness)' : '/(tabs)') as any,
+        params: { selectedVideoId: videoId },
+      });
+      return;
+    }
+
+    router.push({ pathname: '/event/[id]', params: { id: event.id } });
   };
 
   if (authLoading) {
@@ -97,7 +110,7 @@ export default function MyEventsScreen() {
           <Text style={styles.summaryLabel}>Created events</Text>
         </View>
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryValue}>{events.filter((event) => isEventClosed({ status: event.status, startDate: event.start_date, endDate: event.end_date })).length}</Text>
+          <Text style={styles.summaryValue}>{events.filter((event) => isEventClosed({ status: event.status, startDate: event.start_date, endDate: event.end_date, eventDate: (event as any).event_date })).length}</Text>
           <Text style={styles.summaryLabel}>Closed events</Text>
         </View>
       </View>
@@ -122,7 +135,7 @@ export default function MyEventsScreen() {
         </View>
       ) : (
         events.map((event) => {
-          const closed = isEventClosed({ status: event.status, startDate: event.start_date, endDate: event.end_date });
+          const closed = isEventClosed({ status: event.status, startDate: event.start_date, endDate: event.end_date, eventDate: (event as any).event_date });
           const statusLabel = event.status === 'draft' ? 'Draft' : closed ? 'Closed' : 'Open';
           const thumbnail = event.video?.thumbnail_url || event.image_url || 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=80';
 

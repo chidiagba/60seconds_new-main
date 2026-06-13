@@ -1,26 +1,34 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, History } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useWalletStore } from '@/store/wallet-store';
+import { useAuthStore } from '@/store/auth-store';
 import TransactionItem from '@/components/TransactionItem';
 import { Transaction } from '@/types/wallet';
 
 export default function TransactionsScreen() {
   const router = useRouter();
-  const { transactions, fetchTransactions, isLoading } = useWalletStore();
+  const { ledger } = useLocalSearchParams<{ ledger?: string }>();
+  const { user } = useAuthStore();
+  const { transactions, fetchWallet, fetchTransactions, isLoading } = useWalletStore();
   
   useEffect(() => {
-    fetchTransactions();
-  }, []);
+    const loadTransactions = async () => {
+      await fetchWallet();
+      await fetchTransactions();
+    };
+
+    loadTransactions();
+  }, [fetchTransactions, fetchWallet]);
   
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
       return;
     }
-    router.replace('/(tabs)/wallet');
+    router.replace(user?.isBusinessAccount ? '/(tabsbusiness)/wallet' : '/(tabs)/wallet');
   };
   
   const handleTransactionPress = (transaction: Transaction) => {
@@ -29,6 +37,15 @@ export default function TransactionsScreen() {
       params: { id: transaction.id }
     });
   };
+
+  const isBusinessLedger = ledger === 'business' || user?.isBusinessAccount;
+  const visibleTransactions = isBusinessLedger
+    ? transactions.filter((transaction) => {
+      const entry = String((transaction.metadata as any)?.entry || '').trim();
+      if (entry === 'owner_credit' || entry === 'owner_withdrawal') return true;
+      return transaction.type !== 'fee';
+    })
+    : transactions;
   
   const renderTransactionItem = ({ item }: { item: Transaction }) => (
     <TransactionItem 
@@ -47,11 +64,11 @@ export default function TransactionsScreen() {
         <View style={styles.placeholder} />
       </View>
       
-      {isLoading && transactions.length === 0 ? (
+      {isLoading && visibleTransactions.length === 0 ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.dark.primary} />
         </View>
-      ) : transactions.length === 0 ? (
+      ) : visibleTransactions.length === 0 ? (
         <View style={styles.emptyContainer}>
           <History size={64} color={Colors.dark.subtext} />
           <Text style={styles.emptyText}>No transactions yet</Text>
@@ -59,7 +76,7 @@ export default function TransactionsScreen() {
         </View>
       ) : (
         <FlatList
-          data={transactions}
+          data={visibleTransactions}
           renderItem={renderTransactionItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.transactionsList}

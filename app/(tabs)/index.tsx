@@ -353,27 +353,7 @@ export default function HomeScreen() {
     return filtered;
   }, [videos, unavailableVideoIds, isVideoHidden, isUserBlocked]);
 
-  const videosForFeed = useMemo(() => {
-    if (!pendingSelectedVideoId || visibleVideos.length === 0) {
-      return visibleVideos;
-    }
-
-    const selectedIndex = visibleVideos.findIndex((video) => String(video.id) === String(pendingSelectedVideoId));
-    
-    if (selectedIndex === -1) {
-      console.warn(`📹 Home: Selected video ${pendingSelectedVideoId} not found in visible videos (count: ${visibleVideos.length})`);
-      return visibleVideos;
-    }
-
-    const selectedVideo = visibleVideos[selectedIndex];
-    console.log(`📹 Home: Focusing on selected video ${selectedVideo.id} at index ${selectedIndex}`);
-    
-    return [
-      selectedVideo,
-      ...visibleVideos.slice(0, selectedIndex),
-      ...visibleVideos.slice(selectedIndex + 1),
-    ];
-  }, [pendingSelectedVideoId, visibleVideos]);
+  const videosForFeed = useMemo(() => visibleVideos, [visibleVideos]);
 
   useEffect(() => {
     if (!pendingSelectedVideoId || videosForFeed.length === 0) {
@@ -381,8 +361,7 @@ export default function HomeScreen() {
       return;
     }
 
-    // When the pending video is finally found and placed at index 0 (by our useMemo logic)
-    if (videosForFeed[0]?.id === pendingSelectedVideoId) {
+    if (String(videosForFeed[0]?.id) === String(pendingSelectedVideoId)) {
       console.log(`📹 Home: Pending video ${pendingSelectedVideoId} is now at index 0, scrolling...`);
       setVisibleVideoIndex(0);
       setCurrentVideoIndex(0);
@@ -449,7 +428,7 @@ export default function HomeScreen() {
         return;
       }
 
-      const selectedIndex = videosForFeed.findIndex((video) => video.id === pendingSelectedVideoId);
+      const selectedIndex = videosForFeed.findIndex((video) => String(video.id) === String(pendingSelectedVideoId));
       if (selectedIndex >= 0) {
         requestAnimationFrame(() => {
           flatListRef.current?.scrollToIndex({ index: selectedIndex, animated: false });
@@ -727,7 +706,6 @@ const styles = StyleSheet.create({
   videoContainer: {
     width: SCREEN_WIDTH,
     position: 'relative',
-    flex:1
   },
   loadingContainer: {
     flex: 1,

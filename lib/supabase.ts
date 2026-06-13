@@ -418,7 +418,7 @@ export type Database = {
           business_id?: string;
           is_public: boolean;
           requires_approval: boolean;
-          status: 'draft' | 'published' | 'cancelled' | 'completed';
+          status: 'draft' | 'published' | 'open' | 'closed' | 'cancelled' | 'completed';
           created_at: string;
           updated_at: string;
         };
@@ -449,7 +449,7 @@ export type Database = {
           business_id?: string;
           is_public?: boolean;
           requires_approval?: boolean;
-          status?: 'draft' | 'published' | 'cancelled' | 'completed';
+          status?: 'draft' | 'published' | 'open' | 'closed' | 'cancelled' | 'completed';
           created_at?: string;
           updated_at?: string;
         };
@@ -480,7 +480,7 @@ export type Database = {
           business_id?: string;
           is_public?: boolean;
           requires_approval?: boolean;
-          status?: 'draft' | 'published' | 'cancelled' | 'completed';
+          status?: 'draft' | 'published' | 'open' | 'closed' | 'cancelled' | 'completed';
           created_at?: string;
           updated_at?: string;
         };

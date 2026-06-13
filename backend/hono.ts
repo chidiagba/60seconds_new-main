@@ -29,7 +29,7 @@ const WatermarkRequestSchema = z.object({
   videoUrl: z.string().url(),
   position: z.enum(['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center']).optional(),
   opacity: z.number().min(0.15).max(1).optional(),
-  scale: z.number().min(0.08).max(0.4).optional(),
+  scale: z.number().min(0.04).max(0.2).optional(),
 });
 
 function getOverlayExpression(position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center') {
@@ -81,6 +81,438 @@ async function runBestEffortMutation(
   } catch (error) {
     console.warn(`⚠️ ${label} cleanup exception:`, error);
   }
+}
+
+const DEFAULT_PLATFORM_FEE_RATE = 0.04;
+
+const roundMoney = (value: number): number => Number(Number(value || 0).toFixed(2));
+
+function deriveNetAmount(
+  grossAmount: number,
+  explicitNetAmount?: number | null,
+  explicitPlatformFeeAmount?: number | null
+) {
+  const parsedGross = Number(grossAmount || 0);
+  const parsedNet = Number(explicitNetAmount);
+  const parsedFee = Number(explicitPlatformFeeAmount);
+
+  if (Number.isFinite(parsedGross) && parsedGross > 0 && Number.isFinite(parsedNet) && parsedNet > 0) {
+    const clampedNet = Math.min(parsedNet, parsedGross);
+
+    if (Number.isFinite(parsedFee) && parsedFee >= 0) {
+      const expectedNet = roundMoney(Math.max(0, parsedGross - parsedFee));
+      if (Math.abs(expectedNet - clampedNet) <= 0.01) {
+        return expectedNet;
+      }
+    } else {
+      return roundMoney(clampedNet);
+    }
+  }
+
+  if (!Number.isFinite(parsedGross) || parsedGross <= 0) {
+    return 0;
+  }
+
+  return roundMoney(parsedGross / (1 + DEFAULT_PLATFORM_FEE_RATE));
+}
+
+async function resolveOrderOwnerId(orderRow: any, metadata: any) {
+  if (!supabase) return null;
+
+  const explicitRecipientId = metadata?.recipientId || metadata?.recipient_id || null;
+  if (explicitRecipientId) return String(explicitRecipientId);
+
+  if (orderRow?.business_id) {
+    return String(orderRow.business_id);
+  }
+
+  if (orderRow?.event_id) {
+    const { data: eventRow } = await supabase
+      .from('events')
+      .select('id,user_id')
+      .eq('id', orderRow.event_id)
+      .maybeSingle();
+    if (eventRow?.user_id) {
+      return String(eventRow.user_id);
+    }
+  }
+
+  const productIds = Array.from(
+    new Set(
+      (Array.isArray(orderRow?.items) ? orderRow.items : [])
+        .map((item: any) => item?.product_id || item?.productId)
+        .filter((value: any) => !!value)
+    )
+  );
+
+  if (!productIds.length) {
+    return null;
+  }
+
+  const { data: products, error: productsError } = await supabase
+    .from('products')
+    .select('id,business_id,event_id')
+    .in('id', productIds);
+
+  if (productsError) {
+    throw new Error(`Failed to resolve product owners: ${productsError.message}`);
+  }
+
+  const owners = new Set<string>();
+
+  for (const product of products || []) {
+    if (product?.business_id) {
+      owners.add(String(product.business_id));
+      continue;
+    }
+
+    if (product?.event_id) {
+      const { data: eventRow } = await supabase
+        .from('events')
+        .select('id,user_id')
+        .eq('id', product.event_id)
+        .maybeSingle();
+      if (eventRow?.user_id) {
+        owners.add(String(eventRow.user_id));
+      }
+    }
+  }
+
+  if (owners.size !== 1) {
+    return null;
+  }
+
+  return Array.from(owners)[0];
+}
+
+async function settlePaystackOrderPayment(args: {
+  transaction: any;
+  metadata: any;
+}) {
+  if (!supabase) {
+    throw new Error('Supabase server client is not configured.');
+  }
+
+  const { transaction, metadata } = args;
+  const orderId = String(metadata?.orderId || metadata?.order_id || '').trim();
+  if (!orderId) {
+    throw new Error('Missing orderId in Paystack metadata for order settlement.');
+  }
+
+  const reference = String(transaction?.reference || '').trim() || null;
+  const transactionId = String(transaction?.id || reference || '').trim() || null;
+  const grossAmount = roundMoney(Number(transaction?.amount || 0) / 100);
+  const currency = String(transaction?.currency || metadata?.currency || 'NGN').toUpperCase();
+  const nowIso = new Date().toISOString();
+
+  const { data: existingSettlement, error: existingSettlementError } = await supabase
+    .from('transactions')
+    .select('id')
+    .eq('metadata->>entry', 'owner_credit')
+    .eq('metadata->>order_id', orderId)
+    .limit(1);
+
+  if (existingSettlementError) {
+    throw new Error(`Failed to check existing settlement: ${existingSettlementError.message}`);
+  }
+
+  const alreadySettled = (existingSettlement || []).length > 0;
+
+  const { data: orderRow, error: orderFetchError } = await supabase
+    .from('orders')
+    .select('id,user_id,business_id,total_amount,video_id,event_id,items')
+    .eq('id', orderId)
+    .maybeSingle();
+
+  if (orderFetchError || !orderRow) {
+    throw new Error(`Failed to fetch order for settlement: ${orderFetchError?.message || orderId}`);
+  }
+
+  const grossAmountFromOrder = roundMoney(Number(orderRow?.total_amount || 0));
+  const effectiveGrossAmount = grossAmount > 0 ? grossAmount : grossAmountFromOrder;
+  const netAmount = deriveNetAmount(
+    effectiveGrossAmount,
+    Number(metadata?.netAmount ?? metadata?.net_amount ?? null),
+    Number(metadata?.platformFeeAmount ?? metadata?.platform_fee_amount ?? null)
+  );
+  const platformFeeAmount = roundMoney(Math.max(0, effectiveGrossAmount - netAmount));
+
+  const ownerId = await resolveOrderOwnerId(orderRow, metadata);
+  if (!ownerId) {
+    throw new Error('Could not resolve product owner for settlement.');
+  }
+
+  const orderUpdatePayload: any = {
+    status: 'completed',
+    payment_status: 'paid',
+    payment_provider: 'paystack',
+    payment_reference: reference,
+    payment_transaction_id: transactionId,
+    payment_gateway_response: transaction,
+    payment_metadata: {
+      ...(metadata || {}),
+      settlement_entry: 'owner_credit',
+      owner_id: ownerId,
+      gross_amount: effectiveGrossAmount,
+      platform_fee_amount: platformFeeAmount,
+      net_amount: netAmount,
+      currency,
+    },
+    business_id: ownerId,
+    updated_at: nowIso,
+  };
+
+  const { error: orderUpdateError } = await supabase
+    .from('orders')
+    .update(orderUpdatePayload)
+    .eq('id', orderId);
+
+  if (orderUpdateError) {
+    throw new Error(`Failed to update order payment status: ${orderUpdateError.message}`);
+  }
+
+  const { error: paymentUpsertError } = await supabase
+    .from('payments')
+    .upsert(
+      {
+        order_id: orderId,
+        user_id: metadata?.userId || orderRow.user_id || null,
+        payment_provider: 'paystack',
+        payment_method_id: transaction?.authorization?.authorization_code || null,
+        amount: effectiveGrossAmount,
+        currency,
+        status: 'completed',
+        transaction_id: transactionId,
+        gateway_reference: reference,
+        gateway_response: transaction,
+        metadata: {
+          ...(metadata || {}),
+          owner_id: ownerId,
+          gross_amount: effectiveGrossAmount,
+          platform_fee_amount: platformFeeAmount,
+          net_amount: netAmount,
+        },
+        processing_fee: platformFeeAmount,
+        net_amount: netAmount,
+        completed_at: nowIso,
+        updated_at: nowIso,
+      },
+      { onConflict: 'transaction_id' }
+    );
+
+  if (paymentUpsertError) {
+    throw new Error(`Failed to upsert payment record: ${paymentUpsertError.message}`);
+  }
+
+  if (alreadySettled) {
+    return {
+      orderId,
+      ownerId,
+      grossAmount: effectiveGrossAmount,
+      netAmount,
+      platformFeeAmount,
+      alreadySettled: true,
+    };
+  }
+
+  const { data: ownerWallet, error: ownerWalletError } = await supabase
+    .from('wallets')
+    .upsert(
+      {
+        user_id: ownerId,
+        currency,
+        is_verified: true,
+        is_active: true,
+        updated_at: nowIso,
+      },
+      { onConflict: 'user_id' }
+    )
+    .select('id,balance')
+    .single();
+
+  if (ownerWalletError || !ownerWallet) {
+    throw new Error(`Failed to prepare owner wallet: ${ownerWalletError?.message || 'unknown error'}`);
+  }
+
+  const updatedOwnerBalance = roundMoney(Number(ownerWallet.balance || 0) + netAmount);
+  const { error: ownerWalletBalanceError } = await supabase
+    .from('wallets')
+    .update({ balance: updatedOwnerBalance, updated_at: nowIso })
+    .eq('id', ownerWallet.id);
+
+  if (ownerWalletBalanceError) {
+    throw new Error(`Failed to credit owner wallet: ${ownerWalletBalanceError.message}`);
+  }
+
+  const ownerTransaction = {
+    wallet_id: ownerWallet.id,
+    amount: netAmount,
+    type: 'deposit',
+    status: 'completed',
+    description: 'Paystack sale settlement',
+    transaction_fee: 0,
+    metadata: {
+      entry: 'owner_credit',
+      payment_provider: 'paystack',
+      owner_id: ownerId,
+      buyer_id: orderRow.user_id,
+      order_id: orderId,
+      video_id: orderRow.video_id || metadata?.videoId || metadata?.video_id || null,
+      payment_reference: reference,
+      payment_transaction_id: transactionId,
+      gross_amount: effectiveGrossAmount,
+      platform_fee_amount: platformFeeAmount,
+      net_amount: netAmount,
+      currency,
+    },
+    created_at: nowIso,
+    updated_at: nowIso,
+  };
+
+  const { error: ownerTxError } = await supabase.from('transactions').insert(ownerTransaction);
+  if (ownerTxError) {
+    throw new Error(`Failed to insert owner credit transaction: ${ownerTxError.message}`);
+  }
+
+  const { data: buyerWallet } = await supabase
+    .from('wallets')
+    .upsert(
+      {
+        user_id: orderRow.user_id,
+        currency,
+        is_active: true,
+        updated_at: nowIso,
+      },
+      { onConflict: 'user_id' }
+    )
+    .select('id')
+    .single();
+
+  if (buyerWallet?.id) {
+    await supabase.from('transactions').insert({
+      wallet_id: buyerWallet.id,
+      amount: -effectiveGrossAmount,
+      type: 'payment',
+      status: 'completed',
+      description: 'Paystack purchase',
+      transaction_fee: platformFeeAmount,
+      metadata: {
+        entry: 'buyer_debit',
+        payment_provider: 'paystack',
+        order_id: orderId,
+        owner_id: ownerId,
+        payment_reference: reference,
+        payment_transaction_id: transactionId,
+        gross_amount: effectiveGrossAmount,
+        platform_fee_amount: platformFeeAmount,
+        net_amount: netAmount,
+        currency,
+      },
+      created_at: nowIso,
+      updated_at: nowIso,
+    });
+  }
+
+  return {
+    orderId,
+    ownerId,
+    grossAmount: effectiveGrossAmount,
+    netAmount,
+    platformFeeAmount,
+    ownerWalletBalance: updatedOwnerBalance,
+    alreadySettled: false,
+  };
+}
+
+async function settlePaystackWalletFunding(args: {
+  transaction: any;
+  metadata: any;
+}) {
+  if (!supabase) {
+    throw new Error('Supabase server client is not configured.');
+  }
+
+  const { transaction, metadata } = args;
+  const userId = String(metadata?.userId || metadata?.user_id || '').trim();
+  if (!userId) {
+    throw new Error('Missing userId in wallet funding metadata.');
+  }
+
+  const reference = String(transaction?.reference || '').trim() || null;
+  const transactionId = String(transaction?.id || reference || '').trim() || null;
+  const amount = roundMoney(Number(transaction?.amount || 0) / 100);
+  const currency = String(transaction?.currency || metadata?.currency || 'NGN').toUpperCase();
+  const nowIso = new Date().toISOString();
+
+  const { data: existingFundingTx, error: existingFundingTxError } = await supabase
+    .from('transactions')
+    .select('id')
+    .eq('metadata->>entry', 'wallet_funding')
+    .eq('metadata->>payment_transaction_id', transactionId || '')
+    .limit(1);
+
+  if (existingFundingTxError) {
+    throw new Error(`Failed to check wallet funding idempotency: ${existingFundingTxError.message}`);
+  }
+
+  if ((existingFundingTx || []).length > 0) {
+    return { userId, amount, alreadySettled: true };
+  }
+
+  const { data: wallet, error: walletError } = await supabase
+    .from('wallets')
+    .upsert(
+      {
+        user_id: userId,
+        currency,
+        is_active: true,
+        updated_at: nowIso,
+      },
+      { onConflict: 'user_id' }
+    )
+    .select('id,balance')
+    .single();
+
+  if (walletError || !wallet) {
+    throw new Error(`Failed to prepare wallet for funding: ${walletError?.message || 'unknown error'}`);
+  }
+
+  const newBalance = roundMoney(Number(wallet.balance || 0) + amount);
+  const { error: walletBalanceError } = await supabase
+    .from('wallets')
+    .update({ balance: newBalance, updated_at: nowIso })
+    .eq('id', wallet.id);
+
+  if (walletBalanceError) {
+    throw new Error(`Failed to update funded wallet balance: ${walletBalanceError.message}`);
+  }
+
+  const { error: txInsertError } = await supabase
+    .from('transactions')
+    .insert({
+      wallet_id: wallet.id,
+      amount,
+      type: 'deposit',
+      status: 'completed',
+      description: `Wallet funding via Paystack - ${reference || transactionId || 'N/A'}`,
+      transaction_fee: 0,
+      metadata: {
+        entry: 'wallet_funding',
+        payment_provider: 'paystack',
+        payment_reference: reference,
+        payment_transaction_id: transactionId,
+        currency,
+        user_id: userId,
+      },
+      created_at: nowIso,
+      updated_at: nowIso,
+    });
+
+  if (txInsertError) {
+    throw new Error(`Failed to insert wallet funding transaction: ${txInsertError.message}`);
+  }
+
+  return { userId, amount, newBalance, alreadySettled: false };
 }
 
 async function runWatermarkFfmpeg(inputPath: string, outputPath: string, options: { position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'; opacity: number; scale: number; }) {
@@ -365,6 +797,40 @@ app.post("/api/paystack/webhook", async (c) => {
     // Handle different webhook events
     switch (body.event) {
       case 'charge.success':
+        const paystackTx = body.data || {};
+        const paystackMetadata = paystackTx?.metadata && typeof paystackTx.metadata === 'object' ? paystackTx.metadata : {};
+        const paymentType = String(
+          paystackMetadata.paymentType ||
+          paystackMetadata.payment_type ||
+          paystackMetadata.type ||
+          'order_payment'
+        )
+          .trim()
+          .toLowerCase();
+
+        if (!supabase) {
+          console.warn('⚠️ Supabase client not initialized - cannot settle Paystack webhook payment.');
+          break;
+        }
+
+        try {
+          if (paymentType === 'wallet_funding') {
+            const fundingResult = await settlePaystackWalletFunding({
+              transaction: paystackTx,
+              metadata: paystackMetadata,
+            });
+            console.log('✅ Paystack wallet funding settled:', fundingResult);
+          } else {
+            const settlementResult = await settlePaystackOrderPayment({
+              transaction: paystackTx,
+              metadata: paystackMetadata,
+            });
+            console.log('✅ Paystack order settlement completed:', settlementResult);
+          }
+        } catch (settlementError: any) {
+          console.error('❌ Paystack settlement failed:', settlementError?.message || settlementError);
+        }
+
         console.log('✅ Payment successful via webhook:', {
           reference: body.data.reference,
           amount: (body.data.amount / 100).toFixed(2),

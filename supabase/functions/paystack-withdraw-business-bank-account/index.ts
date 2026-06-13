@@ -34,6 +34,10 @@ const normalize = (value: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const isUuidLike = (value?: string | null) =>
+  typeof value === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+
 const createRecipient = async (payload: { name: string; accountNumber: string; bankCode: string; currency: string }) => {
   const response = await fetch('https://api.paystack.co/transferrecipient', {
     method: 'POST',
@@ -71,15 +75,45 @@ const ensureRecipientCode = async (bankAccount: any) => {
     currency: String(bankAccount?.currency || 'NGN').trim().toUpperCase() || 'NGN',
   });
 
-  await supabaseAdmin
-    .from('business_bank_accounts')
-    .update({
-      paystack_recipient_code: recipient?.recipient_code || null,
-      paystack_recipient_id: recipient?.id || null,
-    })
-    .eq('id', bankAccount.id);
+  if (isUuidLike(bankAccount?.id)) {
+    await supabaseAdmin
+      .from('business_bank_accounts')
+      .update({
+        paystack_recipient_code: recipient?.recipient_code || null,
+        paystack_recipient_id: recipient?.id || null,
+      })
+      .eq('id', bankAccount.id);
+  }
 
   return recipient?.recipient_code || '';
+};
+
+const buildFallbackBankAccount = (payload: any, userId: string) => {
+  const bankName = String(payload?.bankName || '').trim();
+  const accountName = String(payload?.accountName || '').trim();
+  const accountNumber = String(payload?.accountNumber || '').trim();
+  const bankCode = String(payload?.bankCode || '').trim();
+  const payoutProvider = String(payload?.payoutProvider || 'paystack').trim().toLowerCase() || 'paystack';
+  const paystackRecipientCode = String(payload?.paystackRecipientCode || '').trim();
+  const currency = String(payload?.currency || 'NGN').trim().toUpperCase() || 'NGN';
+
+  if (!bankName || !accountName || !accountNumber) {
+    return null;
+  }
+
+  return {
+    id: isUuidLike(payload?.businessBankAccountId) ? String(payload.businessBankAccountId) : `meta_${userId}`,
+    user_id: userId,
+    bank_name: bankName,
+    account_holder_name: accountName,
+    account_number: accountNumber,
+    bank_code: bankCode,
+    payout_provider: payoutProvider,
+    currency,
+    is_verified: true,
+    paystack_recipient_code: paystackRecipientCode,
+    paystack_recipient_id: String(payload?.paystackRecipientId || '').trim() || null,
+  };
 };
 
 const createTransfer = async (payload: { recipient: string; amount: number; reason: string; reference: string }) => {
@@ -101,6 +135,98 @@ const createTransfer = async (payload: { recipient: string; amount: number; reas
   }
 
   return body.data;
+};
+
+const isCompletedTransferStatus = (status: string) => String(status || '').trim().toLowerCase() === 'success';
+
+const mapTransferStatusToTxStatus = (status: string): 'completed' | 'pending' =>
+  isCompletedTransferStatus(status) ? 'completed' : 'pending';
+
+const reserveWalletFundsForWithdrawal = async (params: {
+  userId: string;
+  amount: number;
+  transferStatus: string;
+  transfer: any;
+  reference: string;
+  withdrawalRequestId?: string;
+}) => {
+  const { userId, amount, transferStatus, transfer, reference, withdrawalRequestId } = params;
+
+  const { data: wallet, error: walletError } = await supabaseAdmin
+    .from('wallets')
+    .select('id,balance,currency')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (walletError) {
+    throw new Error(`Failed to load wallet for withdrawal: ${walletError.message}`);
+  }
+
+  if (!wallet?.id) {
+    throw new Error('No wallet found for this user');
+  }
+
+  if (withdrawalRequestId) {
+    const { data: existingTx } = await supabaseAdmin
+      .from('transactions')
+      .select('id')
+      .eq('wallet_id', wallet.id)
+      .eq('metadata->>entry', 'owner_withdrawal')
+      .eq('metadata->>withdrawal_request_id', withdrawalRequestId)
+      .maybeSingle();
+
+    if (existingTx?.id) {
+      return { wallet, alreadyRecorded: true, balanceAfter: Number(wallet.balance || 0), txId: existingTx.id };
+    }
+  }
+
+  const currentBalance = Number(wallet.balance || 0);
+  if (currentBalance < amount) {
+    throw new Error('Insufficient withdrawable wallet balance');
+  }
+
+  const nextBalance = Number((currentBalance - amount).toFixed(2));
+  const nowIso = new Date().toISOString();
+  const txStatus = mapTransferStatusToTxStatus(transferStatus);
+
+  const { data: insertedTx, error: txError } = await supabaseAdmin
+    .from('transactions')
+    .insert({
+      wallet_id: wallet.id,
+      amount,
+      type: 'withdrawal',
+      status: txStatus,
+      description: 'Wallet withdrawal to linked bank account',
+      transaction_fee: 0,
+      metadata: {
+        entry: 'owner_withdrawal',
+        payout_provider: 'paystack',
+        withdrawal_request_id: withdrawalRequestId || null,
+        paystack_transfer_id: transfer?.id ? String(transfer.id) : null,
+        paystack_transfer_code: transfer?.transfer_code ? String(transfer.transfer_code) : null,
+        paystack_status: transferStatus,
+        reference,
+      },
+      created_at: nowIso,
+      updated_at: nowIso,
+    })
+    .select('id')
+    .single();
+
+  if (txError || !insertedTx?.id) {
+    throw new Error(`Failed to record withdrawal transaction: ${txError?.message || 'unknown error'}`);
+  }
+
+  const { error: walletUpdateError } = await supabaseAdmin
+    .from('wallets')
+    .update({ balance: nextBalance, updated_at: nowIso })
+    .eq('id', wallet.id);
+
+  if (walletUpdateError) {
+    throw new Error(`Failed to update wallet balance after withdrawal: ${walletUpdateError.message}`);
+  }
+
+  return { wallet, alreadyRecorded: false, balanceAfter: nextBalance, txId: insertedTx.id };
 };
 
 Deno.serve(async (req) => {
@@ -155,19 +281,22 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to load business bank account: ${bankError.message}`);
     }
 
-    if (!bankAccount) {
+    const fallbackBankAccount = !bankAccount ? buildFallbackBankAccount(payload, userData.user.id) : null;
+    const effectiveBankAccount = bankAccount || fallbackBankAccount;
+
+    if (!effectiveBankAccount) {
       throw new Error('No active business bank account found for this withdrawal');
     }
 
-    if (String(bankAccount.payout_provider || '').toLowerCase() !== 'paystack' || countryCode !== 'NG') {
+    if (String(effectiveBankAccount.payout_provider || '').toLowerCase() !== 'paystack' || countryCode !== 'NG') {
       throw new Error('This withdrawal route is only for Nigerian Paystack payout accounts');
     }
 
-    if (bankAccount.is_verified !== true) {
+    if (effectiveBankAccount.is_verified !== true) {
       throw new Error('Paystack bank account is not verified yet');
     }
 
-    const recipient = await ensureRecipientCode(bankAccount);
+    const recipient = await ensureRecipientCode(effectiveBankAccount);
     if (!recipient) {
       throw new Error('Unable to resolve a Paystack transfer recipient');
     }
@@ -180,13 +309,25 @@ Deno.serve(async (req) => {
       reference,
     });
 
+    const transferStatus = String(transfer?.status || '').toLowerCase() || 'processing';
+    const walletReservation = await reserveWalletFundsForWithdrawal({
+      userId: userData.user.id,
+      amount,
+      transferStatus,
+      transfer,
+      reference,
+      withdrawalRequestId: withdrawalRequestId || undefined,
+    });
+
     if (withdrawalRequestId) {
-      const transferStatus = String(transfer?.status || '').toLowerCase();
-      const withdrawalStatus = transferStatus === 'success' ? 'completed' : transferStatus || 'processing';
+      const withdrawalStatus = isCompletedTransferStatus(transferStatus) ? 'completed' : 'processing';
 
       await supabaseAdmin
         .from('withdrawal_requests')
-        .update({ status: withdrawalStatus })
+        .update({
+          status: withdrawalStatus,
+          processed_at: isCompletedTransferStatus(transferStatus) ? new Date().toISOString() : null,
+        })
         .eq('id', withdrawalRequestId)
         .eq('user_id', userData.user.id);
     }
@@ -198,6 +339,9 @@ Deno.serve(async (req) => {
         transfer,
         recipient,
         reference,
+        withdrawalTransactionId: walletReservation.txId,
+        walletBalanceAfter: walletReservation.balanceAfter,
+        alreadyRecorded: walletReservation.alreadyRecorded,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

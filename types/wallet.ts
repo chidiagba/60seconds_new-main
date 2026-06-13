@@ -93,7 +93,7 @@ export interface WithdrawalRequest {
 // Platform account for collecting fees
 export const PLATFORM_ACCOUNT_ID = "platform_account";
 export const PLATFORM_WALLET_ID = "platform_wallet";
-export const TRANSACTION_FEE_PERCENTAGE = 0.05; // 5% fee
+export const TRANSACTION_FEE_PERCENTAGE = 0.04; // 4% fee
 
 // Twint configuration
 export const TWINT_MERCHANT_ID = "60seconds_merchant";

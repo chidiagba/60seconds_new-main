@@ -24,7 +24,7 @@ export interface EventCreationData {
     category?: string;
     hashtags?: string[];
     is_public?: boolean;
-    status?: 'draft' | 'published' | 'cancelled' | 'completed';
+    status?: 'draft' | 'published' | 'open' | 'closed' | 'cancelled' | 'completed';
   };
   video?: {
     title: string;
@@ -354,4 +354,3 @@ export class EventCreationService {
     };
   }
 }
-

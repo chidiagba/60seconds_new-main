@@ -48,6 +48,7 @@ import TwintWebViewModal from '@/components/TwintWebViewModal';
 import { canOpenTwintApp, openTwintApp } from '@/lib/twint';
 import WorldlineService from '@/lib/worldline';
 import { useAuth } from "@/lib/auth";
+import { resolveCurrencyFromCountry } from "@/utils/country-currency";
 
 let stripeUseHook: null | (() => {
   presentPaymentSheet: (options?: any) => Promise<{ error?: { message?: string } | null }>;
@@ -61,12 +62,12 @@ try {
   console.warn('Stripe native module unavailable in Cart screen:', error);
 }
 
-const normalizeCurrencyCode = (currency?: string | null): string => {
+const normalizeCurrencyCode = (currency?: string | null, fallbackCurrency: string = DEFAULT_CURRENCY): string => {
   const code = String(currency || "").trim().toUpperCase();
   if (/^[A-Z]{3}$/.test(code)) {
     return code;
   }
-  return DEFAULT_CURRENCY;
+  return fallbackCurrency;
 };
 
 const formatAmount = (amount: number, currency?: string | null): string => {
@@ -118,7 +119,7 @@ export default function CartScreen() {
     fetchWallet,
   } = useWalletStore();
 
-  const { activeVoucher, clearActiveVoucher, incrementUsageCount } =
+  const { activeVoucher, clearActiveVoucher, incrementUsageCount, applyVoucher } =
     useVoucherStore();
 
   const { user: currentUser } = useAuthStore();
@@ -156,7 +157,14 @@ export default function CartScreen() {
     (sum, item) => sum + item.product.price * item.quantity,
     0
   );
-  const cartCurrency = normalizeCurrencyCode(cart[0]?.product?.currency);
+  const buyerFallbackCurrency = resolveCurrencyFromCountry({
+    countryCode: profile?.country_code || (authUser as any)?.user_metadata?.country_code || (currentUser as any)?.countryCode,
+    country: profile?.country || (authUser as any)?.user_metadata?.country || (currentUser as any)?.country,
+    fallbackCurrency: (wallet as any)?.currency || DEFAULT_CURRENCY,
+  });
+  const resolveProductCurrency = (currency?: string | null) =>
+    normalizeCurrencyCode(currency, buyerFallbackCurrency);
+  const cartCurrency = resolveProductCurrency(cart[0]?.product?.currency);
   const formatCartAmount = (amount: number, currencyCode: string = cartCurrency) =>
     formatAmount(amount, currencyCode);
   const platformFee = baseSubtotal * PRICE_MARKUP_RATE;
@@ -230,7 +238,7 @@ export default function CartScreen() {
         user_id: currentUser.id,
         video_id: firstVideoId,
         total_amount: finalTotal,
-        currency: normalizeCurrencyCode(cart[0]?.product?.currency),
+        currency: cartCurrency,
         payment_method: paymentMethod,
         payment_status: paymentStatus,
         items: orderItems,
@@ -251,7 +259,7 @@ export default function CartScreen() {
       name: item.product.name,
       quantity: item.quantity,
       unitPrice: getMarkedUnitPrice(item.product.price),
-      currency: item.product.currency || 'USD',
+      currency: resolveProductCurrency(item.product.currency),
       type: item.product.type,
       videoId: item.product.videoId,
     }));
@@ -262,6 +270,9 @@ export default function CartScreen() {
       product?.ownerId ||
       product?.eventOwnerId ||
       product?.creatorId ||
+      product?.business_id ||
+      product?.businessId ||
+      product?.userId ||
       null
     );
   };
@@ -320,8 +331,11 @@ export default function CartScreen() {
     updateCartItemQuantity(productId, quantity);
   };
 
-  const handleApplyVoucher = (amount: number) => {
+  const handleApplyVoucher = (amount: number, voucher?: { code: string }) => {
     setDiscountAmount(amount);
+    if (voucher?.code) {
+      applyVoucher(voucher.code);
+    }
   };
 
   const handleClearVoucher = () => {
@@ -422,21 +436,6 @@ export default function CartScreen() {
         throw new Error("Order not found for verified Twint payment");
       }
 
-      const { error: orderUpdateError } = await supabase
-        .from("orders")
-        .update({
-          payment_status: "paid",
-          payment_method: "twint",
-          status: "completed",
-          updated_at: new Date().toISOString(),
-          notes: `Twint payment verified: ${verification.data.paymentId}`,
-        })
-        .eq("id", twintOrderId);
-
-      if (orderUpdateError) {
-        throw new Error(`Failed to update order status: ${orderUpdateError.message}`);
-      }
-
       const settlement = await settleExternalOrderPayment({
         orderId: twintOrderId,
         provider: 'twint',
@@ -451,7 +450,7 @@ export default function CartScreen() {
           productId: item.product.id,
           quantity: item.quantity,
           unitPrice: item.product.price,
-          currency: item.product.currency || cartCurrency,
+          currency: resolveProductCurrency(item.product.currency),
           ownerId: resolveProductOwnerId(item.product),
         })),
         metadata: {
@@ -708,7 +707,7 @@ export default function CartScreen() {
       setProcessingPayment(true);
 
       const firstItem = cart[0];
-      const currencyCode = normalizeCurrencyCode(firstItem?.product?.currency);
+      const currencyCode = resolveProductCurrency(firstItem?.product?.currency);
       const currency = currencyCode.toLowerCase();
       const platformFeeCents = Math.max(0, Math.round(platformFee * 100));
       const amountCents = Math.max(0, Math.round(finalTotal * 100));
@@ -763,7 +762,7 @@ export default function CartScreen() {
 
       // record payment, similar to products list
       try {
-        const order = await createOrder("stripe", "paid");
+        const order = await createOrder("stripe", "pending");
         await makePayment(
           finalTotal,
           `Purchase of ${cart.length} items via Stripe`,
@@ -794,7 +793,7 @@ export default function CartScreen() {
             productId: item.product.id,
             quantity: item.quantity,
             unitPrice: getMarkedUnitPrice(item.product.price),
-            currency: item.product.currency || 'USD',
+            currency: resolveProductCurrency(item.product.currency),
             ownerId: resolveProductOwnerId(item.product),
           })),
         });
@@ -836,7 +835,7 @@ export default function CartScreen() {
   const renderCartItem = ({ item }: { item: any }) => {
     const markedUnitPrice = getMarkedUnitPrice(item.product.price);
     const lineTotal = markedUnitPrice * item.quantity;
-    const itemCurrency = normalizeCurrencyCode(item.product.currency);
+    const itemCurrency = resolveProductCurrency(item.product.currency);
 
     return (
       <View style={styles.cartItem}>
@@ -1101,7 +1100,7 @@ export default function CartScreen() {
           setShowPaystackModal(false);
           try {
             setProcessingPayment(true);
-            const order = await createOrder('paystack', 'paid');
+            const order = await createOrder('paystack', 'pending');
 
             const settlement = await settleExternalOrderPayment({
               orderId: order.id,
@@ -1117,7 +1116,7 @@ export default function CartScreen() {
                 productId: item.product.id,
                 quantity: item.quantity,
                 unitPrice: item.product.price,
-                currency: item.product.currency || cartCurrency,
+                currency: resolveProductCurrency(item.product.currency),
                 ownerId: resolveProductOwnerId(item.product),
               })),
               metadata: {
@@ -1153,8 +1152,10 @@ export default function CartScreen() {
             );
           } catch (err) {
             console.warn('Paystack post-payment recording failed:', err);
-            clearCart();
-            router.push('/');
+            Alert.alert(
+              'Payment Recorded, Settlement Pending',
+              'Your payment was received, but we could not complete wallet settlement yet. Please contact support with your payment reference so we can finalize owner credit safely.'
+            );
           } finally {
             setProcessingPayment(false);
           }

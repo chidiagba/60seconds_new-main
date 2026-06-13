@@ -373,7 +373,7 @@ export interface Event {
   tags?: string[];
   isPublic: boolean;
   requiresApproval: boolean;
-  status: 'draft' | 'published' | 'cancelled' | 'completed';
+  status: 'draft' | 'published' | 'open' | 'closed' | 'cancelled' | 'completed';
   createdAt: string;
   updatedAt: string;
   user?: User;

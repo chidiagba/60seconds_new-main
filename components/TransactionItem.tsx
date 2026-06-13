@@ -13,6 +13,8 @@ import {
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
 import { Transaction } from '@/types/wallet';
+import { formatCurrency, normalizeCurrencyCode } from '@/constants/currencies';
+import { useWalletStore } from '@/store/wallet-store';
 
 interface TransactionItemProps {
   transaction: Transaction;
@@ -21,6 +23,7 @@ interface TransactionItemProps {
 
 export default function TransactionItem({ transaction, onPress }: TransactionItemProps) {
   const router = useRouter();
+  const selectedCurrency = useWalletStore((state) => state.selectedCurrency);
   
   const getTransactionIcon = () => {
     const isTwint = transaction.metadata?.paymentProvider === 'twint';
@@ -116,6 +119,12 @@ export default function TransactionItem({ transaction, onPress }: TransactionIte
       });
     }
   };
+
+  const transactionCurrency = normalizeCurrencyCode(
+    (transaction.metadata as any)?.currency,
+    selectedCurrency
+  );
+  const formattedAmount = formatCurrency(Math.abs(transaction.amount), transactionCurrency);
   
   return (
     <TouchableOpacity style={styles.container} onPress={handlePress}>
@@ -139,7 +148,7 @@ export default function TransactionItem({ transaction, onPress }: TransactionIte
           styles.amount, 
           transaction.amount > 0 ? styles.positive : styles.negative
         ]}>
-          {transaction.amount > 0 ? '+' : ''}{transaction.amount.toFixed(2)}
+          {transaction.amount > 0 ? '+' : '-'}{formattedAmount}
         </Text>
         
         <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor()}20` }]}>

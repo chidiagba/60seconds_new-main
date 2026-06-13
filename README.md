@@ -23,6 +23,8 @@ If you use the Supabase dashboard instead of the CLI, add `PAYSTACK_SECRET_KEY` 
 
 The Nigerian bank dropdown now loads from the live Paystack bank list through the `paystack-bank-list` edge function, so the bank list stays current.
 
+For production webhook rollout and historical wallet balance reconciliation, see [PAYSTACK_WEBHOOK_DEPLOY_AND_BACKFILL.md](PAYSTACK_WEBHOOK_DEPLOY_AND_BACKFILL.md).
+
 ## Real device launch from terminal
 
 Android:

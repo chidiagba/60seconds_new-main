@@ -94,7 +94,7 @@ export const useAuthStore = create<AuthState>()(
               : null,
           }));
         } catch (error) {
-          console.error('Error refreshing followed users:', error);
+          console.warn('Unable to refresh followed users:', error);
         }
       },
 

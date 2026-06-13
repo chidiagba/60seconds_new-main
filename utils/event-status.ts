@@ -7,6 +7,8 @@ type EventTimingSource = {
   eventDate?: string | null;
 };
 
+const normalizeStatus = (status?: string | null) => String(status || '').trim().toLowerCase();
+
 const resolveCloseAt = (source: EventTimingSource): Date | null => {
   const closeAtValue = source.endDate || source.startDate || source.eventDate;
   if (!closeAtValue) {
@@ -21,8 +23,14 @@ export const getEventLifecycleStatus = (
   source: EventTimingSource,
   now: Date = new Date()
 ): EventLifecycleStatus => {
-  if (source.status === 'cancelled' || source.status === 'completed') {
+  const status = normalizeStatus(source.status);
+
+  if (['closed', 'cancelled', 'completed', 'ended'].includes(status)) {
     return 'closed';
+  }
+
+  if (['open', 'active', 'live'].includes(status)) {
+    return 'open';
   }
 
   const closeAt = resolveCloseAt(source);

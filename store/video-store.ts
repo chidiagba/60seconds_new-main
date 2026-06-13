@@ -5,8 +5,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Video, Comment, RatingValue, ShareSource, SearchFilters, ShareAnalytics, TaggedUser, User, Attendee, AttendanceStatus, Product } from '@/types';
-import { mockVideos } from '@/mocks/videos';
-
 import { calculateDistance } from '@/utils/location';
 import { DEFAULT_AVATAR_URL, resolveAvatarUrl } from '@/utils/avatar';
 import { getEventLifecycleStatus } from '@/utils/event-status';
@@ -40,6 +38,9 @@ const normalizeLocationCoordinate = (value: unknown): number => {
   const parsed = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''));
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 };
+
+const isUuid = (value?: string | null) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
 
 const persistVideoFeedCache = async (videos: Video[]) => {
   try {
@@ -182,7 +183,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
 
     const { deletedVideoIds } = get();
     const visibleVideos = cachedVideos
-      .filter((video) => video?.id && !deletedVideoIds.has(video.id))
+      .filter((video) => isUuid(video?.id) && !deletedVideoIds.has(video.id))
       .map((video) => enrichVideoEventStatus(video as Video));
     if (visibleVideos.length === 0) {
       return false;
@@ -290,11 +291,9 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       // Reset pagination state on a fresh fetch
       set({ videos: visibleVideos, isLoading: false, _feedOffset: FEED_PAGE_SIZE, hasMoreVideos: videosData.length >= FEED_PAGE_SIZE });
     } catch (error) {
-      console.error('📹 VideoStore: Error fetching videos:', error);
-      const { deletedVideoIds } = get();
-      const fallbackVideos = mockVideos.filter((video) => !deletedVideoIds.has(video.id));
-      await persistVideoFeedCache(fallbackVideos);
-      set({ videos: fallbackVideos, isLoading: false, error: null, _feedOffset: 0, hasMoreVideos: false });
+      console.warn('📹 VideoStore: Unable to fetch videos from database:', error);
+      await persistVideoFeedCache([]);
+      set({ videos: [], isLoading: false, error: null, _feedOffset: 0, hasMoreVideos: false });
     }
   },
 
@@ -386,7 +385,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         isFetchingMore: false,
       }));
     } catch (error) {
-      console.error('📹 VideoStore: Error fetching more videos:', error);
+      console.warn('📹 VideoStore: Unable to fetch more videos:', error);
       set({ isFetchingMore: false });
     }
   },
@@ -573,7 +572,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
   },
 
   refreshVideoEngagement: async (videoId: string) => {
-    if (!videoId) return;
+    if (!isUuid(videoId)) return;
 
     try {
       const { data, error } = await supabase
@@ -1120,23 +1119,10 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       const { deletedVideoIds } = get();
       const visibleVideos = transformedAndFilteredVideos.filter((video) => !deletedVideoIds.has(video.id));
 
-      // If no nearby videos from Supabase, fall back to filtering mock data
       if (visibleVideos.length === 0) {
-        const nearbyMockVideos = mockVideos.filter(video => {
-          const distance = calculateDistance(
-            latitude,
-            longitude,
-            video.location.latitude,
-            video.location.longitude
-          );
-          
-          return distance <= radiusKm;
-        });
-        
-        const fallbackVideos = nearbyMockVideos.filter((video) => !deletedVideoIds.has(video.id));
-        await persistVideoFeedCache(fallbackVideos);
+        await persistVideoFeedCache([]);
         set({
-          videos: fallbackVideos,
+          videos: [],
           isLoading: false,
           _feedOffset: 0,
           hasMoreVideos: false,
@@ -1147,8 +1133,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
-      console.error('Error filtering videos by location:', errorMessage);
-      console.error('Full error object:', error);
+      console.warn('Unable to filter videos by location:', errorMessage);
       set({ error: `Failed to filter videos by location: ${errorMessage}`, isLoading: false });
       
       // Fallback to all videos if location filtering fails

@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
 
@@ -6,29 +6,59 @@ let FFmpegKit: any = null;
 let ReturnCode: any = null;
 let ffmpegModuleLoadAttempted = false;
 
+function hasNativeFFmpegModule() {
+  return !!NativeModules.FFmpegKitReactNativeModule;
+}
+
+function assignFFmpegPackage(m: any) {
+  if (!m?.FFmpegKit || !m?.ReturnCode) {
+    return false;
+  }
+
+  FFmpegKit = m.FFmpegKit;
+  ReturnCode = m.ReturnCode;
+  return true;
+}
+
 function ensureFFmpegModuleLoaded() {
-  if (ffmpegModuleLoadAttempted) {
-    return;
+  if (ffmpegModuleLoadAttempted && FFmpegKit && ReturnCode && hasNativeFFmpegModule()) {
+    return true;
   }
 
   ffmpegModuleLoadAttempted = true;
+  FFmpegKit = null;
+  ReturnCode = null;
+
+  if (!hasNativeFFmpegModule()) {
+    console.warn(
+      '[Watermark] FFmpeg native module is not linked in this app binary. Rebuild the native app after installing @fathah_cr/react-native-ffmpeg-kit.'
+    );
+    return false;
+  }
 
   try {
     const m = require('@fathah_cr/react-native-ffmpeg-kit');
-    FFmpegKit = m.FFmpegKit;
-    ReturnCode = m.ReturnCode;
-    return;
-  } catch {
+    if (assignFFmpegPackage(m)) {
+      return true;
+    }
+  } catch (error) {
+    console.warn('[Watermark] Failed to load @fathah_cr/react-native-ffmpeg-kit:', error);
     // Fall through to alternate package name.
   }
 
   try {
     const m = require('ffmpeg-kit-react-native');
-    FFmpegKit = m.FFmpegKit;
-    ReturnCode = m.ReturnCode;
-  } catch {
+    if (assignFFmpegPackage(m)) {
+      return true;
+    }
+  } catch (error) {
+    console.warn('[Watermark] Failed to load ffmpeg-kit-react-native:', error);
     // Native ffmpeg is not linked in this build.
   }
+
+  FFmpegKit = null;
+  ReturnCode = null;
+  return false;
 }
 
 // Bundled logo used as the watermark overlay
@@ -336,8 +366,7 @@ export class VideoWatermarkService {
       return null;
     }
 
-    ensureFFmpegModuleLoaded();
-    if (!FFmpegKit || !ReturnCode) {
+    if (!ensureFFmpegModuleLoaded()) {
       return null;
     }
 

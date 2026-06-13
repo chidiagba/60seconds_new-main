@@ -309,23 +309,7 @@ export default function HomeScreen() {
     const hasPlayableUrl = typeof video.url === 'string' && /^https?:\/\//i.test(video.url);
     return hasPlayableUrl && !unavailableVideoIds.has(video.id) && !isVideoHidden(video.id) && !isUserBlocked(video.userId);
   });
-  const videosForFeed = useMemo(() => {
-    if (!pendingSelectedVideoId || visibleVideos.length <= 1) {
-      return visibleVideos;
-    }
-
-    const selectedIndex = visibleVideos.findIndex((video) => video.id === pendingSelectedVideoId);
-    if (selectedIndex <= 0) {
-      return visibleVideos;
-    }
-
-    const selectedVideo = visibleVideos[selectedIndex];
-    return [
-      selectedVideo,
-      ...visibleVideos.slice(0, selectedIndex),
-      ...visibleVideos.slice(selectedIndex + 1),
-    ];
-  }, [pendingSelectedVideoId, visibleVideos]);
+  const videosForFeed = useMemo(() => visibleVideos, [visibleVideos]);
 
   useEffect(() => {
     if (visibleVideoIndex < videosForFeed.length) {
@@ -383,7 +367,7 @@ export default function HomeScreen() {
         return;
       }
 
-      const selectedIndex = videosForFeed.findIndex((video) => video.id === pendingSelectedVideoId);
+      const selectedIndex = videosForFeed.findIndex((video) => String(video.id) === String(pendingSelectedVideoId));
       if (selectedIndex >= 0) {
         requestAnimationFrame(() => {
           flatListRef.current?.scrollToIndex({ index: selectedIndex, animated: false });

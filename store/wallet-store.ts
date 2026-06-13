@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuthStore } from './auth-store';
 import { CurrencyCode, DEFAULT_CURRENCY, isSupportedCurrencyCode, normalizeCurrencyCode } from '@/constants/currencies';
 import { resolveCurrencyFromCountry } from '@/utils/country-currency';
+import { settleExternalOrderPayment } from '@/lib/external-payment-settlement';
 
 type BusinessBankAccountRow = {
   id: string;
@@ -72,31 +73,227 @@ type TransactionRow = {
   createdAt?: string;
 };
 
+type TicketReceiptSettlementRow = {
+  order_id?: string | null;
+  product_id?: string | null;
+  video_id?: string | null;
+  quantity?: number | null;
+  unit_price?: number | null;
+  total_price?: number | null;
+  net_price?: number | null;
+  currency?: string | null;
+  created_at?: string | null;
+};
+
+type BusinessOrderSettlementRow = {
+  id: string;
+  total_amount?: number | null;
+  business_id?: string | null;
+  currency?: string | null;
+  video_id?: string | null;
+  created_at?: string | null;
+  payment_method?: string | null;
+  payment_status?: string | null;
+  status?: string | null;
+  items?: any[] | null;
+};
+
+type BusinessProductSettlementRow = {
+  id: string;
+  price?: number | null;
+  currency?: string | null;
+  event_id?: string | null;
+};
+
+const BUSINESS_PLATFORM_FEE_RATE = 0.04;
+
+const roundMoney = (value: number): number => Number(Number(value || 0).toFixed(2));
+
+const deriveBusinessNetAmount = (grossAmount: number): number => {
+  if (!Number.isFinite(grossAmount) || grossAmount <= 0) return 0;
+  return roundMoney(grossAmount / (1 + BUSINESS_PLATFORM_FEE_RATE));
+};
+
+const getBusinessOwnerCreditAmount = (amount: number, metadata: Record<string, any>): number => {
+  const entry = String(metadata.entry || metadata.ledgerEntry || '').trim();
+  if (entry !== 'owner_credit') {
+    return roundMoney(amount);
+  }
+
+  const explicitNetAmount = Number(metadata.net_amount ?? metadata.netAmount);
+  if (Number.isFinite(explicitNetAmount) && explicitNetAmount > 0) {
+    return roundMoney(explicitNetAmount);
+  }
+
+  const grossAmount = Number(metadata.gross_amount ?? metadata.grossAmount);
+  const platformFeeAmount = Number(metadata.platform_fee_amount ?? metadata.platformFeeAmount);
+  if (Number.isFinite(grossAmount) && Number.isFinite(platformFeeAmount) && grossAmount > platformFeeAmount) {
+    return roundMoney(grossAmount - platformFeeAmount);
+  }
+
+  return roundMoney(amount);
+};
+
+const isOwnerCreditTransaction = (tx: Transaction): boolean => {
+  const metadata = (tx.metadata || {}) as Record<string, any>;
+  return String(metadata.entry || '').trim() === 'owner_credit';
+};
+
+const isWithdrawalTransaction = (tx: Transaction): boolean => {
+  return tx.type === 'withdrawal' || String((tx.metadata as any)?.entry || '').trim() === 'owner_withdrawal';
+};
+
+const isPaidSettlementStatus = (row?: { payment_status?: string | null; status?: string | null }): boolean => {
+  const paymentStatus = String(row?.payment_status || '').trim().toLowerCase();
+  const status = String(row?.status || '').trim().toLowerCase();
+  return ['paid', 'completed', 'success', 'successful'].includes(paymentStatus) || ['paid', 'completed', 'success', 'successful'].includes(status);
+};
+
+const calculateBusinessClaimableBalance = (transactions: Transaction[]): number => {
+  const isCompletedLike = (status?: string) => {
+    const normalized = String(status || '').trim().toLowerCase();
+    return normalized === 'completed' || normalized === 'success' || normalized === 'successful' || normalized === 'paid';
+  };
+
+  return roundMoney(
+    transactions
+      .filter((tx) => isCompletedLike(tx.status))
+      .reduce((sum, tx) => {
+        const amount = Number(tx.amount || 0);
+        const metadata = (tx.metadata || {}) as Record<string, any>;
+        const entry = String(metadata.entry || '').trim();
+        const provider = String(metadata.paymentProvider || metadata.payment_provider || '').trim().toLowerCase();
+        const description = String(tx.description || '').trim().toLowerCase();
+
+        if (isOwnerCreditTransaction(tx)) {
+          return sum + Math.max(0, amount);
+        }
+
+        if (isWithdrawalTransaction(tx)) {
+          return sum - Math.abs(amount);
+        }
+
+        if (
+          amount < 0 &&
+          (
+            entry === 'buyer_debit' ||
+            description.includes('paystack purchase') ||
+            description.includes('purchase (backfill)') ||
+            provider === 'paystack'
+          )
+        ) {
+          return sum;
+        }
+
+        // Legacy business transactions may miss owner_credit metadata.
+        // Include completed non-fee rows so available balance matches transaction history.
+        if (tx.type !== 'fee') {
+          return sum + amount;
+        }
+
+        return sum;
+      }, 0)
+  );
+};
+
+const normalizeTransactionStatus = (status: any): Transaction['status'] => {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'completed' || normalized === 'success' || normalized === 'successful' || normalized === 'paid') {
+    return 'completed';
+  }
+  if (normalized === 'processing' || normalized === 'in_progress') {
+    return 'pending';
+  }
+  if (normalized === 'failed' || normalized === 'error') {
+    return 'failed';
+  }
+  if (normalized === 'cancelled' || normalized === 'canceled') {
+    return 'cancelled';
+  }
+  return 'pending';
+};
+
+const isLegacyBusinessPaymentDebit = (row: TransactionRow): boolean => {
+  const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+  const entry = String(metadata.entry || '').trim();
+  const description = String(row.description || metadata.description || '').trim().toLowerCase();
+  const amount = Number(row.amount || 0);
+
+  return (
+    amount < 0 &&
+    entry !== 'owner_credit' &&
+    (
+      entry === 'buyer_debit' ||
+      description.includes('paystack purchase') ||
+      description.includes('purchase (backfill)')
+    )
+  );
+};
+
+const createOwnerCreditFromBuyerDebit = (row: TransactionRow, fallbackCurrency: CurrencyCode): Transaction | null => {
+  const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+  const entry = String(metadata.entry || '').trim();
+  if (entry !== 'buyer_debit' && !isLegacyBusinessPaymentDebit(row)) return null;
+
+  const grossAmount = Math.abs(Number(metadata.gross_amount ?? metadata.grossAmount ?? row.amount ?? 0));
+  if (!(grossAmount > 0)) return null;
+
+  const explicitNetAmount = Number(metadata.net_amount ?? metadata.netAmount);
+  const netAmount = Number.isFinite(explicitNetAmount) && explicitNetAmount > 0
+    ? roundMoney(explicitNetAmount)
+    : deriveBusinessNetAmount(grossAmount);
+  const platformFeeAmount = roundMoney(Math.max(0, grossAmount - netAmount));
+  const currency = normalizeCurrencyCode(metadata.currency, fallbackCurrency);
+
+  return {
+    id: `owner_credit_${row.id}`,
+    walletId: row.wallet_id || row.walletId || '',
+    amount: netAmount,
+    type: 'deposit',
+    status: 'completed',
+    description: 'Sale settlement',
+    transactionFee: 0,
+    metadata: ({
+      ...metadata,
+      entry: 'owner_credit',
+      source: entry === 'buyer_debit' ? 'legacy_buyer_debit_display' : 'legacy_paystack_backfill_display',
+      originalTransactionId: row.id,
+      gross_amount: grossAmount,
+      platform_fee_amount: platformFeeAmount,
+      net_amount: netAmount,
+      currency,
+    } as any),
+    createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+  };
+};
+
 const mapTransactionRow = (row: TransactionRow): Transaction => {
   const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+  const normalizedMetadata = {
+    ...metadata,
+    paymentProvider: metadata.paymentProvider || metadata.payment_provider,
+    paystackReference: metadata.paystackReference || metadata.payment_reference,
+    twintTransactionId: metadata.twintTransactionId || metadata.payment_transaction_id,
+    businessId: metadata.businessId || metadata.owner_id,
+    videoId: metadata.videoId || metadata.video_id,
+    productId: metadata.productId || metadata.product_id,
+    recipientId: metadata.recipientId || metadata.recipient_id,
+    senderId: metadata.senderId || metadata.sender_id,
+    paymentMethodId: metadata.paymentMethodId || metadata.payment_method_id,
+    originalTransactionId: metadata.originalTransactionId || metadata.original_transaction_id,
+    feeRecipientId: metadata.feeRecipientId || metadata.fee_recipient_id,
+  };
+  const amount = getBusinessOwnerCreditAmount(Number(row.amount || 0), normalizedMetadata);
 
   return {
     id: row.id,
     walletId: row.wallet_id || row.walletId || '',
-    amount: Number(row.amount || 0),
+    amount,
     type: (row.type as Transaction['type']) || 'payment',
-    status: (row.status as Transaction['status']) || 'pending',
+    status: normalizeTransactionStatus(row.status),
     description: row.description || 'Transaction',
     transactionFee: row.transaction_fee ?? row.transactionFee,
-    metadata: {
-      ...metadata,
-      paymentProvider: metadata.paymentProvider || metadata.payment_provider,
-      paystackReference: metadata.paystackReference || metadata.payment_reference,
-      twintTransactionId: metadata.twintTransactionId || metadata.payment_transaction_id,
-      businessId: metadata.businessId || metadata.owner_id,
-      videoId: metadata.videoId || metadata.video_id,
-      productId: metadata.productId || metadata.product_id,
-      recipientId: metadata.recipientId || metadata.recipient_id,
-      senderId: metadata.senderId || metadata.sender_id,
-      paymentMethodId: metadata.paymentMethodId || metadata.payment_method_id,
-      originalTransactionId: metadata.originalTransactionId || metadata.original_transaction_id,
-      feeRecipientId: metadata.feeRecipientId || metadata.fee_recipient_id,
-    },
+    metadata: normalizedMetadata,
     createdAt: row.created_at || row.createdAt || new Date().toISOString(),
   };
 };
@@ -163,6 +360,11 @@ const isMetadataBackedBusinessBankAccountId = (id?: string | null): boolean => {
   return typeof id === 'string' && id.startsWith('meta_');
 };
 
+const isUuidLike = (value?: string | null): boolean => {
+  if (typeof value !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+};
+
 const isBusinessBankTableUnavailableError = (error: any): boolean => {
   const message = String(error?.message || '').toLowerCase();
   const code = String(error?.code || '').toLowerCase();
@@ -179,6 +381,38 @@ const isBusinessBankTableUnavailableError = (error: any): boolean => {
       code === '42501'
     )
   );
+};
+
+const isNigerianCurrencySignal = (value?: string | null): boolean => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return false;
+
+  return (
+    normalized === 'ng' ||
+    normalized === 'nga' ||
+    normalized === 'ngn' ||
+    normalized === 'nigeria' ||
+    normalized === 'nigerian' ||
+    normalized.includes('nigeria') ||
+    normalized.includes('opay') ||
+    normalized.includes('paystack')
+  );
+};
+
+const resolveBusinessBankCurrency = (bankAccount?: BusinessBankAccount | null): CurrencyCode | null => {
+  if (!bankAccount) return null;
+
+  if (isSupportedCurrencyCode(bankAccount.currency || '')) {
+    return normalizeCurrencyCode(bankAccount.currency, DEFAULT_CURRENCY);
+  }
+
+  const isNigerianBank =
+    isNigerianCurrencySignal(bankAccount.country) ||
+    isNigerianCurrencySignal(bankAccount.countryCode) ||
+    isNigerianCurrencySignal(bankAccount.bankName) ||
+    isNigerianCurrencySignal(bankAccount.payoutProvider);
+
+  return isNigerianBank ? 'NGN' : null;
 };
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
@@ -213,12 +447,12 @@ const resolvePreferredCurrency = (input: {
     DEFAULT_CURRENCY
   );
 
-  if (isSupportedCurrencyCode(input.profileCurrency || '')) {
-    return currencyFromProfile;
-  }
-
   if (input.country || input.countryCode) {
     return currencyFromCountry;
+  }
+
+  if (isSupportedCurrencyCode(input.profileCurrency || '')) {
+    return currencyFromProfile;
   }
 
   return currencyFromWallet;
@@ -340,6 +574,7 @@ interface WalletState {
   // Actions
   fetchWallet: () => Promise<void>;
   fetchTransactions: () => Promise<void>;
+  reconcileBusinessWalletBalance: () => Promise<void>;
   fetchPaymentMethods: () => Promise<void>;
   fetchBusinessBankAccount: () => Promise<void>;
   fetchWithdrawalRequests: () => Promise<void>;
@@ -347,7 +582,7 @@ interface WalletState {
   addFunds: (amount: number, paymentMethodId: string, paymentProvider?: 'internal' | 'twint' | 'paystack') => Promise<boolean>;
   makePayment: (amount: number, description: string, metadata: any) => Promise<boolean>;
   transferFunds: (amount: number, recipientId: string, description: string) => Promise<boolean>;
-  requestWithdrawal: (amount: number) => Promise<boolean>;
+  requestWithdrawal: (amount: number) => Promise<{ success: boolean; payoutSubmitted: boolean; ledgerRecorded: boolean; providerQueued?: boolean }>;
   
   addPaymentMethod: (paymentMethod: Omit<PaymentMethod, 'id' | 'userId' | 'createdAt'>, user?: any) => Promise<boolean>;
   removePaymentMethod: (paymentMethodId: string) => Promise<boolean>;
@@ -388,41 +623,66 @@ export const useWalletStore = create<WalletState>()(
         set({ isLoading: true, error: null });
         try {
           const { user } = useAuthStore.getState();
-          if (!user) {
+          const { data: authUserData } = await supabase.auth.getUser();
+          const effectiveUserId = authUserData.user?.id || user?.id;
+
+          if (!effectiveUserId) {
             console.log('⚠️ No user found - skipping wallet fetch');
             set({ wallet: null, isLoading: false });
             return;
           }
           
-          console.log('🔍 Fetching wallet for user:', user.id);
+          console.log('🔍 Fetching wallet for user:', effectiveUserId);
 
           const { data: profileData } = await supabase
             .from('profiles')
             .select('currency,country,country_code')
-            .eq('id', user.id)
+            .eq('id', effectiveUserId)
             .maybeSingle();
 
+          if (!get().businessBankAccount) {
+            await get().fetchBusinessBankAccount();
+          }
+
+          const existingBusinessBankAccount = get().businessBankAccount;
+          const businessBankCurrency = resolveBusinessBankCurrency(existingBusinessBankAccount);
+          const fallbackCountry =
+            profileData?.country ||
+            (user as any)?.country ||
+            (user as any)?.countryCode ||
+            existingBusinessBankAccount?.country;
+          const fallbackCountryCode =
+            profileData?.country_code ||
+            (user as any)?.countryCode ||
+            (user as any)?.country_code ||
+            existingBusinessBankAccount?.countryCode;
+          const fallbackProfileCurrency =
+            businessBankCurrency ||
+            profileData?.currency ||
+            (user as any)?.currency ||
+            existingBusinessBankAccount?.currency;
+
           const preferredCurrency = resolvePreferredCurrency({
-            profileCurrency: profileData?.currency,
-            country: profileData?.country,
-            countryCode: profileData?.country_code,
+            profileCurrency: fallbackProfileCurrency,
+            country: fallbackCountry,
+            countryCode: fallbackCountryCode,
           });
           
           // Fetch wallet from Supabase
           const { data: walletData, error: walletError } = await supabase
             .from('wallets')
             .select('*')
-            .eq('user_id', user.id)
+            .eq('user_id', effectiveUserId)
             .single();
           
           if (walletError) {
             if (walletError.code === 'PGRST116') {
               // Wallet not found, create one (idempotent to avoid duplicate key races).
-              console.log('📝 Creating new wallet for user:', user.id);
+              console.log('📝 Creating new wallet for user:', effectiveUserId);
               const { data: newWallet, error: createError } = await supabase
                 .from('wallets')
                 .upsert({
-                  user_id: user.id,
+                  user_id: effectiveUserId,
                   balance: 0.00,
                   currency: preferredCurrency,
                   is_verified: false
@@ -437,7 +697,7 @@ export const useWalletStore = create<WalletState>()(
                   const { data: existingWallet, error: existingWalletError } = await supabase
                     .from('wallets')
                     .select('*')
-                    .eq('user_id', user.id)
+                    .eq('user_id', effectiveUserId)
                     .single();
 
                   if (existingWalletError || !existingWallet) {
@@ -446,10 +706,18 @@ export const useWalletStore = create<WalletState>()(
 
                   const selectedCurrency = resolvePreferredCurrency({
                     walletCurrency: existingWallet.currency,
-                    profileCurrency: profileData?.currency,
-                    country: profileData?.country,
-                    countryCode: profileData?.country_code,
+                    profileCurrency: fallbackProfileCurrency,
+                    country: fallbackCountry,
+                    countryCode: fallbackCountryCode,
                   });
+
+                  if (existingWallet.currency !== selectedCurrency) {
+                    await supabase
+                      .from('wallets')
+                      .update({ currency: selectedCurrency, updated_at: new Date().toISOString() })
+                      .eq('id', existingWallet.id);
+                    existingWallet.currency = selectedCurrency;
+                  }
 
                   set({ wallet: existingWallet, selectedCurrency, isLoading: false });
                   console.log('✅ Wallet fetched after duplicate conflict:', existingWallet);
@@ -461,9 +729,9 @@ export const useWalletStore = create<WalletState>()(
 
               const selectedCurrency = resolvePreferredCurrency({
                 walletCurrency: newWallet.currency,
-                profileCurrency: profileData?.currency,
-                country: profileData?.country,
-                countryCode: profileData?.country_code,
+                profileCurrency: fallbackProfileCurrency,
+                country: fallbackCountry,
+                countryCode: fallbackCountryCode,
               });
               
               set({ wallet: newWallet, selectedCurrency, isLoading: false });
@@ -474,50 +742,515 @@ export const useWalletStore = create<WalletState>()(
           } else {
             const selectedCurrency = resolvePreferredCurrency({
               walletCurrency: walletData?.currency,
-              profileCurrency: profileData?.currency,
-              country: profileData?.country,
-              countryCode: profileData?.country_code,
+              profileCurrency: fallbackProfileCurrency,
+              country: fallbackCountry,
+              countryCode: fallbackCountryCode,
             });
+
+            if (walletData?.currency !== selectedCurrency) {
+              const updatedAt = new Date().toISOString();
+              await supabase
+                .from('wallets')
+                .update({ currency: selectedCurrency, updated_at: updatedAt })
+                .eq('id', walletData.id);
+              walletData.currency = selectedCurrency;
+              walletData.updated_at = updatedAt;
+            }
 
             set({ wallet: walletData, selectedCurrency, isLoading: false });
             console.log('✅ Wallet fetched successfully:', walletData);
           }
         } catch (error: any) {
-          console.error('❌ Wallet fetch error:', error);
-          set({ error: error.message, isLoading: false });
+          console.warn('Wallet fetch unavailable:', error);
+          set({ error: error?.message || 'Wallet is temporarily unavailable', isLoading: false });
         }
       },
       
       fetchTransactions: async () => {
         set({ isLoading: true, error: null });
         try {
-          const { wallet } = get();
+          let { wallet } = get();
           if (!wallet) {
-            console.log('⚠️ No wallet found - skipping transactions fetch');
-            set({ transactions: [], isLoading: false });
-            return;
+            console.log('⚠️ No wallet loaded - fetching wallet before transactions');
+            await get().fetchWallet();
+            wallet = get().wallet;
+
+            if (!wallet) {
+              console.log('⚠️ No wallet found - skipping transactions fetch');
+              set({ transactions: [], isLoading: false });
+              return;
+            }
           }
           
           console.log('🔍 Fetching transactions for wallet:', wallet.id);
-          
-          // Fetch transactions from Supabase
+
+          const { user } = useAuthStore.getState();
+          const isBusinessUser = !!user?.isBusinessAccount;
+
+          // Auto-reconcile pending Paystack withdrawals before reading local ledger.
+          if (isBusinessUser) {
+            try {
+              await supabase.functions.invoke('paystack-reconcile-withdrawals', {
+                body: { limit: 20 },
+              });
+            } catch (reconcileError: any) {
+              console.warn('⚠️ Withdrawal reconciliation unavailable:', reconcileError?.message || reconcileError);
+            }
+          }
+
+          // Fetch transactions from Supabase after reconciliation so new withdrawal entries are included.
           const { data: transactionsData, error: transactionsError } = await supabase
             .from('transactions')
             .select('*')
             .eq('wallet_id', wallet.id)
             .order('created_at', { ascending: false });
-          
+
           if (transactionsError) {
             throw new Error(`Failed to fetch transactions: ${transactionsError.message}`);
           }
 
           const mappedTransactions = (transactionsData || []).map((row: TransactionRow) => mapTransactionRow(row));
+          const hasOwnerCreditTransactions = mappedTransactions.some(isOwnerCreditTransaction);
+          const hasLinkedBusinessBankAccount = !!get().businessBankAccount;
+          const hasLegacyBusinessBuyerDebit = (transactionsData || []).some((row: TransactionRow) => {
+            const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+            const entry = String(metadata.entry || '').trim();
+            const isLegacyBackfill = isLegacyBusinessPaymentDebit(row);
+            if (entry !== 'buyer_debit' && !isLegacyBackfill) return false;
 
-          set({ transactions: mappedTransactions, isLoading: false });
+            const ownerId = metadata.owner_id || metadata.ownerId || metadata.business_id || metadata.businessId;
+            return !!ownerId && String(ownerId) === user?.id;
+          });
+          const shouldUseBusinessClaimableBalance =
+            isBusinessUser ||
+            hasLinkedBusinessBankAccount ||
+            hasOwnerCreditTransactions ||
+            hasLegacyBusinessBuyerDebit;
+          const existingOwnerCreditOrderIds = new Set(
+            mappedTransactions
+              .filter(isOwnerCreditTransaction)
+              .map((tx) => (tx.metadata as any)?.order_id || (tx.metadata as any)?.orderId)
+              .filter((value): value is string => !!value)
+          );
+          const derivedOwnerCredits = shouldUseBusinessClaimableBalance
+            ? (transactionsData || [])
+              .map((row: TransactionRow) => {
+                const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+                const ownerId = metadata.owner_id || metadata.ownerId || metadata.business_id || metadata.businessId;
+                if (ownerId && String(ownerId) !== user?.id) return null;
+                if (!ownerId) return null;
+
+                const orderId = metadata.order_id || metadata.orderId;
+                if (orderId && existingOwnerCreditOrderIds.has(String(orderId))) return null;
+
+                return createOwnerCreditFromBuyerDebit(row, get().selectedCurrency);
+              })
+              .filter((tx): tx is Transaction => !!tx)
+            : [];
+          const businessDisplayTransactions = [...mappedTransactions, ...derivedOwnerCredits]
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          const transactionsForState = shouldUseBusinessClaimableBalance
+            ? businessDisplayTransactions
+            : mappedTransactions;
+          const transactionCurrency = transactionsForState
+            .map((tx) => (tx.metadata as any)?.currency)
+            .find((currency) => isSupportedCurrencyCode(String(currency || '').toUpperCase()));
+          const businessBankCurrency = resolveBusinessBankCurrency(get().businessBankAccount);
+          const resolvedBusinessBalance = shouldUseBusinessClaimableBalance
+            ? calculateBusinessClaimableBalance(transactionsForState)
+            : roundMoney(Number(wallet.balance || 0));
+          const resolvedWalletCurrency = shouldUseBusinessClaimableBalance
+            ? normalizeCurrencyCode(
+              transactionCurrency,
+              normalizeCurrencyCode(
+                businessBankCurrency,
+                normalizeCurrencyCode(wallet.currency, get().selectedCurrency)
+              )
+            )
+            : normalizeCurrencyCode(wallet.currency, get().selectedCurrency);
+          const shouldSyncWalletBalance = Math.abs(Number(wallet.balance || 0) - resolvedBusinessBalance) >= 0.01;
+          const shouldSyncWalletCurrency = wallet.currency !== resolvedWalletCurrency;
+
+          if (shouldUseBusinessClaimableBalance) {
+            const staleOwnerCreditRows = (transactionsData || [])
+              .map((row: TransactionRow) => ({
+                row,
+                mapped: mapTransactionRow(row),
+              }))
+              .filter(({ row, mapped }) => {
+                const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+                const entry = String(metadata.entry || '').trim();
+                return entry === 'owner_credit' && Math.abs(Number(row.amount || 0) - Number(mapped.amount || 0)) >= 0.01;
+              });
+
+            if (staleOwnerCreditRows.length) {
+              await Promise.all(
+                staleOwnerCreditRows.map(({ row, mapped }) =>
+                  supabase
+                    .from('transactions')
+                    .update({
+                      amount: mapped.amount,
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', row.id)
+                )
+              );
+            }
+          }
+
+          if (shouldSyncWalletBalance || shouldSyncWalletCurrency) {
+            const updatedAt = new Date().toISOString();
+
+            const walletUpdatePayload: Record<string, any> = {
+              updated_at: updatedAt,
+            };
+            if (shouldSyncWalletBalance) {
+              walletUpdatePayload.balance = resolvedBusinessBalance;
+            }
+            if (shouldSyncWalletCurrency) {
+              walletUpdatePayload.currency = resolvedWalletCurrency;
+            }
+
+            const { error: walletUpdateError } = await supabase
+              .from('wallets')
+              .update(walletUpdatePayload)
+              .eq('id', wallet.id);
+
+            if (walletUpdateError) {
+              console.warn('⚠️ Failed to sync wallet snapshot from transactions:', walletUpdateError.message);
+            }
+
+            const nextWallet: any = {
+              ...wallet,
+              balance: resolvedBusinessBalance,
+              updatedAt,
+              updated_at: updatedAt,
+            };
+
+            if (shouldSyncWalletCurrency) {
+              nextWallet.currency = resolvedWalletCurrency;
+            }
+
+            set({
+              wallet: nextWallet,
+              selectedCurrency: resolvedWalletCurrency,
+            });
+          }
+          set({
+            transactions: transactionsForState,
+            isLoading: false,
+            selectedCurrency: resolvedWalletCurrency,
+          });
           console.log('✅ Transactions fetched successfully:', transactionsData);
         } catch (error: any) {
-          console.error('❌ Transactions fetch error:', error);
-          set({ error: error.message, isLoading: false });
+          console.warn('Transactions fetch unavailable:', error);
+          set({ error: error?.message || 'Transactions are temporarily unavailable', isLoading: false });
+        }
+      },
+
+      reconcileBusinessWalletBalance: async () => {
+        const { user } = useAuthStore.getState();
+        if (!user?.id) return;
+
+        let { wallet } = get();
+        if (!wallet) {
+          await get().fetchWallet();
+          wallet = get().wallet;
+        }
+
+        if (!wallet) return;
+
+        try {
+          const { data: receiptRows, error: receiptError } = await supabase
+            .from('ticket_receipts')
+            .select('order_id,product_id,video_id,quantity,unit_price,total_price,currency,created_at')
+            .eq('owner_id', user.id);
+
+          if (receiptError) {
+            console.warn('⚠️ Ticket receipt reconciliation unavailable; trying paid orders and wallet metadata:', receiptError.message);
+          }
+
+          const receipts = (receiptRows || []) as TicketReceiptSettlementRow[];
+          const receiptOrderIds = new Set(
+            receipts.map((receipt) => receipt.order_id).filter((value): value is string => !!value)
+          );
+
+          const { data: productRows, error: productError } = await supabase
+            .from('products')
+            .select('id,price,currency,event_id')
+            .eq('business_id', user.id);
+
+          if (productError) {
+            console.warn('⚠️ Business product lookup skipped for wallet reconciliation:', productError.message);
+          }
+
+          const businessProducts = ((productRows || []) as BusinessProductSettlementRow[])
+            .filter((product) => !!product.id);
+          const productById = new Map(businessProducts.map((product) => [String(product.id), product]));
+          const productIds = new Set(productById.keys());
+
+          const { data: orderRows, error: orderError } = await supabase
+            .from('orders')
+            .select('id,total_amount,currency,video_id,created_at,payment_method,payment_status,status,items')
+            .eq('business_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(500);
+
+          if (orderError) {
+            console.warn('⚠️ Business order reconciliation skipped:', orderError.message);
+          }
+
+          const orderBackedReceipts: TicketReceiptSettlementRow[] = ((orderRows || []) as BusinessOrderSettlementRow[])
+            .filter((order) => !receiptOrderIds.has(order.id))
+            .filter(isPaidSettlementStatus)
+            .filter((order) => Number(order.total_amount || 0) > 0)
+            .map((order) => ({
+              order_id: order.id,
+              video_id: order.video_id || null,
+              quantity: 1,
+              unit_price: Number(order.total_amount || 0),
+              total_price: Number(order.total_amount || 0),
+              currency: order.currency || null,
+              created_at: order.created_at || null,
+            }));
+
+          const knownProductSettlementOrderIds = new Set(
+            [...receiptOrderIds, ...orderBackedReceipts.map((receipt) => receipt.order_id)]
+              .filter((value): value is string => !!value)
+          );
+
+          const productOrderBackedReceipts: TicketReceiptSettlementRow[] = [];
+          if (productIds.size) {
+            const { data: paidOrderRows, error: paidOrderError } = await supabase
+              .from('orders')
+              .select('id,total_amount,currency,video_id,created_at,payment_method,payment_status,status,items,business_id')
+              .order('created_at', { ascending: false })
+              .limit(500);
+
+            if (paidOrderError) {
+              console.warn('⚠️ Product order reconciliation skipped:', paidOrderError.message);
+            } else {
+              for (const order of (paidOrderRows || []) as BusinessOrderSettlementRow[]) {
+                if (!order?.id || knownProductSettlementOrderIds.has(order.id)) continue;
+
+                if (!isPaidSettlementStatus(order)) continue;
+
+                const items = Array.isArray(order.items) ? order.items : [];
+                for (const item of items) {
+                  const productId = String(item?.product_id || item?.productId || item?.id || '');
+                  const product = productById.get(productId);
+                  if (!product) continue;
+
+                  const quantity = Math.max(1, Number(item?.quantity || 1));
+                  const unitGrossAmount = Number(item?.unit_price ?? item?.unitPrice ?? item?.price ?? 0);
+                  const explicitLineTotal = Number(item?.total_price ?? item?.totalPrice ?? item?.total ?? 0);
+                  const grossAmount = roundMoney(
+                    explicitLineTotal > 0
+                      ? explicitLineTotal
+                      : unitGrossAmount > 0
+                        ? unitGrossAmount * quantity
+                        : Number(order.total_amount || 0)
+                  );
+                  const netAmount = roundMoney(Number(product.price || 0) * quantity);
+
+                  if (!(grossAmount > 0) && !(netAmount > 0)) continue;
+
+                  productOrderBackedReceipts.push({
+                    order_id: order.id,
+                    product_id: productId,
+                    video_id: order.video_id || product.event_id || null,
+                    quantity,
+                    unit_price: grossAmount > 0 ? roundMoney(grossAmount / quantity) : Number(product.price || 0),
+                    total_price: grossAmount > 0 ? grossAmount : roundMoney(netAmount * (1 + BUSINESS_PLATFORM_FEE_RATE)),
+                    net_price: netAmount > 0 ? netAmount : null,
+                    currency: order.currency || product.currency || null,
+                    created_at: order.created_at || null,
+                  });
+                }
+              }
+            }
+          }
+
+          const knownSettlementOrderIds = new Set(
+            [...receipts, ...orderBackedReceipts, ...productOrderBackedReceipts]
+              .map((receipt) => receipt.order_id)
+              .filter((value): value is string => !!value)
+          );
+
+          const { data: buyerDebitRows, error: buyerDebitError } = await supabase
+            .from('transactions')
+            .select('id,amount,type,status,description,metadata,created_at')
+            .eq('wallet_id', wallet.id)
+            .order('created_at', { ascending: false })
+            .limit(500);
+
+          if (buyerDebitError) {
+            console.warn('⚠️ Business buyer-debit reconciliation skipped:', buyerDebitError.message);
+          }
+
+          const buyerDebitBackedReceipts: TicketReceiptSettlementRow[] = ((buyerDebitRows || []) as any[])
+            .map((row) => {
+              const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+              if (!isLegacyBusinessPaymentDebit(row as TransactionRow)) return null;
+
+              const ownerId = metadata.owner_id || metadata.ownerId || metadata.business_id || metadata.businessId;
+              if (ownerId && String(ownerId) !== user.id) return null;
+
+              const orderId = metadata.order_id || metadata.orderId || null;
+              if (orderId && knownSettlementOrderIds.has(String(orderId))) return null;
+
+              const grossAmount = Math.abs(Number(metadata.gross_amount ?? metadata.grossAmount ?? row.amount ?? 0));
+              if (!(grossAmount > 0)) return null;
+
+              return {
+                order_id: orderId ? String(orderId) : `buyer-debit:${row.id}`,
+                product_id: metadata.product_id || metadata.productId || null,
+                video_id: metadata.video_id || metadata.videoId || null,
+                quantity: 1,
+                unit_price: grossAmount,
+                total_price: grossAmount,
+                currency: metadata.currency || null,
+                created_at: row.created_at || null,
+              } as TicketReceiptSettlementRow;
+            })
+            .filter((receipt): receipt is TicketReceiptSettlementRow => !!receipt);
+
+          const settlementRows = [...receipts, ...orderBackedReceipts, ...productOrderBackedReceipts, ...buyerDebitBackedReceipts];
+          if (!settlementRows.length) return;
+
+          const orderIds = Array.from(
+            new Set(settlementRows.map((receipt) => receipt.order_id).filter((value): value is string => !!value))
+          );
+
+          const existingSettledOrderIds = new Set<string>();
+          if (orderIds.length) {
+            const { data: existingRows, error: existingError } = await supabase
+              .from('transactions')
+              .select('metadata')
+              .eq('wallet_id', wallet.id)
+              .eq('metadata->>entry', 'owner_credit')
+              .in('metadata->>order_id', orderIds);
+
+            if (existingError) {
+              console.warn('⚠️ Failed to check existing business settlements:', existingError.message);
+            } else {
+              for (const row of existingRows || []) {
+                const orderId = (row as any)?.metadata?.order_id || (row as any)?.metadata?.orderId;
+                if (orderId) existingSettledOrderIds.add(String(orderId));
+              }
+            }
+          }
+
+          const groupedReceipts = new Map<string, TicketReceiptSettlementRow[]>();
+          for (const receipt of settlementRows) {
+            const key = receipt.order_id || `receipt:${receipt.product_id || 'unknown'}:${receipt.created_at || ''}`;
+            if (!groupedReceipts.has(key)) groupedReceipts.set(key, []);
+            groupedReceipts.get(key)!.push(receipt);
+          }
+
+          const transactionsToInsert: any[] = [];
+          const nowIso = new Date().toISOString();
+
+          for (const [groupKey, group] of groupedReceipts.entries()) {
+            const orderId = group[0]?.order_id || groupKey;
+            if (group[0]?.order_id && existingSettledOrderIds.has(group[0].order_id)) {
+              continue;
+            }
+
+            const grossAmount = roundMoney(
+              group.reduce((sum, receipt) => sum + Number(receipt.total_price || 0), 0)
+            );
+            if (!(grossAmount > 0)) continue;
+
+            const explicitNetAmount = roundMoney(
+              group.reduce((sum, receipt) => sum + Number(receipt.net_price || 0), 0)
+            );
+            const netAmount = explicitNetAmount > 0 ? explicitNetAmount : deriveBusinessNetAmount(grossAmount);
+            const platformFeeAmount = roundMoney(Math.max(0, grossAmount - netAmount));
+            const currency = normalizeCurrencyCode(group.find((receipt) => receipt.currency)?.currency, get().selectedCurrency);
+            const firstCreatedAt = group.find((receipt) => receipt.created_at)?.created_at || nowIso;
+
+            transactionsToInsert.push({
+              wallet_id: wallet.id,
+              amount: netAmount,
+              type: 'deposit',
+              status: 'completed',
+              description: 'Sale settlement',
+              transaction_fee: 0,
+              metadata: {
+                entry: 'owner_credit',
+                source: 'business_wallet_reconciliation',
+                owner_id: user.id,
+                order_id: orderId,
+                video_id: group.find((receipt) => receipt.video_id)?.video_id || null,
+                gross_amount: grossAmount,
+                platform_fee_amount: platformFeeAmount,
+                net_amount: netAmount,
+                currency,
+                items: group.map((receipt) => ({
+                  productId: receipt.product_id,
+                  quantity: receipt.quantity || 1,
+                  unitPrice: receipt.unit_price,
+                  totalPrice: receipt.total_price,
+                  netPrice: receipt.net_price,
+                })),
+                reconciled_at: nowIso,
+              },
+              created_at: firstCreatedAt,
+              updated_at: nowIso,
+            });
+          }
+
+          if (!transactionsToInsert.length) return;
+
+          const { error: insertError } = await supabase
+            .from('transactions')
+            .insert(transactionsToInsert);
+
+          if (insertError) {
+            console.warn('⚠️ Failed to create missing business wallet settlements:', insertError.message);
+            return;
+          }
+
+          const { data: refreshedTransactionRows, error: refreshedTransactionsError } = await supabase
+            .from('transactions')
+            .select('*')
+            .eq('wallet_id', wallet.id);
+
+          if (refreshedTransactionsError) {
+            console.warn('⚠️ Failed to refresh business wallet ledger after reconciliation:', refreshedTransactionsError.message);
+          }
+
+          const refreshedTransactions = (refreshedTransactionRows || transactionsToInsert).map((row: TransactionRow) =>
+            mapTransactionRow(row)
+          );
+          const updatedBalance = calculateBusinessClaimableBalance(refreshedTransactions);
+          const reconciledCurrency = normalizeCurrencyCode(
+            transactionsToInsert.find((transaction) => transaction?.metadata?.currency)?.metadata?.currency,
+            get().selectedCurrency
+          );
+          const updatedAt = new Date().toISOString();
+
+          const { error: walletUpdateError } = await supabase
+            .from('wallets')
+            .update({ balance: updatedBalance, currency: reconciledCurrency, updated_at: updatedAt })
+            .eq('id', wallet.id);
+
+          if (walletUpdateError) {
+            console.warn('⚠️ Failed to update reconciled business wallet balance:', walletUpdateError.message);
+          }
+
+          set({
+            wallet: {
+              ...wallet,
+              balance: updatedBalance,
+              currency: reconciledCurrency,
+              updatedAt,
+            },
+            selectedCurrency: reconciledCurrency,
+          });
+        } catch (error: any) {
+          console.warn('⚠️ Business wallet reconciliation failed:', error?.message || error);
         }
       },
       
@@ -578,12 +1311,7 @@ export const useWalletStore = create<WalletState>()(
             throw new Error('User not authenticated');
           }
           
-          if (!user.isBusinessAccount) {
-            set({ businessBankAccount: null, isLoading: false });
-            return;
-          }
-
-          const { data, error } = await withTimeout(
+          const { data, error } = await withTimeout<{ data: any; error: any }>(
             (supabase as any)
               .from('business_bank_accounts')
               .select('*')
@@ -807,7 +1535,23 @@ export const useWalletStore = create<WalletState>()(
       },
 
       setCurrency: (currency: CurrencyCode) => {
-        set({ selectedCurrency: currency });
+        const { wallet } = get();
+        set({
+          selectedCurrency: currency,
+          wallet: wallet ? { ...wallet, currency, updatedAt: new Date().toISOString() } : wallet,
+        });
+
+        if (wallet) {
+          supabase
+            .from('wallets')
+            .update({ currency, updated_at: new Date().toISOString() })
+            .eq('id', wallet.id)
+            .then(({ error }) => {
+              if (error) {
+                console.warn('⚠️ Failed to update wallet currency:', error.message);
+              }
+            });
+        }
       },
       
       // createMockUser removed for production
@@ -956,21 +1700,36 @@ export const useWalletStore = create<WalletState>()(
           if (isTwintPayment || isPaystackPayment) {
             if (metadata.externalPaymentVerified === true) {
               if (metadata.orderId) {
-                const { error: orderUpdateError } = await supabase
-                  .from('orders')
-                  .update({
-                    payment_status: 'paid',
-                    status: 'completed',
-                    payment_provider: isTwintPayment ? 'twint' : 'paystack',
-                    payment_reference: metadata.twintPaymentId || metadata.twintTransactionId || metadata.paystackReference || null,
-                    payment_transaction_id: metadata.twintTransactionId || metadata.paystackReference || null,
-                    payment_metadata: metadata,
-                    updated_at: new Date().toISOString(),
-                  })
-                  .eq('id', metadata.orderId);
+                const provider = isTwintPayment ? 'twint' : 'paystack';
+                const paymentReference = metadata.twintPaymentId || metadata.twintTransactionId || metadata.paystackReference || null;
+                const paymentTransactionId = metadata.twintTransactionId || metadata.paystackReference || null;
 
-                if (orderUpdateError) {
-                  throw new Error(`Failed to update verified external order: ${orderUpdateError.message}`);
+                const settlement = await settleExternalOrderPayment({
+                  orderId: metadata.orderId,
+                  provider,
+                  paymentReference,
+                  paymentTransactionId,
+                  recipientId: metadata.recipientId || metadata.businessId || null,
+                  grossAmount: Number(metadata.grossAmount ?? amount),
+                  netAmount: Number(metadata.netAmount ?? NaN),
+                  currency: metadata.currency || DEFAULT_CURRENCY,
+                  videoId: metadata.videoId || null,
+                  items: Array.isArray(metadata.items)
+                    ? metadata.items
+                    : Array.isArray(metadata.cartItems)
+                      ? metadata.cartItems.map((item: any) => ({
+                          productId: item.productId || item.product_id || item.id,
+                          quantity: Number(item.quantity || 1),
+                          unitPrice: Number(item.unitPrice || item.unit_price || item.price || 0),
+                          currency: metadata.currency || DEFAULT_CURRENCY,
+                          ownerId: metadata.recipientId || metadata.businessId || null,
+                        }))
+                      : [],
+                  metadata,
+                });
+
+                if (!settlement.success) {
+                  throw new Error(settlement.error || 'Failed to settle verified external order');
                 }
               }
 
@@ -1241,80 +2000,143 @@ export const useWalletStore = create<WalletState>()(
             throw new Error(`Bank account not verified. ${reason}`);
           }
 
-          const usesPaystackPayout = businessBankAccount.payoutProvider === 'paystack' && String(businessBankAccount.countryCode || '').toUpperCase() === 'NG';
-          
-          if (wallet.balance < amount) {
-            throw new Error('Insufficient funds');
+          const normalizedCountryCode = String(businessBankAccount.countryCode || '').trim().toUpperCase();
+          const usesPaystackPayout = normalizedCountryCode === 'NG' || businessBankAccount.payoutProvider === 'paystack';
+          const payoutFunctionName = usesPaystackPayout ? 'paystack-direct-transfer' : 'stripe-withdraw-business-bank-account';
+
+          // Metadata-backed records use synthetic ids like meta_<uid> and cannot be inserted into UUID columns.
+          let resolvedBusinessBankAccountId: string | null = isUuidLike(businessBankAccount.id)
+            ? businessBankAccount.id
+            : null;
+
+          if (!resolvedBusinessBankAccountId) {
+            const { data: bankRow, error: bankRowError } = await (supabase as any)
+              .from('business_bank_accounts')
+              .select('id')
+              .eq('user_id', user.id)
+              .eq('is_active', true)
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (bankRowError && !isBusinessBankTableUnavailableError(bankRowError)) {
+              throw new Error(`Failed to resolve bank account for withdrawal: ${bankRowError.message}`);
+            }
+
+            if (isUuidLike(bankRow?.id)) {
+              resolvedBusinessBankAccountId = bankRow.id;
+            }
           }
 
+          let withdrawalRequest: WithdrawalRequest | null = null;
           const { data, error } = await (supabase as any)
             .from('withdrawal_requests')
             .insert({
               user_id: user.id,
               amount,
               status: 'pending',
-              business_bank_account_id: businessBankAccount.id,
+              business_bank_account_id: resolvedBusinessBankAccountId,
               processing_fee: 0,
             })
             .select('*')
             .single();
 
           if (error || !data) {
-            throw new Error(`Failed to create withdrawal request: ${error?.message || 'unknown error'}`);
+            const missingTable = String(error?.message || '').toLowerCase().includes('withdrawal_requests');
+
+            if (!missingTable) {
+              throw new Error(`Failed to create withdrawal request: ${error?.message || 'unknown error'}`);
+            }
+          } else {
+            withdrawalRequest = {
+              id: data.id,
+              userId: data.user_id,
+              amount: Number(data.amount || amount),
+              status: data.status,
+              businessBankAccountId: data.business_bank_account_id || resolvedBusinessBankAccountId || businessBankAccount.id,
+              createdAt: data.created_at,
+            };
           }
 
-          if (usesPaystackPayout) {
-            const { data: payoutData, error: payoutError } = await supabase.functions.invoke('paystack-direct-transfer', {
-              body: {
-                amount,
-                withdrawalRequestId: data.id,
-                businessBankAccountId: businessBankAccount.id,
-                bankName: businessBankAccount.bankName,
-                accountName: businessBankAccount.accountName,
-                accountNumber: businessBankAccount.accountNumber,
-                bankCode: businessBankAccount.bankCode || '',
-                paystackRecipientCode: businessBankAccount.paystackRecipientCode || '',
-                countryCode: businessBankAccount.countryCode || '',
-                currency: businessBankAccount.currency || get().selectedCurrency || DEFAULT_CURRENCY,
-              },
-            });
+          const payoutPayload: Record<string, any> = {
+            amount,
+            withdrawalRequestId: withdrawalRequest?.id,
+            businessBankAccountId: resolvedBusinessBankAccountId || undefined,
+            payoutProvider: businessBankAccount.payoutProvider || 'paystack',
+            bankName: businessBankAccount.bankName,
+            accountName: businessBankAccount.accountName,
+            accountNumber: businessBankAccount.accountNumber,
+            bankCode: businessBankAccount.bankCode || '',
+            paystackRecipientCode: businessBankAccount.paystackRecipientCode || '',
+            stripeExternalAccountId: businessBankAccount.stripeExternalAccountId || '',
+            countryCode: businessBankAccount.countryCode || '',
+            currency: usesPaystackPayout && normalizedCountryCode === 'NG'
+              ? 'NGN'
+              : (businessBankAccount.currency || get().selectedCurrency || DEFAULT_CURRENCY),
+          };
 
-            if (payoutError) {
+          const { data: payoutData, error: payoutError } = await supabase.functions.invoke(payoutFunctionName, {
+            body: payoutPayload,
+          });
+
+          if (payoutError || payoutData?.success === false) {
+            if (withdrawalRequest?.id) {
               await (supabase as any)
                 .from('withdrawal_requests')
                 .update({ status: 'failed' })
-                .eq('id', data.id);
-              throw new Error(payoutError.message || 'Failed to initiate Paystack withdrawal');
+                .eq('id', withdrawalRequest.id);
             }
 
-            if (payoutData?.status) {
-              await (supabase as any)
-                .from('withdrawal_requests')
-                .update({ status: payoutData.status })
-                .eq('id', data.id);
+            const providerName = usesPaystackPayout ? 'Paystack' : 'Stripe';
+            const rawPayoutError = String(
+              payoutError?.message ||
+              payoutData?.error ||
+              `Failed to initiate ${providerName} withdrawal`
+            );
+
+            if (usesPaystackPayout && /not enough to fulfil this request/i.test(rawPayoutError)) {
+              throw new Error(
+                'Paystack transfer balance is currently low. Your app wallet balance is available, but the payout provider cannot process transfer right now. Please top up Paystack transfer balance and retry.'
+              );
             }
+
+            throw new Error(
+              rawPayoutError
+            );
           }
 
-          const withdrawalStatus = usesPaystackPayout ? 'processing' : data.status;
+          if (payoutData?.status && withdrawalRequest?.id) {
+            await (supabase as any)
+              .from('withdrawal_requests')
+              .update({ status: payoutData.status })
+              .eq('id', withdrawalRequest.id);
+          }
 
-          const newWithdrawalRequest: WithdrawalRequest = {
-            id: data.id,
-            userId: data.user_id,
-            amount: Number(data.amount || amount),
-            status: withdrawalStatus,
-            businessBankAccountId: data.business_bank_account_id,
-            createdAt: data.created_at,
+          const withdrawalStatus = payoutData?.status || 'processing';
+
+          if (withdrawalRequest) {
+            set({
+              withdrawalRequests: [{ ...withdrawalRequest, status: withdrawalStatus }, ...withdrawalRequests],
+              isLoading: false,
+            });
+          } else {
+            set({ isLoading: false });
+          }
+          
+          return {
+            success: true,
+            payoutSubmitted: true,
+            ledgerRecorded: withdrawalRequest !== null,
+            providerQueued: Boolean(payoutData?.queuedForProviderBalance),
           };
-          
-          set({
-            withdrawalRequests: [newWithdrawalRequest, ...withdrawalRequests],
-            isLoading: false,
-          });
-          
-          return true;
         } catch (error: any) {
           set({ error: error.message, isLoading: false });
-          return false;
+          return {
+            success: false,
+            payoutSubmitted: false,
+            ledgerRecorded: false,
+            providerQueued: false,
+          };
         }
       },
       
@@ -1507,7 +2329,7 @@ export const useWalletStore = create<WalletState>()(
             let data: any = null;
             let error: any = null;
 
-            ({ data, error } = await withTimeout(
+            ({ data, error } = await withTimeout<{ data: any; error: any }>(
               (supabase as any)
                 .from('business_bank_accounts')
                 .upsert(paystackExtendedPayload, { onConflict: 'user_id' })
@@ -1518,7 +2340,7 @@ export const useWalletStore = create<WalletState>()(
             ));
 
             if (error && /column|bank_code|paystack_recipient|iban|swift_code|schema cache/i.test(error.message || '')) {
-              ({ data, error } = await withTimeout(
+              ({ data, error } = await withTimeout<{ data: any; error: any }>(
                 (supabase as any)
                   .from('business_bank_accounts')
                   .upsert(paystackBasePayload, { onConflict: 'user_id' })
@@ -1627,7 +2449,7 @@ export const useWalletStore = create<WalletState>()(
           let data: any = null;
           let error: any = null;
 
-          ({ data, error } = await withTimeout(
+          ({ data, error } = await withTimeout<{ data: any; error: any }>(
             (supabase as any)
               .from('business_bank_accounts')
               .upsert(extendedPayload, { onConflict: 'user_id' })
@@ -1638,7 +2460,7 @@ export const useWalletStore = create<WalletState>()(
           ));
 
           if (error && /column|iban|swift_code/i.test(error.message || '')) {
-            ({ data, error } = await withTimeout(
+            ({ data, error } = await withTimeout<{ data: any; error: any }>(
               (supabase as any)
                 .from('business_bank_accounts')
                 .upsert(basePayload, { onConflict: 'user_id' })
@@ -1786,7 +2608,7 @@ export const useWalletStore = create<WalletState>()(
             let data: any = null;
             let error: any = null;
 
-            ({ data, error } = await withTimeout(
+            ({ data, error } = await withTimeout<{ data: any; error: any }>(
               (supabase as any)
                 .from('business_bank_accounts')
                 .update(paystackExtendedPayload)
@@ -1798,7 +2620,7 @@ export const useWalletStore = create<WalletState>()(
             ));
 
             if (error && /column|bank_code|paystack_recipient|iban|swift_code|schema cache/i.test(error.message || '')) {
-              ({ data, error } = await withTimeout(
+              ({ data, error } = await withTimeout<{ data: any; error: any }>(
                 (supabase as any)
                   .from('business_bank_accounts')
                   .update(paystackBasePayload)
@@ -1967,7 +2789,7 @@ export const useWalletStore = create<WalletState>()(
           let data: any = null;
           let error: any = null;
 
-          ({ data, error } = await withTimeout(
+          ({ data, error } = await withTimeout<{ data: any; error: any }>(
             (supabase as any)
               .from('business_bank_accounts')
               .update(updatePayload)
@@ -1980,7 +2802,7 @@ export const useWalletStore = create<WalletState>()(
 
           if (error && /column|iban|swift_code/i.test(error.message || '')) {
             const { iban: _iban, swift_code: _swiftCode, ...legacyPayload } = updatePayload;
-            ({ data, error } = await withTimeout(
+            ({ data, error } = await withTimeout<{ data: any; error: any }>(
               (supabase as any)
                 .from('business_bank_accounts')
                 .update(legacyPayload)
@@ -2017,11 +2839,29 @@ export const useWalletStore = create<WalletState>()(
     {
       name: 'wallet-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      version: 3,
+      migrate: (persistedState: any, version: number) => {
+        if (!persistedState || typeof persistedState !== 'object') {
+          return persistedState;
+        }
+
+        const nextState = { ...persistedState };
+
+        if (version < 3) {
+          delete nextState.wallet;
+        }
+
+        return {
+          ...nextState,
+          selectedCurrency: normalizeCurrencyCode(
+            nextState?.selectedCurrency || persistedState?.wallet?.currency,
+            DEFAULT_CURRENCY
+          ),
+        };
+      },
       partialize: (state) => ({
-        wallet: state.wallet,
         paymentMethods: state.paymentMethods,
         businessBankAccount: state.businessBankAccount,
-        selectedCurrency: state.selectedCurrency,
       }),
     }
   )

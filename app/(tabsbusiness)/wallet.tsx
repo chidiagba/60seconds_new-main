@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  ScrollView,
   FlatList,
   ActivityIndicator,
   Modal,
@@ -42,7 +43,16 @@ type ProfileRow = {
 export default function WalletScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const { transactions, businessBankAccount, fetchWallet, fetchTransactions, fetchBusinessBankAccount, isLoading } =
+  const {
+    transactions,
+    businessBankAccount,
+    fetchWallet,
+    fetchTransactions,
+    fetchBusinessBankAccount,
+    isLoading,
+    selectedCurrency,
+    setCurrency,
+  } =
     useWalletStore();
 
   const [showAddFundsModal, setShowAddFundsModal] = useState(false);
@@ -59,10 +69,55 @@ export default function WalletScreen() {
   const [isBusinessFromDb, setIsBusinessFromDb] = useState<boolean | null>(null);
 
   useEffect(() => {
-    fetchWallet();
-    fetchTransactions();
-    fetchBusinessBankAccount();
-  }, []);
+    const loadWalletData = async () => {
+      await fetchBusinessBankAccount();
+      await fetchWallet();
+      await fetchTransactions();
+    };
+
+    loadWalletData();
+  }, [fetchBusinessBankAccount, fetchTransactions, fetchWallet]);
+
+  const handleRefreshWallet = async () => {
+    await fetchBusinessBankAccount();
+    await fetchWallet();
+    await fetchTransactions();
+  };
+
+  useEffect(() => {
+    if (!businessBankAccount) return;
+
+    const nigeriaSignals = [
+      businessBankAccount.country,
+      businessBankAccount.countryCode,
+      businessBankAccount.currency,
+      businessBankAccount.bankName,
+      businessBankAccount.payoutProvider,
+    ]
+      .map((value) => String(value || '').trim().toLowerCase())
+      .filter(Boolean);
+
+    const isNigerianBank = nigeriaSignals.some((value) =>
+      value === 'ng' ||
+      value === 'nga' ||
+      value === 'ngn' ||
+      value === 'nigeria' ||
+      value.includes('nigeria') ||
+      value.includes('opay') ||
+      value.includes('paystack')
+    );
+
+    if (isNigerianBank && selectedCurrency !== 'NGN') {
+      setCurrency('NGN');
+    }
+  }, [businessBankAccount, selectedCurrency, setCurrency]);
+
+  const handleBalancePress = () => {
+    router.push({
+      pathname: "/transactions",
+      params: { ledger: "business" },
+    });
+  };
 
   // ✅ Fetch user type + country from Supabase and determine eligibility
   useEffect(() => {
@@ -155,7 +210,10 @@ export default function WalletScreen() {
   };
 
   const handleViewAllTransactions = () => {
-    router.push("/transactions");
+    router.push({
+      pathname: "/transactions",
+      params: { ledger: "business" },
+    });
   };
 
   const handleManagePaymentMethods = () => {
@@ -182,15 +240,27 @@ export default function WalletScreen() {
   );
 
   const addFundsDisabled = isCheckingEligibility || !isAddFundsEligible;
+  const businessTransactions = transactions.filter((transaction: any) => {
+    const entry = String(transaction?.metadata?.entry || '').trim();
+    if (entry === 'owner_credit' || entry === 'owner_withdrawal') return true;
+    // Keep legacy historical business records visible across app versions/devices.
+    return transaction.type !== 'fee';
+  });
 
   return (
     <View style={styles.container}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.contentContainer}
+      >
       <Text style={styles.title}>Wallet</Text>
 
       <WalletBalance
         onAddFunds={handleAddFunds}
         onSend={handleSendMoney}
         onWithdraw={isBusinessAccount ? handleWithdraw : undefined}
+        onRefresh={handleRefreshWallet}
+        onBalancePress={handleBalancePress}
       />
 
       <View style={styles.actionsContainer}>
@@ -339,24 +409,26 @@ export default function WalletScreen() {
           </TouchableOpacity>
         </View>
 
-        {isLoading && transactions.length === 0 ? (
+        {isLoading && businessTransactions.length === 0 ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color={Colors.dark.primary} />
           </View>
-        ) : transactions.length === 0 ? (
+        ) : businessTransactions.length === 0 ? (
           <View style={styles.emptyContainer}>
             <History size={48} color={Colors.dark.subtext} />
             <Text style={styles.emptyText}>No transactions yet</Text>
           </View>
         ) : (
           <FlatList
-            data={transactions.slice(0, 5)}
+            data={businessTransactions.slice(0, 5)}
             renderItem={renderTransactionItem}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.transactionsList}
+            scrollEnabled={false}
           />
         )}
       </View>
+      </ScrollView>
 
       {/* ✅ Normal Add Funds modal (only opens when eligible) */}
       <AddFundsModal
@@ -422,7 +494,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.dark.background,
+  },
+  contentContainer: {
     padding: 16,
+    paddingBottom: 24,
   },
   title: {
     fontSize: 24,
@@ -517,7 +592,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   transactionsContainer: {
-    flex: 1,
+    marginBottom: 8,
   },
   transactionsHeader: {
     flexDirection: "row",

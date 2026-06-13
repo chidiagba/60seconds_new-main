@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
   Alert
 } from 'react-native';
-import { X, Landmark } from 'lucide-react-native';
+import { X, Landmark, AlertTriangle } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useWalletStore } from '@/store/wallet-store';
 import { BusinessBankAccount } from '@/types/wallet';
@@ -25,21 +25,54 @@ interface WithdrawFundsModalProps {
 export default function WithdrawFundsModal({ visible, onClose }: WithdrawFundsModalProps) {
   const { 
     wallet, 
+    transactions,
     businessBankAccount, 
+    fetchWallet,
+    fetchTransactions,
     fetchBusinessBankAccount, 
     requestWithdrawal, 
     isLoading,
     selectedCurrency,
   } = useWalletStore();
   const [amount, setAmount] = useState('');
+  const [showInsufficientDialog, setShowInsufficientDialog] = useState(false);
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const activeCurrency = normalizeCurrencyCode(businessBankAccount?.currency, selectedCurrency);
   const currencySymbol = getCurrencySymbol(activeCurrency);
   const formattedAmount = amount ? formatCurrency(parseFloat(amount), activeCurrency) : formatCurrency(0, activeCurrency);
+  const usesDirectPayout =
+    String(businessBankAccount?.countryCode || '').trim().toUpperCase() === 'NG' ||
+    businessBankAccount?.payoutProvider === 'paystack';
+  const claimableBalance = React.useMemo(() => {
+    const isCompletedLike = (status?: string) => {
+      const normalized = String(status || '').trim().toLowerCase();
+      return normalized === 'completed' || normalized === 'success' || normalized === 'successful' || normalized === 'paid';
+    };
+
+    return Math.max(
+      Number(wallet?.balance || 0),
+      transactions
+        .filter((tx) => isCompletedLike(tx.status))
+        .reduce((sum, tx) => {
+          const metadata = (tx.metadata || {}) as Record<string, any>;
+          const entry = String(metadata.entry || '').trim();
+          if (entry === 'owner_credit') return sum + Math.max(0, Number(tx.amount || 0));
+          if (entry === 'owner_withdrawal' || tx.type === 'withdrawal') return sum - Math.abs(Number(tx.amount || 0));
+          return sum;
+        }, 0)
+    );
+  }, [transactions, wallet?.balance]);
   
   React.useEffect(() => {
     if (visible) {
       fetchBusinessBankAccount();
+      fetchWallet();
+      fetchTransactions();
       setAmount('');
+      setShowInsufficientDialog(false);
+      setShowSuccessDialog(false);
+      setSuccessMessage('');
     }
   }, [visible]);
   
@@ -52,6 +85,28 @@ export default function WithdrawFundsModal({ visible, onClose }: WithdrawFundsMo
   };
   
   const handleWithdraw = async () => {
+    await fetchWallet();
+    await fetchTransactions();
+   
+     // Recalculate balance AFTER fetching fresh transactions
+     const freshTransactions = useWalletStore.getState().transactions;
+     const freshWallet = useWalletStore.getState().wallet;
+     const freshClaimableBalance = Math.max(
+       Number(freshWallet?.balance || 0),
+       freshTransactions
+         .filter((tx) => {
+           const normalized = String(tx.status || '').trim().toLowerCase();
+           return normalized === 'completed' || normalized === 'success' || normalized === 'successful' || normalized === 'paid';
+         })
+         .reduce((sum, tx) => {
+           const metadata = (tx.metadata || {}) as Record<string, any>;
+           const entry = String(metadata.entry || '').trim();
+           if (entry === 'owner_credit') return sum + Math.max(0, Number(tx.amount || 0));
+           if (entry === 'owner_withdrawal' || tx.type === 'withdrawal') return sum - Math.abs(Number(tx.amount || 0));
+           return sum;
+         }, 0)
+     );
+
     if (!amount || parseFloat(amount) <= 0) {
       Alert.alert('Invalid Amount', 'Please enter a valid amount greater than 0.');
       return;
@@ -62,20 +117,36 @@ export default function WithdrawFundsModal({ visible, onClose }: WithdrawFundsMo
       return;
     }
     
-    if (wallet && parseFloat(amount) > wallet.balance) {
-      Alert.alert('Insufficient Funds', 'The amount exceeds your available balance.');
+     if (parseFloat(amount) > freshClaimableBalance) {
+      setShowInsufficientDialog(true);
       return;
     }
     
-    const success = await requestWithdrawal(parseFloat(amount));
+    const withdrawalResult = await requestWithdrawal(parseFloat(amount));
     
-    if (success) {
-      Alert.alert(
-        'Withdrawal Requested',
-        `Your withdrawal request for ${formattedAmount} has been submitted and is being processed.`,
-        [{ text: 'OK', onPress: onClose }]
-      );
+    if (withdrawalResult.success) {
+      const message = withdrawalResult.providerQueued
+        ? `Your withdrawal for ${formattedAmount} has been queued. Paystack transfer balance is temporarily low, so payout will be processed automatically once provider funds are available.`
+        : withdrawalResult.ledgerRecorded
+        ? usesDirectPayout
+          ? `Your Direct Payout for ${formattedAmount} has been submitted for instant transfer.`
+          : `Your withdrawal request for ${formattedAmount} has been submitted and is being processed.`
+        : usesDirectPayout
+          ? `Your Direct Payout for ${formattedAmount} has been submitted to Paystack. The transfer is in progress, and your withdrawal history will sync once the withdrawal_requests table is available.`
+          : `Your withdrawal for ${formattedAmount} has been submitted. The payout is in progress, and your withdrawal history will sync once the withdrawal_requests table is available.`;
+
+      setSuccessMessage(message);
+      setShowSuccessDialog(true);
+      return;
     }
+
+    const latestError = useWalletStore.getState().error || 'Unable to process withdrawal request. Please try again.';
+    if (/insufficient/i.test(latestError)) {
+      setShowInsufficientDialog(true);
+      return;
+    }
+
+    Alert.alert('Withdrawal Failed', latestError);
   };
   
   return (
@@ -113,7 +184,7 @@ export default function WithdrawFundsModal({ visible, onClose }: WithdrawFundsMo
               
               {wallet && (
                 <Text style={styles.availableBalance}>
-                  Available Balance: {formatCurrency(wallet.balance, activeCurrency)}
+                  Available Balance: {formatCurrency(claimableBalance, activeCurrency)}
                 </Text>
               )}
               
@@ -144,9 +215,9 @@ export default function WithdrawFundsModal({ visible, onClose }: WithdrawFundsMo
                     <Text style={styles.accountName}>{businessBankAccount.accountName}</Text>
                     <Text style={styles.accountNumber}>Account: {businessBankAccount.accountNumber}</Text>
                     <Text style={styles.accountNumber}>Provider: {businessBankAccount.payoutProvider === 'paystack' ? 'Paystack' : 'Stripe'}</Text>
-                    {businessBankAccount.payoutProvider === 'paystack' && (
+                    {usesDirectPayout && (
                       <Text style={styles.transferHint}>
-                        Direct transfer is enabled for this account. Paystack will create a recipient and send the payout directly.
+                        Direct Payout is enabled for this account. Paystack will create a recipient and transfer the payout instantly.
                       </Text>
                     )}
                     
@@ -173,13 +244,15 @@ export default function WithdrawFundsModal({ visible, onClose }: WithdrawFundsMo
             <View style={styles.infoContainer}>
               <Text style={styles.infoTitle}>Withdrawal Information</Text>
               <Text style={styles.infoText}>
-                • Withdrawals are typically processed within 1-3 business days
+                {usesDirectPayout
+                  ? '• Direct Payout transfers are sent instantly to your bank account'
+                  : '• Withdrawals are processed after your request is submitted'}
               </Text>
               <Text style={styles.infoText}>
                 • A small processing fee may apply depending on your bank
               </Text>
               <Text style={styles.infoText}>
-                • Minimum withdrawal amount is $50
+                • Minimum withdrawal amount can be as low as $5
               </Text>
             </View>
           </ScrollView>
@@ -204,6 +277,66 @@ export default function WithdrawFundsModal({ visible, onClose }: WithdrawFundsMo
           </View>
         </View>
       </View>
+
+      <Modal
+        visible={showInsufficientDialog}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowInsufficientDialog(false)}
+      >
+        <View style={styles.insufficientOverlay}>
+          <View style={styles.insufficientCard}>
+            <View style={styles.insufficientIconWrap}>
+              <AlertTriangle size={22} color="#F59E0B" />
+            </View>
+
+            <Text style={styles.insufficientTitle}>Insufficient Balance</Text>
+            <Text style={styles.insufficientText}>
+              Your available balance is {formatCurrency(claimableBalance, activeCurrency)}.
+              {'\n'}
+              Please enter a lower amount or add more funds before withdrawing.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.insufficientButton}
+              onPress={() => setShowInsufficientDialog(false)}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.insufficientButtonText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showSuccessDialog}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSuccessDialog(false)}
+      >
+        <View style={styles.successOverlay}>
+          <View style={styles.successCard}>
+            <View style={styles.successIconWrap}>
+              <Text style={styles.successIconText}>{activeCurrency}</Text>
+            </View>
+
+            <Text style={styles.successTitle}>Withdrawal Submitted</Text>
+            <Text style={styles.successAmount}>{formattedAmount}</Text>
+            <Text style={styles.successText}>{successMessage}</Text>
+
+            <TouchableOpacity
+              style={styles.successButton}
+              onPress={() => {
+                setShowSuccessDialog(false);
+                onClose();
+              }}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.successButtonText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </Modal>
   );
 }
@@ -406,5 +539,124 @@ const styles = StyleSheet.create({
     color: Colors.dark.text,
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  insufficientOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  insufficientCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: Colors.dark.card,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
+  },
+  insufficientIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  insufficientTitle: {
+    color: Colors.dark.text,
+    fontSize: 19,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  insufficientText: {
+    color: Colors.dark.subtext,
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: 16,
+  },
+  insufficientButton: {
+    backgroundColor: Colors.dark.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  insufficientButtonText: {
+    color: Colors.dark.text,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  successOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  successCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: Colors.dark.card,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.35)',
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
+  },
+  successIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(59, 130, 246, 0.16)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  successIconText: {
+    color: '#60A5FA',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  successTitle: {
+    color: Colors.dark.text,
+    fontSize: 19,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  successAmount: {
+    color: '#60A5FA',
+    fontSize: 26,
+    fontWeight: '800',
+    marginBottom: 10,
+  },
+  successText: {
+    color: Colors.dark.subtext,
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: 16,
+  },
+  successButton: {
+    backgroundColor: Colors.dark.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  successButtonText: {
+    color: Colors.dark.text,
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

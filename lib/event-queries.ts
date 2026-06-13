@@ -1,4 +1,7 @@
-import { supabase } from './supabase';
+import { supabase, Database } from './supabase';
+
+const PUBLIC_OPEN_EVENT_STATUSES = ['published', 'open'];
+type Tables = Database['public']['Tables'];
 
 export interface EventWithProducts {
   id: string;
@@ -27,7 +30,7 @@ export interface EventWithProducts {
   business_id?: string | null;
   is_public: boolean;
   requires_approval?: boolean | null;
-  status: 'draft' | 'published' | 'cancelled' | 'completed';
+  status: 'draft' | 'published' | 'open' | 'closed' | 'cancelled' | 'completed';
   created_at: string;
   updated_at: string;
   products?: any[];
@@ -49,6 +52,8 @@ export interface EventListItem {
   location_city?: string | null;
   location_latitude?: number | null;
   location_longitude?: number | null;
+  max_attendees?: number | null;
+  current_attendees?: number | null;
   ticket_price?: number | null;
   currency?: string | null;
   image_url?: string | null;
@@ -58,7 +63,7 @@ export interface EventListItem {
   business_id?: string | null;
   is_public: boolean;
   requires_approval?: boolean | null;
-  status: 'draft' | 'published' | 'cancelled' | 'completed';
+  status: 'draft' | 'published' | 'open' | 'closed' | 'cancelled' | 'completed';
   created_at: string;
   updated_at: string;
   has_products: boolean;
@@ -68,6 +73,116 @@ export interface EventListItem {
 }
 
 export class EventQueries {
+  /**
+   * Fetches latest public events that have a linked video.
+   * This powers Discover when users want newest events first.
+   */
+  static async getLatestEvents(limit: number = 60): Promise<{
+    success: boolean;
+    events?: EventListItem[];
+    error?: string;
+  }> {
+    try {
+      const selectLatestEvents = (selectClause: string) =>
+        supabase
+          .from('events')
+          .select(selectClause)
+          .eq('is_public', true)
+          .not('video_id', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+      let { data: events, error } = await selectLatestEvents(`
+        *,
+        video:videos(id, title, thumbnail_url, video_url),
+        creator:profiles!events_creator_id_fkey(id, username, full_name, avatar_url)
+      `);
+
+      if (error) {
+        console.warn('Latest events relationship query failed, retrying without joins:', this.formatError(error));
+        const fallback = await selectLatestEvents('*');
+        events = fallback.data;
+        error = fallback.error;
+      }
+
+      if (error) {
+        console.warn('Unable to fetch latest events:', this.formatError(error));
+        return { success: false, error: this.formatError(error) };
+      }
+
+      return {
+        success: true,
+        events: ((Array.isArray(events) ? events : []) as any[]).map((event) => ({
+          ...event,
+          has_products: false,
+          product_count: 0,
+        })),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
+  /**
+   * Fetches current public events with linked videos for the discover/category tabs.
+   * Events that have already ended are excluded so newer active/upcoming events fill the list.
+   */
+  static async getTrendingEvents(limit: number = 60): Promise<{
+    success: boolean;
+    events?: EventListItem[];
+    error?: string;
+  }> {
+    try {
+      const nowIso = new Date().toISOString();
+      const selectTrendingEvents = (selectClause: string) =>
+        supabase
+          .from('events')
+          .select(selectClause)
+          .eq('is_public', true)
+          .in('status', PUBLIC_OPEN_EVENT_STATUSES)
+          .not('video_id', 'is', null)
+          .or(`end_date.gt.${nowIso},and(end_date.is.null,start_date.gt.${nowIso})`)
+          .order('current_attendees', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+      let { data: events, error } = await selectTrendingEvents(`
+        *,
+        video:videos(id, title, thumbnail_url, video_url),
+        creator:profiles!events_creator_id_fkey(id, username, full_name, avatar_url)
+      `);
+
+      if (error) {
+        console.warn('Trending events relationship query failed, retrying without joins:', this.formatError(error));
+        const fallback = await selectTrendingEvents('*');
+        events = fallback.data;
+        error = fallback.error;
+      }
+
+      if (error) {
+        console.warn('Unable to fetch trending events:', this.formatError(error));
+        return { success: false, error: this.formatError(error) };
+      }
+
+      return {
+        success: true,
+        events: ((Array.isArray(events) ? events : []) as any[]).map((event) => ({
+          ...event,
+          has_products: false,
+          product_count: 0,
+        })),
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+
   /**
    * Fetches all events with product existence check for home screen
    * This is optimized for the home screen where you need to show "Shop" buttons
@@ -87,7 +202,7 @@ export class EventQueries {
           creator:profiles!events_creator_id_fkey(id, username, full_name, avatar_url)
         `)
         .eq('is_public', true)
-        .eq('status', 'published')
+        .in('status', PUBLIC_OPEN_EVENT_STATUSES)
         .eq('products.is_active', true)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
@@ -136,7 +251,7 @@ export class EventQueries {
           creator:profiles!events_creator_id_fkey(id, username, full_name, avatar_url)
         `)
         .eq('is_public', true)
-        .eq('status', 'published')
+        .in('status', PUBLIC_OPEN_EVENT_STATUSES)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
 
@@ -219,7 +334,7 @@ export class EventQueries {
       }
 
       // Filter only active products
-      const activeProducts = data.products?.filter(product => product.is_active) || [];
+      const activeProducts = data.products?.filter((product: Tables['products']['Row']) => product.is_active) || [];
       
       const eventWithProducts: EventWithProducts = {
         ...data,
@@ -276,23 +391,46 @@ export class EventQueries {
     error?: string;
   }> {
     try {
-      const { data, error } = await supabase
-        .from('events')
-        .select(`
-          *,
-          products!products_event_id_fkey(*),
-          video:videos(*)
-        `)
-        .or(`user_id.eq.${userId},creator_id.eq.${userId}`)
-        .order('created_at', { ascending: false });
+      const selectUserEvents = async (selectClause: string, includeCreator = true) => {
+        let query = supabase
+          .from('events')
+          .select(selectClause);
+
+        query = includeCreator
+          ? query.or(`user_id.eq.${userId},creator_id.eq.${userId}`)
+          : query.eq('user_id', userId);
+
+        return query.order('created_at', { ascending: false });
+      };
+
+      let { data, error } = await selectUserEvents(`
+        *,
+        products!products_event_id_fkey(*),
+        video:videos(*)
+      `);
 
       if (error) {
-        console.error('Error fetching user events:', error);
+        console.warn('User events relationship query failed, retrying without joins:', this.formatError(error));
+        const fallback = await selectUserEvents('*');
+        data = fallback.data;
+        error = fallback.error;
+      }
+
+      if (error) {
+        console.warn('User events creator query failed, retrying user_id only:', this.formatError(error));
+        const fallback = await selectUserEvents('*', false);
+        data = fallback.data;
+        error = fallback.error;
+      }
+
+      if (error) {
+        console.warn('Unable to fetch user events:', this.formatError(error));
         return { success: false, error: this.formatError(error) };
       }
 
-      const eventsWithProducts: EventWithProducts[] = (data || []).map(event => {
-        const activeProducts = event.products?.filter(product => product.is_active) || [];
+      const eventRows = (Array.isArray(data) ? data : []) as any[];
+      const eventsWithProducts: EventWithProducts[] = eventRows.map(event => {
+        const activeProducts = event.products?.filter((product: Tables['products']['Row']) => product.is_active) || [];
         return {
           ...event,
           products: activeProducts,
@@ -331,7 +469,7 @@ export class EventQueries {
           creator:profiles!events_creator_id_fkey(id, username, full_name, avatar_url)
         `)
         .eq('is_public', true)
-        .eq('status', 'published');
+        .in('status', PUBLIC_OPEN_EVENT_STATUSES);
 
       // Add search term
       if (searchTerm) {
@@ -422,4 +560,3 @@ export class EventQueries {
     return error.message || 'Database error occurred';
   }
 }
-

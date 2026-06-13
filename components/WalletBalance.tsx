@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, Pressable, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal, Pressable, ScrollView, GestureResponderEvent } from 'react-native';
 import { PlusCircle, ArrowDownLeft, ArrowUpRight, RefreshCw, ChevronDown } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useWalletStore } from '@/store/wallet-store';
-import { formatCurrency, getCurrencySymbol, CURRENCY_LIST, CurrencyCode } from '@/constants/currencies';
+import { formatCurrency, getCurrencySymbol, CURRENCY_LIST, CurrencyCode, normalizeCurrencyCode } from '@/constants/currencies';
 
 interface WalletBalanceProps {
   onAddFunds?: () => void;
   onSend?: () => void;
   onWithdraw?: () => void;
   onRefresh?: () => void;
+  onBalancePress?: () => void;
   compact?: boolean;
 }
 
@@ -18,6 +19,7 @@ export default function WalletBalance({
   onSend, 
   onWithdraw, 
   onRefresh,
+  onBalancePress,
   compact = false 
 }: WalletBalanceProps) {
   const { wallet, isLoading, fetchWallet, selectedCurrency, setCurrency } = useWalletStore();
@@ -53,26 +55,38 @@ export default function WalletBalance({
       </View>
     );
   }
+
+  const activeCurrency = normalizeCurrencyCode((wallet as any)?.currency, selectedCurrency);
   
   const handleCurrencySelect = (currency: CurrencyCode) => {
     setCurrency(currency);
     setShowCurrencyModal(false);
   };
+
+  const handleCurrencySelectorPress = (event: GestureResponderEvent) => {
+    event.stopPropagation();
+    setShowCurrencyModal(true);
+  };
   
   return (
     <View style={[styles.container, compact && styles.compactContainer]}>
-      <View style={styles.balanceContainer}>
+      <TouchableOpacity
+        style={styles.balanceContainer}
+        onPress={onBalancePress}
+        activeOpacity={onBalancePress ? 0.85 : 1}
+        disabled={!onBalancePress}
+      >
         <Text style={styles.balanceLabel}>Wallet Balance</Text>
-        <Text style={styles.balanceAmount}>{formatCurrency(wallet.balance, selectedCurrency)}</Text>
+        <Text style={styles.balanceAmount}>{formatCurrency(wallet.balance, activeCurrency)}</Text>
         
         <TouchableOpacity 
           style={styles.currencySelector} 
-          onPress={() => setShowCurrencyModal(true)}
+          onPress={handleCurrencySelectorPress}
         >
-          <Text style={styles.currencySelectorText}>{getCurrencySymbol(selectedCurrency)} {selectedCurrency}</Text>
+          <Text style={styles.currencySelectorText}>{getCurrencySymbol(activeCurrency)} {activeCurrency}</Text>
           <ChevronDown size={16} color={Colors.dark.primary} />
         </TouchableOpacity>
-      </View>
+      </TouchableOpacity>
       
       {!compact && (
         <View style={styles.actionsContainer}>
@@ -125,7 +139,7 @@ export default function WalletBalance({
                   key={currency.code}
                   style={[
                     styles.currencyItem,
-                    selectedCurrency === currency.code && styles.currencyItemSelected
+                    activeCurrency === currency.code && styles.currencyItemSelected
                   ]}
                   onPress={() => handleCurrencySelect(currency.code)}
                 >
@@ -136,7 +150,7 @@ export default function WalletBalance({
                       <Text style={styles.currencyName}>{currency.name}</Text>
                     </View>
                   </View>
-                  {selectedCurrency === currency.code && (
+                  {activeCurrency === currency.code && (
                     <View style={styles.selectedIndicator} />
                   )}
                 </TouchableOpacity>

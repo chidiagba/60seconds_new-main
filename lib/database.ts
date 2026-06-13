@@ -14,6 +14,8 @@ type Voucher = Tables['vouchers']['Row'];
 type Reservation = Tables['reservations']['Row'];
 type Follow = Tables['follows']['Row'];
 
+const PUBLIC_OPEN_EVENT_STATUSES = ['published', 'open'];
+
 const normalizeUsernameSeed = (input: string) => {
   return input
     .toLowerCase()
@@ -132,7 +134,8 @@ async function fetchProfileForVideoById(userId: string) {
   }
 
   if (!isMissingAvatarGenderSelectError(withGender.error)) {
-    return { data: null, error: withGender.error };
+    console.warn('Unable to fetch video profile:', withGender.error);
+    return { data: null, error: null as any };
   }
 
   const legacy = await supabase
@@ -141,10 +144,19 @@ async function fetchProfileForVideoById(userId: string) {
     .eq('id', userId)
     .maybeSingle();
 
-  return { data: legacy.data, error: legacy.error };
+  if (legacy.error) {
+    console.warn('Unable to fetch legacy video profile:', legacy.error);
+    return { data: null, error: null as any };
+  }
+
+  return { data: legacy.data, error: null as any };
 }
 
 async function fetchProfilesForVideoByIds(userIds: string[]) {
+  if (userIds.length === 0) {
+    return { data: [], error: null as any };
+  }
+
   const withGender = await supabase
     .from('profiles')
     .select(PROFILE_SELECT_WITH_AVATAR_GENDER)
@@ -155,7 +167,8 @@ async function fetchProfilesForVideoByIds(userIds: string[]) {
   }
 
   if (!isMissingAvatarGenderSelectError(withGender.error)) {
-    return { data: [], error: withGender.error };
+    console.warn('Unable to fetch video profiles:', withGender.error);
+    return { data: [], error: null as any };
   }
 
   const legacy = await supabase
@@ -163,7 +176,12 @@ async function fetchProfilesForVideoByIds(userIds: string[]) {
     .select(PROFILE_SELECT_LEGACY)
     .in('id', userIds);
 
-  return { data: legacy.data || [], error: legacy.error };
+  if (legacy.error) {
+    console.warn('Unable to fetch legacy video profiles:', legacy.error);
+    return { data: [], error: null as any };
+  }
+
+  return { data: legacy.data || [], error: null as any };
 }
 
 const VIDEO_DELETE_API_TIMEOUT_MS = 8000;
@@ -568,8 +586,8 @@ export const followService = {
       .eq('follower_id', followerId);
 
     if (error) {
-      console.error('Error fetching following ids:', error);
-      throw error;
+      console.warn('Unable to fetch following ids:', error);
+      return [];
     }
 
     return (data || []).map((item) => item.following_id);
@@ -604,13 +622,11 @@ export const followService = {
     ]);
 
     if (followersError) {
-      console.error('Error fetching followers count:', followersError);
-      throw followersError;
+      console.warn('Unable to fetch followers count:', followersError);
     }
 
     if (followingError) {
-      console.error('Error fetching following count:', followingError);
-      throw followingError;
+      console.warn('Unable to fetch following count:', followingError);
     }
 
     return {
@@ -810,7 +826,7 @@ export const videoService = {
     const { data: profileData, error: profileError } = await fetchProfileForVideoById(userId);
 
     if (profileError) {
-      console.error('Error fetching user profile:', profileError);
+      console.warn('Unable to fetch user profile:', profileError);
       // Don't throw error, just continue without profile data
     }
 
@@ -868,8 +884,7 @@ export const videoService = {
       .range(offset, offset + limit - 1);
 
     if (videosError) {
-      console.error('Error fetching videos:', videosError.message || videosError);
-      console.error('Full error object:', videosError);
+      console.warn('Unable to fetch videos:', videosError.message || videosError);
       throw videosError;
     }
 
@@ -884,7 +899,7 @@ export const videoService = {
     const { data: profilesData, error: profilesError } = await fetchProfilesForVideoByIds(userIds);
 
     if (profilesError) {
-      console.error('Error fetching profiles:', profilesError);
+      console.warn('Unable to fetch profiles:', profilesError);
       // Don't throw error, just continue without profile data
     }
 
@@ -1115,7 +1130,7 @@ export const videoService = {
     const { data: profilesData, error: profilesError } = await fetchProfilesForVideoByIds(userIds);
 
     if (profilesError) {
-      console.error('Error fetching profiles for search:', profilesError);
+      console.warn('Unable to fetch profiles for search:', profilesError);
       // Don't throw error, just continue without profile data
     }
 
@@ -1499,8 +1514,8 @@ export const eventService = {
       .order('start_date', { ascending: true });
 
     if (error) {
-      console.error('Error fetching user events:', error);
-      throw error;
+      console.warn('Unable to fetch user events:', error);
+      return [];
     }
     return data;
   },
@@ -1545,7 +1560,7 @@ export const eventService = {
         profiles(*)
       `)
       .eq('is_public', true)
-      .eq('status', 'published')
+      .in('status', PUBLIC_OPEN_EVENT_STATUSES)
       .gte('start_date', new Date().toISOString())
       .order('start_date', { ascending: true })
       .range(offset, offset + limit - 1);
@@ -1569,7 +1584,7 @@ export const eventService = {
         profiles(*)
       `)
       .eq('is_public', true)
-      .eq('status', 'published');
+      .in('status', PUBLIC_OPEN_EVENT_STATUSES);
 
     if (query) {
       queryBuilder = queryBuilder.or(`event_name.ilike.%${query}%,description.ilike.%${query}%`);
@@ -1655,7 +1670,7 @@ export const searchService = {
           profiles!events_creator_id_fkey(id, username, full_name, avatar_url, user_type, business_name, business_type)
         `)
         .eq('is_public', true)
-        .eq('status', 'published');
+        .in('status', PUBLIC_OPEN_EVENT_STATUSES);
 
       if (query) {
         eventQuery = eventQuery.or(`event_name.ilike.${searchTerm},description.ilike.${searchTerm}`);
@@ -1744,7 +1759,7 @@ export const searchService = {
         profiles!events_creator_id_fkey(id, username, full_name, avatar_url, user_type, business_name, business_type)
       `)
       .eq('is_public', true)
-      .eq('status', 'published');
+      .in('status', PUBLIC_OPEN_EVENT_STATUSES);
 
     if (query) {
       queryBuilder = queryBuilder.or(`event_name.ilike.%${query}%,description.ilike.%${query}%`);
@@ -2886,8 +2901,8 @@ export const interactionService = {
       .eq('user_id', userId);
 
     if (error) {
-      console.error('Error fetching user likes:', error);
-      throw error;
+      console.warn('Unable to fetch user likes:', error);
+      return [];
     }
 
     return (data ?? []).map(row => row.video_id);

@@ -25,26 +25,35 @@ import {
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useWalletStore } from '@/store/wallet-store';
+import { useAuthStore } from '@/store/auth-store';
 import { Transaction } from '@/types/wallet';
+import { formatCurrency, normalizeCurrencyCode } from '@/constants/currencies';
 
 export default function TransactionDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { transactions, fetchTransactions, isLoading } = useWalletStore();
+  const { user } = useAuthStore();
+  const { transactions, fetchWallet, fetchTransactions, isLoading, selectedCurrency } = useWalletStore();
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   
   useEffect(() => {
-    if (transactions.length === 0) {
-      fetchTransactions();
-    } else {
-      const foundTransaction = transactions.find(tx => tx.id === id);
+    const loadTransaction = async () => {
+      if (transactions.length === 0) {
+        await fetchWallet();
+        await fetchTransactions();
+        return;
+      }
+
+      const foundTransaction = transactions.find(tx => String(tx.id) === String(id));
       setTransaction(foundTransaction || null);
-    }
-  }, [id, transactions]);
+    };
+
+    loadTransaction();
+  }, [fetchTransactions, fetchWallet, id, transactions]);
   
   useEffect(() => {
     if (transactions.length > 0) {
-      const foundTransaction = transactions.find(tx => tx.id === id);
+      const foundTransaction = transactions.find(tx => String(tx.id) === String(id));
       setTransaction(foundTransaction || null);
     }
   }, [transactions]);
@@ -54,7 +63,7 @@ export default function TransactionDetailsScreen() {
       router.back();
       return;
     }
-    router.replace('/transactions');
+    router.replace(user?.isBusinessAccount ? '/(tabsbusiness)/wallet' : '/transactions');
   };
   
   const getTransactionIcon = () => {
@@ -204,6 +213,16 @@ export default function TransactionDetailsScreen() {
   }
   
   const isTwintTransaction = transaction.metadata?.paymentProvider === 'twint';
+  const metadata = (transaction.metadata || {}) as Record<string, any>;
+  const isOwnerCreditEntry = String(metadata.entry || '').trim() === 'owner_credit';
+  const detailCurrency = normalizeCurrencyCode(metadata.currency, selectedCurrency);
+  const formattedAmount = formatCurrency(transaction.amount, detailCurrency);
+  const signedFormattedAmount = `${transaction.amount > 0 ? '+' : ''}${formattedAmount}`;
+  const walletImpact = transaction.amount > 0 ? 'Credit to wallet' : 'Debit from wallet';
+  const metadataAmount = (key: string) => {
+    const value = Number(metadata[key]);
+    return Number.isFinite(value) ? formatCurrency(value, detailCurrency) : null;
+  };
   
   return (
     <View style={styles.container}>
@@ -233,7 +252,7 @@ export default function TransactionDetailsScreen() {
             styles.transactionAmount,
             transaction.amount > 0 ? styles.positiveAmount : styles.negativeAmount
           ]}>
-            {transaction.amount > 0 ? '+' : ''}{transaction.amount.toFixed(2)}
+            {signedFormattedAmount}
           </Text>
           
           <View style={[styles.statusContainer, { backgroundColor: `${getStatusColor()}20` }]}>
@@ -271,6 +290,11 @@ export default function TransactionDetailsScreen() {
             <Text style={styles.detailLabel}>Description</Text>
             <Text style={styles.detailValue}>{transaction.description}</Text>
           </View>
+
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Wallet Impact</Text>
+            <Text style={styles.detailValue}>{walletImpact}</Text>
+          </View>
           
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Type</Text>
@@ -279,17 +303,17 @@ export default function TransactionDetailsScreen() {
             </Text>
           </View>
           
-          {transaction.transactionFee !== undefined && (
+          {transaction.transactionFee !== undefined && !isOwnerCreditEntry && (
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Platform Fee</Text>
-              <Text style={styles.detailValue}>${transaction.transactionFee.toFixed(2)}</Text>
+              <Text style={styles.detailValue}>{formatCurrency(transaction.transactionFee, detailCurrency)}</Text>
             </View>
           )}
           
           {transaction.metadata?.subtotal !== undefined && (
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Subtotal</Text>
-              <Text style={styles.detailValue}>${transaction.metadata.subtotal.toFixed(2)}</Text>
+              <Text style={styles.detailValue}>{formatCurrency(transaction.metadata.subtotal, detailCurrency)}</Text>
             </View>
           )}
           
@@ -304,6 +328,48 @@ export default function TransactionDetailsScreen() {
         {transaction.metadata && Object.keys(transaction.metadata).length > 0 && (
           <View style={styles.detailsSection}>
             <Text style={styles.sectionTitle}>Additional Information</Text>
+
+            {metadata.entry && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Ledger Entry</Text>
+                <Text style={styles.detailValue}>{String(metadata.entry).replace(/_/g, ' ')}</Text>
+              </View>
+            )}
+
+            {metadata.gross_amount !== undefined && !isOwnerCreditEntry && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Gross Amount</Text>
+                <Text style={styles.detailValue}>{metadataAmount('gross_amount')}</Text>
+              </View>
+            )}
+
+            {metadata.platform_fee_amount !== undefined && !isOwnerCreditEntry && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Platform Fee</Text>
+                <Text style={styles.detailValue}>{metadataAmount('platform_fee_amount')}</Text>
+              </View>
+            )}
+
+            {metadata.net_amount !== undefined && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Net Added</Text>
+                <Text style={styles.detailValue}>{metadataAmount('net_amount')}</Text>
+              </View>
+            )}
+
+            {metadata.order_id && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Order ID</Text>
+                <Text style={styles.detailValue}>{metadata.order_id}</Text>
+              </View>
+            )}
+
+            {metadata.payment_reference && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Payment Reference</Text>
+                <Text style={styles.detailValue}>{metadata.payment_reference}</Text>
+              </View>
+            )}
             
             {transaction.metadata.productId && (
               <View style={styles.detailRow}>
