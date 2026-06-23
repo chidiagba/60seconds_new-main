@@ -41,6 +41,7 @@ import ApplyVoucherModal from "@/components/ApplyVoucherModal";
 import { canOpenTwintApp, openTwintApp } from "@/lib/twint";
 import WorldlineService from "@/lib/worldline";
 import { resolveCurrencyFromCountry } from "@/utils/country-currency";
+import { getPaystackRoutingForOwner } from "@/constants/paystack-routing";
 
 // Constants
 const PLATFORM_FEE_PERCENTAGE = 0.04;
@@ -632,6 +633,10 @@ const ProductsList = ({
     try {
       setIsPaying(true);
 
+      if (!currentAuthId) {
+        throw new Error('Please sign in before completing a Twint purchase.');
+      }
+
       const verification = await WorldlineService.verifyPayment(twintPaymentId);
       if (verification.data.status !== "SUCCESS") {
         throw new Error(`Twint payment is ${verification.data.status}. Complete payment first and verify again.`);
@@ -685,40 +690,38 @@ const ProductsList = ({
         throw new Error(settlement.error || 'Twint settlement failed.');
       }
 
-      if (currentAuthId) {
-        const { data: order, error: orderFetchError } = await supabase
-          .from("orders")
-          .select("id, order_number")
-          .eq("id", twintOrderId)
-          .single();
+      const { data: order, error: orderFetchError } = await supabase
+        .from("orders")
+        .select("id, order_number")
+        .eq("id", twintOrderId)
+        .single();
 
-        if (orderFetchError || !order) {
-          throw new Error("Verified payment order is missing");
-        }
-
-        const orderNumber =
-          (order as any)?.order_number ||
-          (order as any)?.orderNumber ||
-          `ORD-${Date.now()}-${String(order?.id || '').slice(0, 6)}`;
-
-        await ticketReceiptService.createTicketReceiptsForOrder({
-          orderId: order.id,
-          orderNumber,
-          buyerId: currentAuthId,
-          fallbackVideoId: twintProduct.videoId,
-          sourceItems: [
-            {
-              productId: twintProduct.id,
-              name: twintProduct.name,
-              quantity: 1,
-              unitPrice: total,
-              currency: resolveProductCurrency(twintProduct.currency),
-              type: twintProduct.type,
-              videoId: twintProduct.videoId,
-            },
-          ],
-        });
+      if (orderFetchError || !order) {
+        throw new Error("Verified payment order is missing");
       }
+
+      const orderNumber =
+        (order as any)?.order_number ||
+        (order as any)?.orderNumber ||
+        `ORD-${Date.now()}-${String(order?.id || '').slice(0, 6)}`;
+
+      await ticketReceiptService.createTicketReceiptsForOrder({
+        orderId: order.id,
+        orderNumber,
+        buyerId: currentAuthId,
+        fallbackVideoId: twintProduct.videoId,
+        sourceItems: [
+          {
+            productId: twintProduct.id,
+            name: twintProduct.name,
+            quantity: 1,
+            unitPrice: total,
+            currency: resolveProductCurrency(twintProduct.currency),
+            type: twintProduct.type,
+            videoId: twintProduct.videoId,
+          },
+        ],
+      });
 
       Alert.alert("Purchase Successful", "Twint payment completed successfully.");
       if (activeVoucher && discount > 0) {
@@ -1139,6 +1142,8 @@ const ProductsList = ({
     if (!product) return;
     const { total, discount, subtotalWithFee } = getDiscountedCheckoutTotal(product);
     const currentAuthId = buyerId || user?.id;
+    let purchaseRecorded = false;
+
     try {
       setIsPaying(true);
       const ownerId = resolveProductOwnerId(product);
@@ -1209,13 +1214,24 @@ const ProductsList = ({
           videoId: product.videoId,
         }],
       });
+      purchaseRecorded = true;
     } catch (recordErr) {
-      console.warn('Paystack payment succeeded but recording failed:', recordErr);
+      console.warn('Paystack payment succeeded but recording failed:', { reference, error: recordErr });
     } finally {
       setIsPaying(false);
     }
-    // Only show success if we haven't been cancelled in the meantime.
+
+    // Only continue if we haven't been cancelled in the meantime.
     if (paystackCancelledRef.current) return;
+
+    if (!purchaseRecorded) {
+      Alert.alert(
+        'Payment Recorded, Settlement Pending',
+        `Your Paystack payment was received, but organizer settlement could not be completed yet. Please contact support with reference: ${reference}`
+      );
+      return;
+    }
+
     Alert.alert('Purchase Successful', 'Your Paystack payment was completed successfully.');
     if (activeVoucher && discount > 0) {
       incrementUsageCount(activeVoucher.id);
@@ -1241,6 +1257,15 @@ const ProductsList = ({
         scrollEnabled={false}
       />
       {paystackProduct && (
+        (() => {
+          const ownerId = resolveProductOwnerId(paystackProduct);
+          const routing = getPaystackRoutingForOwner(ownerId);
+          const productSubaccount = String((paystackProduct as any)?.paystackSubaccountCode || '').trim();
+          const productSplitCode = String((paystackProduct as any)?.paystackSplitCode || '').trim();
+          const productBearer = String((paystackProduct as any)?.paystackBearer || '').trim().toLowerCase();
+          const productCharge = Number((paystackProduct as any)?.paystackTransactionCharge);
+
+          return (
         <PaystackWebView
           visible={showPaystackModal}
           onClose={() => {
@@ -1265,7 +1290,24 @@ const ProductsList = ({
             voucherId: activeVoucher?.id,
             discountAmount,
           }}
+          paystackSubaccount={productSubaccount || routing.subaccount}
+          paystackSplitCode={productSplitCode || routing.splitCode}
+          paystackTransactionCharge={
+            Number.isFinite(productCharge)
+              ? productCharge
+              : (
+                  routing.transactionCharge ??
+                  getDiscountedPlatformFee(getDiscountedCheckoutTotal(paystackProduct).total)
+                )
+          }
+          paystackBearer={
+            productBearer === 'subaccount'
+              ? 'subaccount'
+              : routing.bearer
+          }
         />
+          );
+        })()
       )}
 
       {twintProduct && (

@@ -20,7 +20,6 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { videoService } from '@/lib/database';
 import { useAuth } from '@/lib/auth';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 const TAB_BAR_HEIGHT = 80;
@@ -31,7 +30,6 @@ const SIGNIN_PROMPT_INTERVAL = 3;
 export default function HomeScreen() {
   const router = useRouter();
   const { user: authUser } = useAuth();
-  const tabBarHeight = useBottomTabBarHeight();
   const params = useLocalSearchParams<{ selectedVideoId?: string }>();
   const selectedVideoIdFromParams = typeof params.selectedVideoId === 'string' ? params.selectedVideoId : '';
   const insets = useSafeAreaInsets();
@@ -57,7 +55,7 @@ export default function HomeScreen() {
   const lastEngagedVideoIdRef = useRef<string | null>(null);
   const nextSigninPromptAtRef = useRef(SIGNIN_PROMPT_INTERVAL);
   const isSigninPromptActiveRef = useRef(false);
-  const feedViewportHeight = useMemo(() => Math.max(1, SCREEN_HEIGHT - Math.max(tabBarHeight, TAB_BAR_HEIGHT)), [tabBarHeight]);
+  const feedViewportHeight = FEED_VIEWPORT_HEIGHT;
   
   useEffect(() => {
     (async () => {
@@ -631,7 +629,7 @@ export default function HomeScreen() {
         windowSize={3}
         updateCellsBatchingPeriod={16}
         onEndReached={handleEndReached}
-        onEndReachedThreshold={2}
+        onEndReachedThreshold={0.6}
         ListFooterComponent={isFetchingMore ? (
           <View style={{ paddingVertical: 24, alignItems: 'center' }}>
             <ActivityIndicator size="small" color={Colors.dark.primary} />

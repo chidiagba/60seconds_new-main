@@ -61,16 +61,9 @@ export default function MyEventsScreen() {
       return;
     }
 
-    const videoId = event.video_id || event.video?.id;
-    if (videoId) {
-      router.push({
-        pathname: (user?.isBusinessAccount ? '/(tabsbusiness)' : '/(tabs)') as any,
-        params: { selectedVideoId: videoId },
-      });
-      return;
-    }
-
-    router.push({ pathname: '/event/[id]', params: { id: event.id } });
+    // Open the dedicated event page directly so organizer history remains navigable
+    // even when feed routing/selectVideo state is stale.
+    router.push({ pathname: '/event/[id]', params: { id: event.video_id || event.video?.id || event.id } });
   };
 
   if (authLoading) {

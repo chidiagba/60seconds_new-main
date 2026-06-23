@@ -10,6 +10,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   ActivityIndicator,
+  PanResponder,
 } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -31,7 +32,7 @@ import UserSearchModal from "@/components/UserSearchModal";
 import { getCurrentLocation } from "@/utils/location";
 import { readUriAsArrayBuffer } from "@/utils/media-upload";
 import { videoWatermarkService } from "@/utils/video-watermark";
-import { videoEditService } from "@/utils/video-editing";
+import { videoEditService, type FrameStyle, type EffectStyle } from "@/utils/video-editing";
 import { assessUploadNetwork, getUploadNetworkTaskMessage, type UploadNetworkHint } from "@/utils/upload-network";
 import VideoWatermark from "@/components/VideoWatermark";
 import { ProductCreationModal } from "@/components/ProductCreationModal";
@@ -51,6 +52,21 @@ const MAX_UPLOAD_ATTEMPTS = 4;
 const UPLOAD_ATTEMPT_TIMEOUT_MS = 480000;
 const RECORD_PROGRESS_RADIUS = 46;
 const RECORD_PROGRESS_CIRCUMFERENCE = 2 * Math.PI * RECORD_PROGRESS_RADIUS;
+const FRAME_STYLE_OPTIONS: Array<{ label: string; value: FrameStyle }> = [
+  { label: "Neon", value: "neon" },
+  { label: "Classic", value: "classic" },
+  { label: "Cinema", value: "cinema" },
+  { label: "Minimal", value: "minimal" },
+  { label: "Gold", value: "gold" },
+];
+const EFFECT_STYLE_OPTIONS: Array<{ label: string; value: EffectStyle }> = [
+  { label: "Noir", value: "noir" },
+  { label: "Vivid", value: "vivid" },
+  { label: "Warm", value: "warm" },
+  { label: "Sepia", value: "sepia" },
+  { label: "Cool", value: "cool" },
+  { label: "Retro", value: "retro" },
+];
 
 type DraftProduct = {
   name: string;
@@ -180,10 +196,15 @@ export default function UploadScreen() {
   const [isPickingVideo, setIsPickingVideo] = useState(false);
   const [galleryLoadingMessage, setGalleryLoadingMessage] = useState("Opening gallery...");
   const [isEditingVideo, setIsEditingVideo] = useState(false);
+  const [activeEditPanel, setActiveEditPanel] = useState<null | "trim" | "frame" | "effects">(null);
+  const [trimEndSeconds, setTrimEndSeconds] = useState(MAX_EVENT_VIDEO_SECONDS);
+  const [trimTrackWidth, setTrimTrackWidth] = useState(0);
 
   const cameraRef = useRef<any>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingReachedLimitRef = useRef(false);
+  const trimDragStartRatioRef = useRef(1);
+  const uploadLaunchLockRef = useRef(false);
 
   const commitRecordedVideo = (recordedUri: string, durationMs: number | null) => {
     setVideoUri(recordedUri);
@@ -209,6 +230,48 @@ export default function UploadScreen() {
   );
   const recordingProgress = Math.min(recordingDuration / MAX_EVENT_VIDEO_SECONDS, 1);
   const recordingProgressOffset = RECORD_PROGRESS_CIRCUMFERENCE * (1 - recordingProgress);
+  const currentDurationSeconds = useMemo(() => {
+    const duration = videoDurationMs ? Math.max(1, Math.floor(videoDurationMs / 1000)) : MAX_EVENT_VIDEO_SECONDS;
+    return Math.min(duration, MAX_EVENT_VIDEO_SECONDS);
+  }, [videoDurationMs]);
+  const maxTrimRangeSeconds = Math.max(0, currentDurationSeconds - MIN_EVENT_VIDEO_SECONDS);
+  const trimProgressRatio =
+    maxTrimRangeSeconds === 0
+      ? 1
+      : Math.max(0, Math.min(1, (trimEndSeconds - MIN_EVENT_VIDEO_SECONDS) / maxTrimRangeSeconds));
+
+  useEffect(() => {
+    if (!videoUri) {
+      setActiveEditPanel(null);
+      return;
+    }
+
+    setTrimEndSeconds(Math.max(MIN_EVENT_VIDEO_SECONDS, Math.min(currentDurationSeconds, MAX_EVENT_VIDEO_SECONDS)));
+  }, [videoUri, currentDurationSeconds]);
+
+  const trimHandlePanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => {
+          trimDragStartRatioRef.current = trimProgressRatio;
+        },
+        onPanResponderMove: (_, gestureState) => {
+          if (trimTrackWidth <= 0 || maxTrimRangeSeconds <= 0) {
+            return;
+          }
+
+          const nextRatio = Math.max(
+            0,
+            Math.min(1, trimDragStartRatioRef.current + gestureState.dx / trimTrackWidth)
+          );
+          const nextSeconds = Math.round(MIN_EVENT_VIDEO_SECONDS + nextRatio * maxTrimRangeSeconds);
+          setTrimEndSeconds(Math.max(MIN_EVENT_VIDEO_SECONDS, Math.min(currentDurationSeconds, nextSeconds)));
+        },
+      }),
+    [currentDurationSeconds, maxTrimRangeSeconds, trimProgressRatio, trimTrackWidth]
+  );
 
   // ✅ Apply selected location from LocationScreen
   useEffect(() => {
@@ -607,61 +670,27 @@ export default function UploadScreen() {
   };
 
   const handleTrimVideo = () => {
-    const currentDurationSeconds = videoDurationMs ? Math.max(1, Math.floor(videoDurationMs / 1000)) : MAX_EVENT_VIDEO_SECONDS;
-    const trimTo = (seconds: number) => Math.min(seconds, currentDurationSeconds, MAX_EVENT_VIDEO_SECONDS);
+    if (!videoUri) {
+      Alert.alert("Missing Video", "Please select a video first.");
+      return;
+    }
 
-    Alert.alert("Trim Video", "Choose the final duration between 5s and 60s.", [
-      {
-        text: "5s (Minimum)",
-        onPress: () => {
-          const seconds = trimTo(5);
-          void applyVideoEdit(`Trim to ${seconds}s`, (uri) => videoEditService.trimVideo(uri, seconds), seconds * 1000);
-        },
-      },
-      {
-        text: "10s",
-        onPress: () => {
-          const seconds = trimTo(10);
-          void applyVideoEdit(`Trim to ${seconds}s`, (uri) => videoEditService.trimVideo(uri, seconds), seconds * 1000);
-        },
-      },
-      {
-        text: "20s",
-        onPress: () => {
-          const seconds = trimTo(20);
-          void applyVideoEdit(`Trim to ${seconds}s`, (uri) => videoEditService.trimVideo(uri, seconds), seconds * 1000);
-        },
-      },
-      {
-        text: "30s",
-        onPress: () => {
-          const seconds = trimTo(30);
-          void applyVideoEdit(`Trim to ${seconds}s`, (uri) => videoEditService.trimVideo(uri, seconds), seconds * 1000);
-        },
-      },
-      {
-        text: "40s",
-        onPress: () => {
-          const seconds = trimTo(40);
-          void applyVideoEdit(`Trim to ${seconds}s`, (uri) => videoEditService.trimVideo(uri, seconds), seconds * 1000);
-        },
-      },
-      {
-        text: "50s",
-        onPress: () => {
-          const seconds = trimTo(50);
-          void applyVideoEdit(`Trim to ${seconds}s`, (uri) => videoEditService.trimVideo(uri, seconds), seconds * 1000);
-        },
-      },
-      {
-        text: "60s (Maximum)",
-        onPress: () => {
-          const seconds = trimTo(60);
-          void applyVideoEdit(`Trim to ${seconds}s`, (uri) => videoEditService.trimVideo(uri, seconds), seconds * 1000);
-        },
-      },
-      { text: "Cancel", style: "cancel" },
-    ]);
+    if (Platform.OS === "web" || !videoEditService.isSupported()) {
+      Alert.alert(
+        "Editing Not Available",
+        "Trim, flip, frame, and effects require a native build with FFmpeg support."
+      );
+      return;
+    }
+
+    setTrimEndSeconds(Math.max(MIN_EVENT_VIDEO_SECONDS, Math.min(currentDurationSeconds, MAX_EVENT_VIDEO_SECONDS)));
+    setActiveEditPanel("trim");
+  };
+
+  const handleApplyTrimSelection = () => {
+    const seconds = Math.max(MIN_EVENT_VIDEO_SECONDS, Math.min(currentDurationSeconds, trimEndSeconds));
+    setActiveEditPanel(null);
+    void applyVideoEdit(`Trim to ${seconds}s`, (uri) => videoEditService.trimVideo(uri, seconds), seconds * 1000);
   };
 
   const handleFlipVideo = () => {
@@ -683,51 +712,47 @@ export default function UploadScreen() {
   };
 
   const handleAddFrame = () => {
-    Alert.alert("Add Frame", "Choose a frame style.", [
-      {
-        text: "Neon",
-        onPress: () => {
-          void applyVideoEdit("Neon frame", (uri) => videoEditService.addFrame(uri, "neon"));
-        },
-      },
-      {
-        text: "Classic",
-        onPress: () => {
-          void applyVideoEdit("Classic frame", (uri) => videoEditService.addFrame(uri, "classic"));
-        },
-      },
-      {
-        text: "Cinema",
-        onPress: () => {
-          void applyVideoEdit("Cinema frame", (uri) => videoEditService.addFrame(uri, "cinema"));
-        },
-      },
-      { text: "Cancel", style: "cancel" },
-    ]);
+    if (!videoUri) {
+      Alert.alert("Missing Video", "Please select a video first.");
+      return;
+    }
+
+    if (Platform.OS === "web" || !videoEditService.isSupported()) {
+      Alert.alert(
+        "Editing Not Available",
+        "Trim, flip, frame, and effects require a native build with FFmpeg support."
+      );
+      return;
+    }
+
+    setActiveEditPanel("frame");
+  };
+
+  const handleApplyFrameStyle = (style: FrameStyle, label: string) => {
+    setActiveEditPanel(null);
+    void applyVideoEdit(`${label} frame`, (uri) => videoEditService.addFrame(uri, style));
   };
 
   const handleApplyEffect = () => {
-    Alert.alert("Video Effects", "Pick an effect.", [
-      {
-        text: "Noir",
-        onPress: () => {
-          void applyVideoEdit("Noir effect", (uri) => videoEditService.applyEffect(uri, "noir"));
-        },
-      },
-      {
-        text: "Vivid",
-        onPress: () => {
-          void applyVideoEdit("Vivid effect", (uri) => videoEditService.applyEffect(uri, "vivid"));
-        },
-      },
-      {
-        text: "Warm",
-        onPress: () => {
-          void applyVideoEdit("Warm effect", (uri) => videoEditService.applyEffect(uri, "warm"));
-        },
-      },
-      { text: "Cancel", style: "cancel" },
-    ]);
+    if (!videoUri) {
+      Alert.alert("Missing Video", "Please select a video first.");
+      return;
+    }
+
+    if (Platform.OS === "web" || !videoEditService.isSupported()) {
+      Alert.alert(
+        "Editing Not Available",
+        "Trim, flip, frame, and effects require a native build with FFmpeg support."
+      );
+      return;
+    }
+
+    setActiveEditPanel("effects");
+  };
+
+  const handleApplyEffectStyle = (style: EffectStyle, label: string) => {
+    setActiveEditPanel(null);
+    void applyVideoEdit(`${label} effect`, (uri) => videoEditService.applyEffect(uri, style));
   };
 
   const handleAddTag = () => {
@@ -1018,6 +1043,7 @@ export default function UploadScreen() {
   };
 
   const resetCamera = () => {
+    setActiveEditPanel(null);
     setVideoUri(null);
     setThumbnailUri(null);
     setPendingVideoUri(null);
@@ -1134,6 +1160,10 @@ export default function UploadScreen() {
   };
 
   const handleUpload = async () => {
+    if (uploadLaunchLockRef.current) {
+      return;
+    }
+
     if (!videoUri) {
       Alert.alert("Missing Video", "Please record or select a video first");
       return;
@@ -1560,6 +1590,16 @@ export default function UploadScreen() {
           stopProgressTimer();
           console.error(`Upload attempt ${attempt} failed:`, error);
 
+          const failureText = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+          if (failureText.includes("timed out")) {
+            useUploadTaskStore.getState().markError(taskId, {
+              message: getUploadFailureMessage(error),
+              retryAction: startManagedUpload,
+            });
+            Alert.alert("Upload Failed", getUploadFailureMessage(error));
+            return;
+          }
+
           if (attempt < MAX_UPLOAD_ATTEMPTS) {
             useUploadTaskStore.getState().updateTask(taskId, {
               status: "uploading",
@@ -1584,14 +1624,21 @@ export default function UploadScreen() {
       router.replace("/(tabs)");
 
       void startManagedUpload(initialHint).catch((error) => {
+        uploadLaunchLockRef.current = false;
+        setIsUploading(false);
         const failureMessage = getUploadFailureMessage(error);
         Alert.alert("Upload Failed", failureMessage);
         useUploadTaskStore.getState().dismissTask();
       });
     };
 
+    uploadLaunchLockRef.current = true;
+    setIsUploading(true);
+
     const preflightNetwork = await assessUploadNetwork();
     if (preflightNetwork.hint === "offline") {
+      uploadLaunchLockRef.current = false;
+      setIsUploading(false);
       Alert.alert("No Internet Connection", "Reconnect to the internet and try upload again.");
       return;
     }
@@ -1601,7 +1648,14 @@ export default function UploadScreen() {
         "Slow Internet Detected",
         "Your upload can continue in the background, but it may take longer than usual.",
         [
-          { text: "Cancel", style: "cancel" },
+          {
+            text: "Cancel",
+            style: "cancel",
+            onPress: () => {
+              uploadLaunchLockRef.current = false;
+              setIsUploading(false);
+            },
+          },
           {
             text: "Upload Anyway",
             onPress: () => launchManagedUpload("weak"),
@@ -1744,6 +1798,96 @@ export default function UploadScreen() {
                 <Text style={styles.videoEditButtonText}>Effects</Text>
               </TouchableOpacity>
             </View>
+
+            {activeEditPanel === "trim" ? (
+              <View style={styles.videoEditPanel}>
+                <View style={styles.videoEditPanelHeader}>
+                  <Text style={styles.videoEditPanelTitle}>Trim Video</Text>
+                  <TouchableOpacity onPress={() => setActiveEditPanel(null)}>
+                    <X size={18} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.videoEditPanelSubtext}>Drag the handle to pick the final duration.</Text>
+                <View
+                  style={styles.trimTrackContainer}
+                  onLayout={(event) => setTrimTrackWidth(event.nativeEvent.layout.width)}
+                >
+                  <View style={styles.trimTrackBase} />
+                  <View style={[styles.trimTrackActive, { width: `${Math.max(0, Math.min(1, trimProgressRatio)) * 100}%` }]} />
+                  <View
+                    style={[styles.trimHandle, { left: `${Math.max(0, Math.min(1, trimProgressRatio)) * 100}%` }]}
+                    {...trimHandlePanResponder.panHandlers}
+                  />
+                </View>
+                <Text style={styles.trimRangeText}>0s - {trimEndSeconds}s</Text>
+                <View style={styles.videoEditPanelActions}>
+                  <TouchableOpacity style={styles.videoEditPanelButton} onPress={() => setActiveEditPanel(null)}>
+                    <Text style={styles.videoEditPanelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.videoEditPanelButtonPrimary} onPress={handleApplyTrimSelection}>
+                    <Text style={styles.videoEditPanelButtonPrimaryText}>Apply</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
+
+            {activeEditPanel === "frame" ? (
+              <View style={styles.videoEditPanel}>
+                <View style={styles.videoEditPanelHeader}>
+                  <Text style={styles.videoEditPanelTitle}>Add Frame</Text>
+                  <TouchableOpacity onPress={() => setActiveEditPanel(null)}>
+                    <X size={18} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.videoEditPanelSubtext}>Choose a style and apply it instantly.</Text>
+                <View style={styles.frameOptionList}>
+                  {FRAME_STYLE_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={styles.frameOptionButton}
+                      onPress={() => handleApplyFrameStyle(option.value, option.label)}
+                      disabled={isEditingVideo}
+                    >
+                      <Text style={styles.frameOptionButtonText}>{option.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.videoEditPanelActions}>
+                  <TouchableOpacity style={styles.videoEditPanelButton} onPress={() => setActiveEditPanel(null)}>
+                    <Text style={styles.videoEditPanelButtonText}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
+
+            {activeEditPanel === "effects" ? (
+              <View style={styles.videoEditPanel}>
+                <View style={styles.videoEditPanelHeader}>
+                  <Text style={styles.videoEditPanelTitle}>Video Effects</Text>
+                  <TouchableOpacity onPress={() => setActiveEditPanel(null)}>
+                    <X size={18} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.videoEditPanelSubtext}>Pick an effect. Faster processing is applied automatically.</Text>
+                <View style={styles.frameOptionList}>
+                  {EFFECT_STYLE_OPTIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={styles.frameOptionButton}
+                      onPress={() => handleApplyEffectStyle(option.value, option.label)}
+                      disabled={isEditingVideo}
+                    >
+                      <Text style={styles.frameOptionButtonText}>{option.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.videoEditPanelActions}>
+                  <TouchableOpacity style={styles.videoEditPanelButton} onPress={() => setActiveEditPanel(null)}>
+                    <Text style={styles.videoEditPanelButtonText}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
 
             {isEditingVideo ? (
               <View style={styles.videoEditingOverlay}>
@@ -1969,10 +2113,10 @@ export default function UploadScreen() {
           <TouchableOpacity
             style={[
               styles.uploadButton,
-              (!videoUri || !eventLocation.name) && styles.uploadButtonDisabled,
+              (!videoUri || !eventLocation.name || isUploading) && styles.uploadButtonDisabled,
             ]}
             onPress={handleUpload}
-            disabled={!videoUri || !eventLocation.name}
+            disabled={!videoUri || !eventLocation.name || isUploading}
           >
             <Upload size={20} color="#fff" style={styles.uploadIcon} />
             <Text style={styles.uploadButtonText}>{isEditMode ? "Save Changes" : "Upload Event"}</Text>
@@ -2276,6 +2420,85 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   videoEditButtonText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  videoEditPanel: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 62,
+    backgroundColor: "rgba(10,10,16,0.94)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.16)",
+    padding: 12,
+    gap: 8,
+  },
+  videoEditPanelHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  videoEditPanelTitle: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  videoEditPanelSubtext: { color: "rgba(255,255,255,0.72)", fontSize: 12 },
+  trimTrackContainer: {
+    height: 30,
+    justifyContent: "center",
+  },
+  trimTrackBase: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  trimTrackActive: {
+    position: "absolute",
+    left: 0,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: Colors.dark.primary,
+  },
+  trimHandle: {
+    position: "absolute",
+    marginLeft: -10,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#fff",
+    borderWidth: 2,
+    borderColor: Colors.dark.primary,
+  },
+  trimRangeText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  videoEditPanelActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+  },
+  videoEditPanelButton: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  videoEditPanelButtonText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  videoEditPanelButtonPrimary: {
+    backgroundColor: Colors.dark.primary,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  videoEditPanelButtonPrimaryText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  frameOptionList: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  frameOptionButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.25)",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  frameOptionButtonText: { color: "#fff", fontSize: 12, fontWeight: "700" },
   videoEditingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.45)",

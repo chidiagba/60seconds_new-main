@@ -31,8 +31,8 @@ function ensureFFmpegModuleLoaded() {
 }
 
 type FlipDirection = "horizontal" | "vertical";
-type FrameStyle = "neon" | "classic" | "cinema";
-type EffectStyle = "noir" | "vivid" | "warm";
+type FrameStyle = "neon" | "classic" | "cinema" | "minimal" | "gold";
+type EffectStyle = "noir" | "vivid" | "warm" | "sepia" | "cool" | "retro";
 
 type CompressForUploadOptions = {
   durationMs?: number | null;
@@ -87,7 +87,11 @@ class VideoEditService {
     return uri;
   }
 
-  private async runFilter(inputUri: string, filterChain: string): Promise<string> {
+  private async runFilter(
+    inputUri: string,
+    filterChain: string,
+    options?: { fast?: boolean }
+  ): Promise<string> {
     if (!this.isSupported()) {
       throw new Error("Video editing is not available on this device build.");
     }
@@ -96,6 +100,7 @@ class VideoEditService {
     const inputPath = localVideoUri.replace(/^file:\/\//, "");
     const outputUri = `${FileSystem.cacheDirectory}edit_out_${Date.now()}.mp4`;
     const outputPath = outputUri.replace(/^file:\/\//, "");
+    const qValue = options?.fast ? "8" : "5";
 
     const session = await FFmpegKit.executeWithArguments([
       "-y",
@@ -110,7 +115,9 @@ class VideoEditService {
       "-c:v",
       "mpeg4",
       "-q:v",
-      "5",
+      qValue,
+      "-threads",
+      "0",
       "-pix_fmt",
       "yuv420p",
       "-c:a",
@@ -185,6 +192,8 @@ class VideoEditService {
       neon: "pad=iw+80:ih+80:40:40:color=#5B5BFF",
       classic: "pad=iw+64:ih+64:32:32:color=#F5E9D2",
       cinema: "pad=iw:ih+120:0:60:color=#000000",
+      minimal: "pad=iw+36:ih+36:18:18:color=#FFFFFF",
+      gold: "pad=iw+72:ih+72:36:36:color=#D4AF37",
     };
 
     return this.runFilter(inputUri, frameFilterMap[style]);
@@ -195,9 +204,12 @@ class VideoEditService {
       noir: "hue=s=0,eq=contrast=1.15:brightness=-0.03",
       vivid: "eq=saturation=1.35:contrast=1.1:brightness=0.02",
       warm: "colorbalance=rs=0.08:gs=0.02:bs=-0.04",
+      sepia: "colorchannelmixer=.393:.769:.189:.349:.686:.168:.272:.534:.131",
+      cool: "colorbalance=rs=-0.03:gs=0.02:bs=0.08,eq=contrast=1.04",
+      retro: "eq=saturation=0.82:contrast=1.08:brightness=0.01,curves=preset=vintage",
     };
 
-    return this.runFilter(inputUri, effectFilterMap[effect]);
+    return this.runFilter(inputUri, effectFilterMap[effect], { fast: true });
   }
 
   async compressForUpload(

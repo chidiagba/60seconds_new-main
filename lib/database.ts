@@ -1345,6 +1345,22 @@ export const ticketReceiptService = {
       return [] as TicketReceipt[];
     }
 
+    // Idempotency guard: if receipts already exist for this order, do not issue/decrement again.
+    const { data: existingReceipts, error: existingReceiptsError } = await supabase
+      .from('ticket_receipts')
+      .select('*')
+      .eq('order_id', input.orderId)
+      .limit(1);
+
+    if (existingReceiptsError) {
+      console.error('Error checking existing ticket receipts:', existingReceiptsError);
+      throw existingReceiptsError;
+    }
+
+    if ((existingReceipts || []).length > 0) {
+      return existingReceipts as TicketReceipt[];
+    }
+
     const uniqueProductIds = Array.from(
       new Set(input.sourceItems.map((item) => item.productId).filter(Boolean))
     );
@@ -1443,6 +1459,49 @@ export const ticketReceiptService = {
     if (error) {
       console.error('Error creating ticket receipts:', error);
       throw error;
+    }
+
+    const quantityByProduct = new Map<string, number>();
+    for (const item of input.sourceItems) {
+      const productId = String(item.productId || '').trim();
+      if (!productId) continue;
+      const qty = Math.max(1, Number(item.quantity || 1));
+      quantityByProduct.set(productId, (quantityByProduct.get(productId) || 0) + qty);
+    }
+
+    const productIds = Array.from(quantityByProduct.keys());
+    if (productIds.length) {
+      const { data: stockRows, error: stockRowsError } = await supabase
+        .from('products')
+        .select('id, available_quantity, sold_quantity')
+        .in('id', productIds);
+
+      if (stockRowsError) {
+        console.error('Error fetching product stock for decrement:', stockRowsError);
+        throw stockRowsError;
+      }
+
+      for (const stockRow of stockRows || []) {
+        const orderedQty = quantityByProduct.get(stockRow.id) || 0;
+        if (orderedQty <= 0) continue;
+
+        const nextAvailable = Math.max(0, Number(stockRow.available_quantity || 0) - orderedQty);
+        const nextSold = Math.max(0, Number(stockRow.sold_quantity || 0) + orderedQty);
+
+        const { error: stockUpdateError } = await supabase
+          .from('products')
+          .update({
+            available_quantity: nextAvailable,
+            sold_quantity: nextSold,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', stockRow.id);
+
+        if (stockUpdateError) {
+          console.error('Error decrementing product stock after ticket issuance:', stockUpdateError);
+          throw stockUpdateError;
+        }
+      }
     }
 
     return data || [];

@@ -10,6 +10,10 @@ export interface PaystackInitializeParams {
   callback_url?: string;
   metadata?: Record<string, any>;
   channels?: string[];
+  subaccount?: string;
+  split_code?: string;
+  transaction_charge?: number;
+  bearer?: 'account' | 'subaccount';
   // Additional fields for Supabase integration
   userId?: string;
   orderId?: string;
@@ -84,6 +88,10 @@ class PaystackService {
           callback_url: params.callback_url,
           metadata: params.metadata,
           channels: params.channels,
+          subaccount: params.subaccount,
+          split_code: params.split_code,
+          transaction_charge: params.transaction_charge,
+          bearer: params.bearer,
           userId: params.userId,
           orderId: params.orderId,
           walletId: params.walletId,

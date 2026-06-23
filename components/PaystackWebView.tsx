@@ -50,6 +50,10 @@ interface PaystackWebViewProps {
   phone?: string;
   description?: string;
   metadata?: any;
+  paystackSubaccount?: string;
+  paystackSplitCode?: string;
+  paystackTransactionCharge?: number;
+  paystackBearer?: 'account' | 'subaccount';
 }
 
 export default function PaystackWebView({
@@ -64,7 +68,11 @@ export default function PaystackWebView({
   lastName = '',
   phone = '',
   description = 'Payment',
-  metadata = {}
+  metadata = {},
+  paystackSubaccount,
+  paystackSplitCode,
+  paystackTransactionCharge,
+  paystackBearer,
 }: PaystackWebViewProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success' | 'failed'>('idle');
@@ -239,6 +247,10 @@ export default function PaystackWebView({
       currency: currency || 'NGN',
       reference,
       callback_url: 'myapp://paystack/callback',
+      subaccount: paystackSubaccount,
+      split_code: paystackSplitCode,
+      transaction_charge: paystackTransactionCharge,
+      bearer: paystackBearer,
       metadata: {
         ...metadata,
         firstName,

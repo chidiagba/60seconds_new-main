@@ -2,7 +2,7 @@
   "expo": {
     "name": "60Seconds",
     "slug": "nightvibe-nightlife-video-platform",
-    "version": "85.0.0",
+    "version": "88.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.sixtyseconds.nightlife-nightlife-video-platform",
-      "buildNumber": "85",
+      "buildNumber": "88",
       "config": {
         "googleMapsApiKey": "AIzaSyDIbbjLmJj4l4BxLdj9xpnguG5BRhm5v-M"
       },
@@ -45,8 +45,8 @@
       }
     },
     "android": {
-      "versionCode": 85,
-      "versionName": "85.0.0",
+      "versionCode": 88,
+      "versionName": "88.0.0",
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",

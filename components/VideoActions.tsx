@@ -21,6 +21,7 @@ import { useRouter } from "expo-router";
 import Colors from "@/constants/colors";
 import { Video, RatingValue, AttendanceStatus } from "@/types";
 import { useVideoStore } from "@/store/video-store";
+import { useProductStore } from "@/store/product-store";
 import { useAuthStore } from "@/store/auth-store";
 import { useAuth } from "@/lib/auth";
 import { useContentModerationStore } from "@/store/content-moderation-store";
@@ -29,6 +30,7 @@ import RatingModal from "./RatingModal";
 import ProductsModal from "./ProductsModal";
 import ShareModal from "./ShareModal";
 import CartButton from "./CartButton";
+import AppThemeDialog from "./AppThemeDialog";
 import { LinearGradient } from "expo-linear-gradient";
 
 interface VideoActionsProps {
@@ -57,8 +59,10 @@ export default function VideoActions({ video, showCartButton = false }: VideoAct
     isVideoLiked,
     loadUserLikes,
   } = useVideoStore();
+  const { addToCart } = useProductStore();
   const [attendanceStatus, setAttendanceStatus] =
     useState<AttendanceStatus | null>(isAttending(video.id));
+  const [showNoEventDialog, setShowNoEventDialog] = useState(false);
 
   // Load user likes on mount and check if this video is liked
   useEffect(() => {
@@ -128,6 +132,20 @@ export default function VideoActions({ video, showCartButton = false }: VideoAct
   };
 
   const handleCartPress = () => {
+    const availableProducts = (video.products || []).filter(
+      (product) => Number(product?.available ?? 0) !== 0
+    );
+
+    if (!availableProducts.length) {
+      setShowNoEventDialog(true);
+      return;
+    }
+
+    const ticketProduct =
+      availableProducts.find((product) => product.type === "ticket") ||
+      availableProducts[0];
+
+    addToCart(ticketProduct, 1);
     router.push("/cart");
   };
 
@@ -143,8 +161,10 @@ export default function VideoActions({ video, showCartButton = false }: VideoAct
 
     if (attendanceStatus === AttendanceStatus.GOING) {
       cancelAttendance(video.id);
+      setAttendanceStatus(null);
     } else {
       attendEvent(video.id, AttendanceStatus.GOING);
+      setAttendanceStatus(AttendanceStatus.GOING);
     }
   };
 
@@ -361,6 +381,15 @@ export default function VideoActions({ video, showCartButton = false }: VideoAct
         visible={showShareModal}
         onClose={() => setShowShareModal(false)}
         video={video}
+      />
+
+      <AppThemeDialog
+        visible={showNoEventDialog}
+        title="No Event Item Available"
+        message="This event does not have any purchasable ticket or product right now, so nothing was added to your cart."
+        primaryLabel="Continue Browsing"
+        onPrimaryPress={() => setShowNoEventDialog(false)}
+        onClose={() => setShowNoEventDialog(false)}
       />
     </View>
   );

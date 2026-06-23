@@ -1895,9 +1895,6 @@ PODS:
     - React-RCTFBReactNativeSpec
     - ReactCommon/turbomodule/core
     - SocketRocket
-  - react-native-ffmpeg-kit/video (1.0.8):
-    - React-Core
-    - shaquillehinds-ffmpeg-kit-ios (= 6.0.2)
   - react-native-google-maps (1.20.1):
     - Google-Maps-iOS-Utils (= 5.0.0)
     - GoogleMaps (= 8.4.0)
@@ -2972,7 +2969,6 @@ PODS:
   - SDWebImageWebPCoder (0.14.6):
     - libwebp (~> 1.0)
     - SDWebImage/Core (~> 5.17)
-  - shaquillehinds-ffmpeg-kit-ios (6.0.2)
   - SocketRocket (0.7.1)
   - Stripe (25.0.1):
     - StripeApplePay (= 25.0.1)
@@ -3171,7 +3167,6 @@ DEPENDENCIES:
   - React-logger (from `../node_modules/react-native/ReactCommon/logger`)
   - React-Mapbuffer (from `../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
-  - "react-native-ffmpeg-kit/video (from `../node_modules/@fathah_cr/react-native-ffmpeg-kit`)"
   - react-native-google-maps (from `/Users/mac/60seconds_new-main/node_modules/react-native-maps`)
   - react-native-maps (from `../node_modules/react-native-maps`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
@@ -3215,7 +3210,6 @@ DEPENDENCIES:
   - RNShare (from `../node_modules/react-native-share`)
   - RNSVG (from `../node_modules/react-native-svg`)
   - RNWorklets (from `../node_modules/react-native-worklets`)
-  - shaquillehinds-ffmpeg-kit-ios (from `https://raw.githubusercontent.com/shaquillehinds/ffmpeg/master/shaquillehinds-ffmpeg-kit-ios.podspec`)
   - SocketRocket (~> 0.7.1)
   - "stripe-react-native (from `../node_modules/@stripe/stripe-react-native`)"
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
@@ -3380,8 +3374,6 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon"
   React-microtasksnativemodule:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
-  react-native-ffmpeg-kit:
-    :path: "../node_modules/@fathah_cr/react-native-ffmpeg-kit"
   react-native-google-maps:
     :path: "/Users/mac/60seconds_new-main/node_modules/react-native-maps"
   react-native-maps:
@@ -3468,8 +3460,6 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-svg"
   RNWorklets:
     :path: "../node_modules/react-native-worklets"
-  shaquillehinds-ffmpeg-kit-ios:
-    :podspec: https://raw.githubusercontent.com/shaquillehinds/ffmpeg/master/shaquillehinds-ffmpeg-kit-ios.podspec
   stripe-react-native:
     :path: "../node_modules/@stripe/stripe-react-native"
   Yoga:
@@ -3549,7 +3539,6 @@ SPEC CHECKSUMS:
   React-logger: 8bcfaf06f8c536fb9e9760526cf3d17ccd53e4ce
   React-Mapbuffer: b586f547cd5631696243760d9591b975596a5990
   React-microtasksnativemodule: 55f4c45b6319f7af1955a5dc7621eaf31bd114ce
-  react-native-ffmpeg-kit: 22117f7a469d26d347f6cb9056401cd033529731
   react-native-google-maps: 7cc1184afe41fbd15a3dffd53c924819f6587b69
   react-native-maps: ee1e65647460c3d41e778071be5eda10e3da6225
   react-native-safe-area-context: 54d812805f3c4e08a4580ad086cbde1d8780c2e4
@@ -3597,7 +3586,6 @@ SPEC CHECKSUMS:
   SDWebImageAVIFCoder: afe194a084e851f70228e4be35ef651df0fc5c57
   SDWebImageSVGCoder: 15a300a97ec1c8ac958f009c02220ac0402e936c
   SDWebImageWebPCoder: e38c0a70396191361d60c092933e22c20d5b1380
-  shaquillehinds-ffmpeg-kit-ios: ccc776103cae371e03b8eb62ecbab16bf18cec75
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Stripe: 4728e3e0dd8df134e4a420ab504e929a93a815f0
   stripe-react-native: 3fde1e37716139e55b3131de08dc1d211aafe38f
@@ -3611,6 +3599,6 @@ SPEC CHECKSUMS:
   Yoga: d7064c22f7ba5890471d32dd95e72c77ec911f26
   ZXingObjC: 8898711ab495761b2dbbdec76d90164a6d7e14c5
 
-PODFILE CHECKSUM: 74d09f658e3af60ff285e8cb56ff3ebbc79417b9
+PODFILE CHECKSUM: cf9a32b1e48b5f068b4dc9ca9c7fe740d042e74a
 
 COCOAPODS: 1.13.0

@@ -44,6 +44,8 @@ export default function WithdrawFundsModal({ visible, onClose }: WithdrawFundsMo
   const usesDirectPayout =
     String(businessBankAccount?.countryCode || '').trim().toUpperCase() === 'NG' ||
     businessBankAccount?.payoutProvider === 'paystack';
+  const bankVerificationState =
+    businessBankAccount?.verificationStatus || (businessBankAccount?.isVerified ? 'verified' : 'pending');
   const claimableBalance = React.useMemo(() => {
     const isCompletedLike = (status?: string) => {
       const normalized = String(status || '').trim().toLowerCase();
@@ -221,13 +223,17 @@ export default function WithdrawFundsModal({ visible, onClose }: WithdrawFundsMo
                       </Text>
                     )}
                     
-                    {businessBankAccount.isVerified ? (
+                    {bankVerificationState === 'verified' ? (
                       <View style={styles.verifiedBadge}>
                         <Text style={styles.verifiedText}>Verified</Text>
                       </View>
+                    ) : bankVerificationState === 'failed' ? (
+                      <View style={styles.unverifiedBadge}>
+                        <Text style={styles.unverifiedText}>Verification Failed</Text>
+                      </View>
                     ) : (
                       <View style={styles.unverifiedBadge}>
-                        <Text style={styles.unverifiedText}>Unverified</Text>
+                        <Text style={styles.unverifiedText}>Verification Pending</Text>
                       </View>
                     )}
                   </View>

@@ -45,6 +45,29 @@ type ShareVideoFileResult = {
   cancelled: boolean;
 };
 
+type ShareVideoFileOptions = {
+  target?: 'generic' | 'instagram' | 'facebook' | 'twitter' | 'whatsapp' | 'tiktok';
+};
+
+const resolveShareSocialTarget = (
+  target?: ShareVideoFileOptions['target']
+): any | null => {
+  if (!target || target === 'generic') return null;
+
+  const socialMap: Record<string, string> = {
+    instagram: 'INSTAGRAM',
+    facebook: 'FACEBOOK',
+    twitter: 'TWITTER',
+    whatsapp: 'WHATSAPP',
+    tiktok: 'TIKTOK',
+  };
+
+  const socialKey = socialMap[target];
+  if (!socialKey) return null;
+
+  return (ShareOpen.Social as any)?.[socialKey] ?? null;
+};
+
 export default function ShareModal({ visible, onClose, video }: ShareModalProps) {
   const { shareVideo } = useVideoStore();
   const [isPreparingVideo, setIsPreparingVideo] = useState(false);
@@ -321,7 +344,10 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
     }
   };
 
-  const shareVideoFile = async (_dialogTitle: string): Promise<ShareVideoFileResult> => {
+  const shareVideoFile = async (
+    _dialogTitle: string,
+    options: ShareVideoFileOptions = {}
+  ): Promise<ShareVideoFileResult> => {
     if (Platform.OS === 'web') {
       return { success: false, cancelled: false };
     }
@@ -373,6 +399,45 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
         return { success: false, cancelled: true };
       }
 
+      const socialTarget = resolveShareSocialTarget(options.target);
+
+      if (socialTarget) {
+        if (Platform.OS === 'android') {
+          const androidPackages: Partial<Record<NonNullable<ShareVideoFileOptions['target']>, string>> = {
+            instagram: 'com.instagram.android',
+            facebook: 'com.facebook.katana',
+            twitter: 'com.twitter.android',
+            whatsapp: 'com.whatsapp',
+            tiktok: 'com.zhiliaoapp.musically',
+          };
+
+          const packageName = androidPackages[options.target || 'generic'];
+          if (packageName) {
+            const installCheck = await ShareOpen.isPackageInstalled(packageName).catch(() => ({ isInstalled: true }));
+            if (!installCheck.isInstalled) {
+              Alert.alert('App Not Installed', 'Please install the selected app to continue sharing.');
+              return { success: false, cancelled: false };
+            }
+          }
+        }
+
+        const shareResponse = await ShareOpen.shareSingle({
+          social: socialTarget,
+          url: localUri,
+          type: mimeType,
+          message: shareMessage,
+          failOnCancel: false,
+        });
+
+        if (isLikelyShareCancelled(shareResponse)) {
+          console.log('[Share] Targeted app share dismissed by user');
+          return { success: false, cancelled: true };
+        }
+
+        console.log('[Share] ✓ Targeted app share opened with video attached');
+        return { success: true, cancelled: false };
+      }
+
       const shareResponse = await ShareOpen.open({
         title: video.eventName,
         subject: uploaderUsername
@@ -418,45 +483,6 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
     }
   };
 
-  const shareViaSystem = async (
-    source: 'instagram' | 'facebook' | 'twitter' | 'whatsapp' | 'tiktok' | 'webpage' | 'other' = 'other',
-    options?: { preferVideoFile?: boolean }
-  ) => {
-    try {
-      const shouldShareVideoFile = options?.preferVideoFile ?? true;
-      const shareResult = shouldShareVideoFile ? await shareVideoFile('Share video') : { success: false, cancelled: false };
-
-      if (shareResult.cancelled) {
-        onClose();
-        return;
-      }
-      
-      if (shareResult.success) {
-        shareVideo(video.id, source);
-        onClose();
-        return;
-      }
-
-      if (shouldShareVideoFile) {
-        notifyWatermarkRequired();
-        return;
-      }
-
-      // shouldShareVideoFile was false — share text only
-      const payload = {
-        message: shareMessage,
-        title: video.eventName,
-      };
-
-      await Share.share(payload);
-      shareVideo(video.id, source);
-      onClose();
-    } catch (error) {
-      console.error('[Share] Error sharing via system sheet', error);
-      Alert.alert('Share Error', 'Could not share. Please try again.');
-    }
-  };
-
   const handleCopyLink = async () => {
     if (isPreparingVideo || activeShareSession) {
       notifySharePreparing();
@@ -497,7 +523,9 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
       }
 
       // Share the video FILE (routes to Feed/Reels, not DMs)
-      const shareResult = await shareVideoFile('Share to Instagram Post or Reel');
+      const shareResult = await shareVideoFile('Share to Instagram Post or Reel', {
+        target: 'instagram',
+      });
       if (shareResult.cancelled) {
         onClose();
         return;
@@ -524,7 +552,9 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
     }
     handleHapticFeedback();
 
-    const shareResult = await shareVideoFile('Share video to Facebook');
+    const shareResult = await shareVideoFile('Share video to Facebook', {
+      target: 'facebook',
+    });
     if (shareResult.cancelled) {
       onClose();
       return;
@@ -547,7 +577,9 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
     handleHapticFeedback();
 
     // Primary: share video file + clean message text
-    const shareResult = await shareVideoFile('Share video to X');
+    const shareResult = await shareVideoFile('Share video to X', {
+      target: 'twitter',
+    });
     if (shareResult.cancelled) {
       onClose();
       return;
@@ -571,7 +603,9 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
 
     try {
       // Primary: share video file + message
-      const shareResult = await shareVideoFile('Share video to WhatsApp');
+      const shareResult = await shareVideoFile('Share video to WhatsApp', {
+        target: 'whatsapp',
+      });
       if (shareResult.cancelled) {
         onClose();
         return;
@@ -596,7 +630,22 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
       return;
     }
     handleHapticFeedback();
-    await shareViaSystem('tiktok');
+    const shareResult = await shareVideoFile('Share video to TikTok', {
+      target: 'tiktok',
+    });
+
+    if (shareResult.cancelled) {
+      onClose();
+      return;
+    }
+
+    if (shareResult.success) {
+      shareVideo(video.id, 'tiktok');
+      onClose();
+      return;
+    }
+
+    notifyWatermarkRequired();
   };
 
   const handleShareAsWebpage = async () => {

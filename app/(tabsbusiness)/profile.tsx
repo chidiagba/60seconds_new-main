@@ -27,6 +27,7 @@ import { useVideoStore } from '@/store/video-store';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import VideoFrameThumbnail from '@/components/VideoFrameThumbnail';
 import { formatRelativeUploadTime } from '@/utils/time';
+import { resolveAvatarUrl } from '@/utils/avatar';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -62,6 +63,11 @@ export default function ProfileScreen() {
   const [createdEventsCount, setCreatedEventsCount] = useState(0);
 
   const { videos: allVideos, userLikedVideos, deletedVideoIds, fetchVideos, loadUserLikes, removeVideo } = useVideoStore();
+  const resolvedProfileAvatar = resolveAvatarUrl({
+    avatarUrl: authProfile?.avatar_url || currentUser?.avatar,
+    avatarGender: (authProfile as any)?.avatar_gender,
+    fallbackUrl: 'https://via.placeholder.com/150',
+  });
 
   const getCachedUserVideos = useCallback((targetUserId?: string) => {
     if (!targetUserId) return [];
@@ -83,7 +89,7 @@ export default function ProfileScreen() {
           name: authProfile.full_name,
           displayName: authProfile.full_name,
           username: authProfile.username,
-          avatar: authProfile.avatar_url || 'https://via.placeholder.com/150',
+          avatar: resolvedProfileAvatar,
           bio: authProfile.bio,
           location: authProfile.location_city,
           isBusinessAccount: authProfile.user_type === 'business',
@@ -95,7 +101,7 @@ export default function ProfileScreen() {
         setIsCurrentUserProfile(true);
       }
     }
-  }, [userId, authUser, authProfile, router]);
+  }, [userId, authUser, authProfile, resolvedProfileAvatar, router]);
 
   // Load user's uploaded videos — runs on mount and whenever the screen is focused
   const loadUserVideos = useCallback(async () => {
@@ -434,9 +440,9 @@ export default function ProfileScreen() {
 
       <View style={styles.profileSection}>
         <View style={styles.avatarContainer}>
-          {authProfile.avatar_url ? (
+          {resolvedProfileAvatar ? (
             <Image
-              source={{ uri: authProfile.avatar_url }}
+              source={{ uri: resolvedProfileAvatar }}
               style={styles.profileImage}
               contentFit="cover"
               transition={300}

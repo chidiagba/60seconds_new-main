@@ -42,10 +42,12 @@ import * as Location from "expo-location";
 import { calculateDistance, calculateRoadDistance, formatDistance } from "@/utils/location";
 import { useAuthStore } from "@/store/auth-store";
 import { useContentModerationStore } from "@/store/content-moderation-store";
+import { useProductStore } from "@/store/product-store";
 import { useActionSheet } from "@expo/react-native-action-sheet";
 import UserTagItem from "@/components/UserTagItem";
 import AttendeesList from "@/components/AttendeesList";
 import GuestListButton from "@/components/GuestListButton";
+import AppThemeDialog from "@/components/AppThemeDialog";
 import { AttendanceStatus } from "@/types";
 import { TRANSACTION_FEE_PERCENTAGE } from "@/types/wallet";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -70,8 +72,11 @@ export default function EventScreen() {
   const { user } = useAuthStore();
   const { showActionSheetWithOptions } = useActionSheet();
   const { hideVideo } = useContentModerationStore();
+  const { addToCart } = useProductStore();
 
-  const [video, setVideo] = useState(mockVideos.find((v) => v.id === id));
+  const [video, setVideo] = useState(
+    videos.find((v) => v.id === id) || mockVideos.find((v) => v.id === id)
+  );
   const [liked, setLiked] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [userDistance, setUserDistance] = useState<string | null>(null);
@@ -82,6 +87,7 @@ export default function EventScreen() {
   const [showAttendeesList, setShowAttendeesList] = useState(false);
   const [attendees, setAttendees] = useState<any[]>([]);
   const [showFeeInfo, setShowFeeInfo] = useState(false);
+  const [showNoEventDialog, setShowNoEventDialog] = useState(false);
 
   // --- Location disclosure states ---
   const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
@@ -125,7 +131,7 @@ export default function EventScreen() {
 
   useEffect(() => {
     if (id) {
-      const foundVideo = mockVideos.find((v) => v.id === id);
+      const foundVideo = videos.find((v) => v.id === id) || mockVideos.find((v) => v.id === id);
       setVideo(foundVideo);
 
       if (foundVideo) {
@@ -151,7 +157,7 @@ export default function EventScreen() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, user, isAttending]);
+  }, [id, user, isAttending, videos]);
 
   // When we want to calculate distance:
   // 1) Show disclosure if not accepted
@@ -376,9 +382,31 @@ export default function EventScreen() {
 
     if (attendanceStatus === AttendanceStatus.GOING) {
       cancelAttendance(video!.id);
+      setAttendanceStatus(null);
     } else {
       attendEvent(video!.id, AttendanceStatus.GOING);
+      setAttendanceStatus(AttendanceStatus.GOING);
     }
+  };
+
+  const handleCartPress = () => {
+    if (!video) return;
+
+    const availableProducts = (video.products || []).filter(
+      (product) => Number(product?.available ?? 0) !== 0
+    );
+
+    if (!availableProducts.length) {
+      setShowNoEventDialog(true);
+      return;
+    }
+
+    const ticketProduct =
+      availableProducts.find((product) => product.type === "ticket") ||
+      availableProducts[0];
+
+    addToCart(ticketProduct, 1);
+    router.push("/cart");
   };
 
   const handleShowAttendees = () => {
@@ -603,7 +631,7 @@ export default function EventScreen() {
 
               <TouchableOpacity
                 style={styles.actionButton}
-                onPress={() => router.push("/cart")}
+                onPress={handleCartPress}
               >
                 <ShoppingBag size={24} color={Colors.dark.text} />
               </TouchableOpacity>
@@ -837,6 +865,18 @@ export default function EventScreen() {
         visible={showShareModal}
         onClose={() => setShowShareModal(false)}
         video={video}
+      />
+
+      <AppThemeDialog
+        visible={showNoEventDialog}
+        title="Nothing to Add Yet"
+        message="No ticket or purchasable event item is available for this event right now. Try attending the event first or check back when products are published."
+        primaryLabel="Browse Events"
+        onPrimaryPress={() => {
+          setShowNoEventDialog(false);
+          router.push("/");
+        }}
+        onClose={() => setShowNoEventDialog(false)}
       />
     </SafeAreaView>
   );

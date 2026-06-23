@@ -16,6 +16,8 @@ const VIDEO_FEED_CACHE_KEY = 'video-feed-cache-v2';
 const VIDEO_FEED_CACHE_LIMIT = 3;
 const FEED_PAGE_SIZE = 20;
 const LOCATION_FILTER_BATCH_SIZE = 100;
+let fetchVideosInFlight: Promise<void> | null = null;
+let fetchMoreVideosInFlight: Promise<void> | null = null;
 
 const resolveProfileAvatar = (profile?: any): string =>
   resolveAvatarUrl({
@@ -204,9 +206,14 @@ export const useVideoStore = create<VideoState>((set, get) => ({
   },
   
   fetchVideos: async () => {
+    if (fetchVideosInFlight) {
+      return fetchVideosInFlight;
+    }
+
     console.log('📹 VideoStore: Fetching videos from database...');
     set({ isLoading: true, error: null });
-    try {
+    fetchVideosInFlight = (async () => {
+      try {
       const videosData = await videoService.getVideos(FEED_PAGE_SIZE, 0);
       console.log('📹 VideoStore: Fetched', videosData.length, 'videos from database');
       
@@ -290,20 +297,29 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       await persistVideoFeedCache(visibleVideos);
       // Reset pagination state on a fresh fetch
       set({ videos: visibleVideos, isLoading: false, _feedOffset: FEED_PAGE_SIZE, hasMoreVideos: videosData.length >= FEED_PAGE_SIZE });
-    } catch (error) {
-      console.warn('📹 VideoStore: Unable to fetch videos from database:', error);
-      await persistVideoFeedCache([]);
-      set({ videos: [], isLoading: false, error: null, _feedOffset: 0, hasMoreVideos: false });
-    }
+      } catch (error) {
+        console.warn('📹 VideoStore: Unable to fetch videos from database:', error);
+        await persistVideoFeedCache([]);
+        set({ videos: [], isLoading: false, error: null, _feedOffset: 0, hasMoreVideos: false });
+      } finally {
+        fetchVideosInFlight = null;
+      }
+    })();
+
+    return fetchVideosInFlight;
   },
 
   fetchMoreVideos: async () => {
     const { isFetchingMore, hasMoreVideos, _feedOffset, deletedVideoIds } = get();
     if (isFetchingMore || !hasMoreVideos) return;
+    if (fetchMoreVideosInFlight) {
+      return fetchMoreVideosInFlight;
+    }
 
     console.log('📹 VideoStore: Fetching more videos, offset =', _feedOffset);
     set({ isFetchingMore: true });
-    try {
+    fetchMoreVideosInFlight = (async () => {
+      try {
       const videosData = await videoService.getVideos(FEED_PAGE_SIZE, _feedOffset);
       console.log('📹 VideoStore: Fetched', videosData.length, 'more videos');
 
@@ -384,10 +400,15 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         hasMoreVideos: videosData.length >= FEED_PAGE_SIZE,
         isFetchingMore: false,
       }));
-    } catch (error) {
-      console.warn('📹 VideoStore: Unable to fetch more videos:', error);
-      set({ isFetchingMore: false });
-    }
+      } catch (error) {
+        console.warn('📹 VideoStore: Unable to fetch more videos:', error);
+        set({ isFetchingMore: false });
+      } finally {
+        fetchMoreVideosInFlight = null;
+      }
+    })();
+
+    return fetchMoreVideosInFlight;
   },
   
   // Note: an earlier incomplete block caused a syntax error here. It has been removed.

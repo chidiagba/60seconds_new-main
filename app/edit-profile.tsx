@@ -30,6 +30,8 @@ import { uploadImageToSupabase } from "@/utils/image-upload";
 import { useVideoStore } from "@/store/video-store";
 import { resolveAvatarUrl } from "@/utils/avatar";
 
+const PLACEHOLDER_AVATAR_URL = "https://via.placeholder.com/150";
+
 export default function EditProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -37,7 +39,7 @@ export default function EditProfileScreen() {
   const { user, profile, updateProfile } = useAuth();
   const syncUserProfile = useVideoStore((state) => state.syncUserProfile);
 
-  const [avatar, setAvatar] = useState("https://via.placeholder.com/150");
+  const [avatar, setAvatar] = useState(PLACEHOLDER_AVATAR_URL);
   const [avatarGender, setAvatarGender] = useState<'male' | 'female' | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
@@ -57,8 +59,15 @@ export default function EditProfileScreen() {
     
     if (profile) {
       console.log('✅ Loading profile data into form fields');
-      setAvatar(profile.avatar_url || "https://via.placeholder.com/150");
-      setAvatarGender((profile as any).avatar_gender ?? null);
+      const nextAvatarGender = (profile as any).avatar_gender ?? null;
+      setAvatarGender(nextAvatarGender);
+      setAvatar(
+        resolveAvatarUrl({
+          avatarUrl: profile.avatar_url,
+          avatarGender: nextAvatarGender,
+          fallbackUrl: PLACEHOLDER_AVATAR_URL,
+        })
+      );
       setDisplayName(profile.full_name || "");
       setUsername(profile.username || "");
       setBio(profile.bio || "");
@@ -95,7 +104,11 @@ export default function EditProfileScreen() {
         business_name: businessName,
         business_type: businessType,
         hashtags: hashtags.split(' ').filter(tag => tag.startsWith('#')).map(tag => tag.substring(1)),
-        avatar_url: avatarGender ? null : avatar,
+        avatar_url: avatarGender
+          ? null
+          : avatar && avatar !== PLACEHOLDER_AVATAR_URL
+            ? avatar
+            : null,
         avatar_gender: avatarGender,
       } as any;
 
@@ -248,7 +261,7 @@ export default function EditProfileScreen() {
                 <Text style={{ fontSize: 52 }}>{avatarGender === 'male' ? '👨' : '👩'}</Text>
               </View>
             ) : (
-              <Image source={{ uri: "https://via.placeholder.com/150" }} style={styles.avatar} />
+              <Image source={{ uri: PLACEHOLDER_AVATAR_URL }} style={styles.avatar} />
             )}
             <TouchableOpacity style={styles.cameraButton} onPress={pickImage}>
               <Camera size={18} color={Colors.dark.text} />
@@ -264,7 +277,7 @@ export default function EditProfileScreen() {
                 onPress={() => {
                   const next = avatarGender === 'male' ? null : 'male';
                   setAvatarGender(next);
-                  if (next) setAvatar("https://via.placeholder.com/150");
+                  if (next) setAvatar(PLACEHOLDER_AVATAR_URL);
                 }}
               >
                 <Text style={{ fontSize: 22 }}>👨</Text>
@@ -275,7 +288,7 @@ export default function EditProfileScreen() {
                 onPress={() => {
                   const next = avatarGender === 'female' ? null : 'female';
                   setAvatarGender(next);
-                  if (next) setAvatar("https://via.placeholder.com/150");
+                  if (next) setAvatar(PLACEHOLDER_AVATAR_URL);
                 }}
               >
                 <Text style={{ fontSize: 22 }}>👩</Text>

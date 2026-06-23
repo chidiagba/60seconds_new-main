@@ -34,7 +34,9 @@ if (!isExpoGo && Platform.OS !== "web") {
 // payment sheet starts it. Prevents "No task registered for key StripeKeepJsAwakeTask" and app crash.
 if (Platform.OS === "android") {
   AppRegistry.registerHeadlessTask("StripeKeepJsAwakeTask", () => {
-    return () => new Promise<void>(() => {});
+    return async () => {
+      // No-op task registration: keep task finite so it cannot pin JS forever.
+    };
   });
 }
 
@@ -135,7 +137,6 @@ export default function RootLayout() {
 
 function AppContent() {
   // EMERGENCY: Completely bypass auth loading check
-  console.log('🚀 AppContent: Bypassing all loading checks');
   const router = useRouter();
   const segments = useSegments();
 
@@ -549,7 +550,6 @@ function AppContent() {
 }
 
 function RootLayoutNav() {
-  console.log('🚀 RootLayoutNav: App is starting WITHOUT authentication');
   // Use publishable key from env/config if available, otherwise fall back to the provided key.
   const stripeKey =
     process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ||

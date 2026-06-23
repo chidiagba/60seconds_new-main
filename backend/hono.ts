@@ -242,7 +242,7 @@ async function settlePaystackOrderPayment(args: {
     throw new Error('Could not resolve product owner for settlement.');
   }
 
-  const orderUpdatePayload: any = {
+  let orderUpdatePayload: any = {
     status: 'completed',
     payment_status: 'paid',
     payment_provider: 'paystack',
@@ -262,10 +262,29 @@ async function settlePaystackOrderPayment(args: {
     updated_at: nowIso,
   };
 
-  const { error: orderUpdateError } = await supabase
+  let { error: orderUpdateError } = await supabase
     .from('orders')
     .update(orderUpdatePayload)
     .eq('id', orderId);
+
+  if (
+    orderUpdateError &&
+    /column|payment_status|payment_provider|payment_reference|payment_transaction_id|payment_gateway_response|payment_metadata/i.test(
+      String(orderUpdateError.message || '')
+    )
+  ) {
+    orderUpdatePayload = {
+      status: 'completed',
+      payment_method: 'paystack',
+      business_id: ownerId,
+      updated_at: nowIso,
+    };
+
+    ({ error: orderUpdateError } = await supabase
+      .from('orders')
+      .update(orderUpdatePayload)
+      .eq('id', orderId));
+  }
 
   if (orderUpdateError) {
     throw new Error(`Failed to update order payment status: ${orderUpdateError.message}`);

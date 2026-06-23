@@ -49,6 +49,7 @@ import { canOpenTwintApp, openTwintApp } from '@/lib/twint';
 import WorldlineService from '@/lib/worldline';
 import { useAuth } from "@/lib/auth";
 import { resolveCurrencyFromCountry } from "@/utils/country-currency";
+import { getPaystackRoutingForOwner } from "@/constants/paystack-routing";
 
 let stripeUseHook: null | (() => {
   presentPaymentSheet: (options?: any) => Promise<{ error?: { message?: string } | null }>;
@@ -277,10 +278,35 @@ export default function CartScreen() {
     );
   };
 
+  const cartOwnerIds = React.useMemo(() => {
+    return Array.from(
+      new Set(
+        cart
+          .map((item) => resolveProductOwnerId(item.product))
+          .filter((ownerId): ownerId is string => !!ownerId)
+      )
+    );
+  }, [cart]);
+
+  const hasMixedOwnerCart = cartOwnerIds.length > 1;
+
   const cartOwnerId = cart.length ? resolveProductOwnerId(cart[0].product) : null;
 
+  const ensureSingleOwnerCart = (paymentLabel: string): boolean => {
+    if (!hasMixedOwnerCart) return true;
+
+    Alert.alert(
+      "Split Checkout Required",
+      `Your cart contains items from multiple organizers. ${paymentLabel} checkout can only settle one organizer per payment. Please checkout each organizer's items separately.`,
+      [{ text: "OK" }]
+    );
+    return false;
+  };
+
   const issueTicketsForOrder = async (order: any) => {
-    if (!currentUser?.id) return;
+    if (!currentUser?.id) {
+      throw new Error('Missing authenticated buyer for ticket issuance.');
+    }
 
     const orderNumber =
       (order as any)?.order_number ||
@@ -468,11 +494,7 @@ export default function CartScreen() {
         throw new Error(settlement.error || 'Twint settlement failed.');
       }
 
-      try {
-        await issueTicketsForOrder(orderData);
-      } catch (ticketError) {
-        console.warn('Ticket generation failed after Twint payment:', ticketError);
-      }
+      await issueTicketsForOrder(orderData);
 
       if (activeVoucher && discountAmount > 0) {
         incrementUsageCount(activeVoucher.id);
@@ -648,11 +670,7 @@ export default function CartScreen() {
                 )
                   .then(async (success) => {
                     if (success) {
-                      try {
-                        await issueTicketsForOrder(order);
-                      } catch (ticketError) {
-                        console.warn(`Ticket generation failed after ${method} payment:`, ticketError);
-                      }
+                      await issueTicketsForOrder(order);
 
                       if (activeVoucher && discountAmount > 0) {
                         incrementUsageCount(activeVoucher.id);
@@ -690,6 +708,10 @@ export default function CartScreen() {
   const handleCheckout = async () => {
     if (cart.length === 0) {
       Alert.alert("Cart Empty", "Please add items to your cart before checking out.");
+      return;
+    }
+
+    if (!ensureSingleOwnerCart("This")) {
       return;
     }
 
@@ -799,16 +821,13 @@ export default function CartScreen() {
         });
 
         if (!settlement.success) {
-          console.warn('Stripe settlement failed:', settlement.error);
+          throw new Error(settlement.error || 'Stripe settlement failed.');
         }
 
-        try {
-          await issueTicketsForOrder(order);
-        } catch (ticketError) {
-          console.warn('Ticket generation failed after Stripe checkout:', ticketError);
-        }
+        await issueTicketsForOrder(order);
       } catch (recordErr) {
         console.warn("Payment succeeded but recording failed:", recordErr);
+        throw recordErr;
       }
 
       Alert.alert(
@@ -953,6 +972,14 @@ export default function CartScreen() {
                         </View>
             </View>
 
+            {hasMixedOwnerCart && (
+              <View style={styles.mixedOwnerWarningBox}>
+                <Text style={styles.mixedOwnerWarningText}>
+                  Cart contains items from multiple organizers. Checkout each organizer separately to keep settlement and payout accurate.
+                </Text>
+              </View>
+            )}
+
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Subtotal</Text>
               <Text style={styles.summaryValue}>
@@ -1070,10 +1097,10 @@ export default function CartScreen() {
             <TouchableOpacity
               style={[
                 styles.checkoutButton,
-                (processingPayment || isLoading) && styles.disabledButton,
+                (processingPayment || isLoading || hasMixedOwnerCart) && styles.disabledButton,
               ]}
               onPress={handleCheckout}
-              disabled={false}
+              disabled={processingPayment || isLoading || hasMixedOwnerCart}
             >
               {processingPayment ? (
                 <ActivityIndicator size="small" color={Colors.dark.text} />
@@ -1099,6 +1126,9 @@ export default function CartScreen() {
         onSuccess={async (reference: string) => {
           setShowPaystackModal(false);
           try {
+            if (!ensureSingleOwnerCart("Paystack")) {
+              return;
+            }
             setProcessingPayment(true);
             const order = await createOrder('paystack', 'pending');
 
@@ -1134,11 +1164,7 @@ export default function CartScreen() {
               throw new Error(settlement.error || 'Paystack settlement failed.');
             }
 
-            try {
-              await issueTicketsForOrder(order);
-            } catch (ticketError) {
-              console.warn('Ticket generation failed after Paystack payment:', ticketError);
-            }
+            await issueTicketsForOrder(order);
             if (activeVoucher && discountAmount > 0) {
               incrementUsageCount(activeVoucher.id);
             }
@@ -1166,6 +1192,27 @@ export default function CartScreen() {
         email={currentUser?.email || ''}
         description={`Cart purchase (${cart.length} item${cart.length !== 1 ? 's' : ''})`}
         metadata={{ cartItems: cart.map((i) => ({ productId: i.product.id, qty: i.quantity })) }}
+        paystackSubaccount={
+          String((cart[0]?.product as any)?.paystackSubaccountCode || '').trim() ||
+          getPaystackRoutingForOwner(resolveProductOwnerId(cart[0]?.product)).subaccount
+        }
+        paystackSplitCode={
+          String((cart[0]?.product as any)?.paystackSplitCode || '').trim() ||
+          getPaystackRoutingForOwner(resolveProductOwnerId(cart[0]?.product)).splitCode
+        }
+        paystackTransactionCharge={
+          Number.isFinite(Number((cart[0]?.product as any)?.paystackTransactionCharge))
+            ? Number((cart[0]?.product as any)?.paystackTransactionCharge)
+            : (
+                getPaystackRoutingForOwner(resolveProductOwnerId(cart[0]?.product)).transactionCharge ??
+                Number((finalTotal - getBusinessNetAmount(finalTotal)).toFixed(2))
+              )
+        }
+        paystackBearer={
+          String((cart[0]?.product as any)?.paystackBearer || '').trim().toLowerCase() === 'subaccount'
+            ? 'subaccount'
+            : getPaystackRoutingForOwner(resolveProductOwnerId(cart[0]?.product)).bearer
+        }
       />
 
       <TwintPaymentModal
@@ -1460,6 +1507,19 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.7,
+  },
+  mixedOwnerWarningBox: {
+    marginBottom: 12,
+    backgroundColor: "rgba(255, 193, 7, 0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 193, 7, 0.4)",
+    borderRadius: 10,
+    padding: 10,
+  },
+  mixedOwnerWarningText: {
+    color: "#F5C16C",
+    fontSize: 12,
+    lineHeight: 18,
   },
   emptyContainer: {
     flex: 1,

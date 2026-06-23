@@ -11,8 +11,9 @@ interface CartButtonProps {
 }
 
 export default function CartButton({ onPress, variant = "floating" }: CartButtonProps) {
-  const { getCartItemCount } = useProductStore();
-  const itemCount = getCartItemCount();
+  const itemCount = useProductStore((state) =>
+    state.cart.reduce((count, item) => count + item.quantity, 0)
+  );
   const insets = useSafeAreaInsets();
 
 

@@ -12,10 +12,29 @@
       "distribution": "internal"
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "ios": {
+        "buildConfiguration": "Release",
+        "enterpriseProvisioning": "adhoc"
+      },
+      "android": {
+        "buildType": "release",
+        "gradleCommand": ":app:bundleRelease"
+      }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "60seconds-app-id",
+        "appleTeamId": "apple-team-id",
+        "appleId": "apple-developer@example.com",
+        "itcTeamId": "itc-team-id"
+      },
+      "android": {
+        "track": "internal",
+        "serviceAccountKeyPath": "./google-play-service-account.json"
+      }
+    }
   }
 }

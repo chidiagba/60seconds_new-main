@@ -14,10 +14,12 @@
     "android": "bash scripts/setup-android-dev-network.sh && expo run:android",
     "android:device": "bash scripts/setup-android-dev-network.sh && bash scripts/install-android-device.sh",
     "android:launch-device": "bash scripts/setup-android-dev-network.sh && bash scripts/launch-android-device.sh",
-    "ios": "expo run:ios",
+    "ios": "expo run:ios --device DEDACD0F-B61B-4851-A54D-8C27969DC6BB",
     "ios:device": "expo run:ios --device",
     "ios:launch-device": "bash scripts/launch-ios-device.sh",
-    "backfill:external-settlements": "tsx scripts/backfill-external-order-wallet-settlements.ts"
+    "backfill:external-settlements": "tsx scripts/backfill-external-order-wallet-settlements.ts",
+    "backfill:ticket-receipts": "tsx scripts/backfill-missing-ticket-receipts.ts",
+    "backfill:paystack-subaccounts": "tsx scripts/backfill-paystack-subaccounts.ts"
   },
   "dependencies": {
     "@expo/react-native-action-sheet": "^4.1.1",

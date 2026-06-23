@@ -573,7 +573,7 @@ export default function BankAccountsScreen() {
                 )}
               </View>
 
-              {verificationState === 'failed' && !!verificationReason && (
+              {(verificationState === 'failed' || verificationState === 'pending') && !!verificationReason && (
                 <Text style={styles.verificationReasonText}>{verificationReason}</Text>
               )}
               

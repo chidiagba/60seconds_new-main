@@ -91,6 +91,77 @@ const createRecipient = async (payload: { name: string; accountNumber: string; b
   return body.data;
 };
 
+const createSubaccount = async (payload: {
+  businessName: string;
+  accountNumber: string;
+  bankCode: string;
+  percentageCharge?: number;
+}) => {
+  const response = await fetch('https://api.paystack.co/subaccount', {
+    method: 'POST',
+    headers: paystackHeaders,
+    body: JSON.stringify({
+      business_name: payload.businessName,
+      settlement_bank: payload.bankCode,
+      account_number: payload.accountNumber,
+      percentage_charge: Number.isFinite(Number(payload.percentageCharge)) ? Number(payload.percentageCharge) : 4,
+    }),
+  });
+
+  const body = await response.json();
+  if (!response.ok || !body?.status) {
+    throw new Error(body?.message || 'Failed to create Paystack subaccount');
+  }
+
+  return body.data;
+};
+
+const listSubaccounts = async () => {
+  const response = await fetch('https://api.paystack.co/subaccount?perPage=100&page=1', {
+    headers: paystackHeaders,
+  });
+
+  const body = await response.json();
+  if (!response.ok || !body?.status) {
+    throw new Error(body?.message || 'Failed to fetch Paystack subaccounts');
+  }
+
+  return Array.isArray(body.data) ? body.data : [];
+};
+
+const getSubaccountByCode = async (subaccountCode: string) => {
+  const code = String(subaccountCode || '').trim();
+  if (!code) return null;
+
+  const response = await fetch(`https://api.paystack.co/subaccount/${encodeURIComponent(code)}`, {
+    headers: paystackHeaders,
+  });
+
+  const body = await response.json();
+  if (!response.ok || !body?.status) {
+    throw new Error(body?.message || 'Failed to fetch Paystack subaccount details');
+  }
+
+  return body?.data || null;
+};
+
+const resolveBusinessName = (user: any, accountName: string) => {
+  const metadata = (user?.user_metadata || {}) as Record<string, any>;
+  const fromMetadata =
+    metadata.business_name ||
+    metadata.businessName ||
+    metadata.company_name ||
+    metadata.companyName ||
+    metadata.full_name ||
+    metadata.fullName;
+  const fromProfile =
+    user?.user_metadata?.name ||
+    [user?.user_metadata?.first_name, user?.user_metadata?.last_name].filter(Boolean).join(' ');
+  const fromEmail = String(user?.email || '').split('@')[0] || '';
+
+  return String(fromMetadata || fromProfile || accountName || fromEmail || 'Business').trim();
+};
+
 const resolveAccount = async (bankCode: string, accountNumber: string) => {
   const response = await fetch(
     `https://api.paystack.co/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`,
@@ -189,6 +260,7 @@ Deno.serve(async (req) => {
     const refreshOnly = payload?.refreshOnly === true;
     const resolveOnly = payload?.resolveOnly === true;
     const existingRecipientCode = String(payload?.paystackRecipientCode || '').trim();
+    const existingSubaccountCode = String(payload?.paystackSubaccountCode || '').trim();
 
     if (!accountName || !accountNumber || !bankName) {
       return new Response(JSON.stringify({ error: 'accountName, accountNumber, and bankName are required' }), {
@@ -237,15 +309,52 @@ Deno.serve(async (req) => {
         ? { recipient_code: existingRecipientCode, id: payload?.paystackRecipientId || null }
         : await createRecipient({ name: effectiveAccountName, accountNumber, bankCode, currency });
 
+    let subaccount: any = null;
+    if (existingSubaccountCode) {
+      subaccount = {
+        subaccount_code: existingSubaccountCode,
+        id: payload?.paystackSubaccountId || null,
+      };
+    } else {
+      const availableSubaccounts = await listSubaccounts();
+      const matchedSubaccount =
+        availableSubaccounts.find((entry: any) => {
+          const entryAccountNumber = String(entry?.account_number || '').trim();
+          const entryBankCode = String(entry?.settlement_bank_code || '').trim();
+          return entryAccountNumber === accountNumber && (!entryBankCode || entryBankCode === bankCode);
+        }) || null;
+
+      subaccount =
+        matchedSubaccount ||
+        (await createSubaccount({
+          businessName: resolveBusinessName(userData.user, effectiveAccountName),
+          accountNumber,
+          bankCode,
+          percentageCharge: 4,
+        }));
+    }
+
+    const subaccountCode = String(subaccount?.subaccount_code || existingSubaccountCode || '').trim();
+    const hydratedSubaccount = subaccountCode ? await getSubaccountByCode(subaccountCode) : null;
+    const paystackSubaccountVerified = hydratedSubaccount?.is_verified === true;
+    const verificationStatus = paystackSubaccountVerified ? 'verified' : 'pending';
+    const subaccountReason = paystackSubaccountVerified
+      ? null
+      : 'Paystack subaccount is pending verification. Open Paystack Dashboard > Subaccounts and complete Verify Subaccount to enable full payout readiness.';
+    const combinedReason = [verificationWarning, subaccountReason].filter(Boolean).join(' ');
+
     return new Response(
       JSON.stringify({
         verified: true,
-        verificationStatus: 'verified',
-        verificationReason: verificationWarning,
+        verificationStatus,
+        verificationReason: combinedReason || null,
         accountName: effectiveAccountName,
         bankCode,
         paystackRecipientCode: recipient?.recipient_code || existingRecipientCode || null,
         paystackRecipientId: recipient?.id || payload?.paystackRecipientId || null,
+        paystackSubaccountCode: subaccountCode || null,
+        paystackSubaccountId: hydratedSubaccount?.id || subaccount?.id || payload?.paystackSubaccountId || null,
+        paystackSubaccountVerified,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

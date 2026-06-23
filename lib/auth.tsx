@@ -45,6 +45,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const authRequestIdRef = useRef(0);
+  const latestProfileRef = useRef<Profile | null>(null);
+
+  const mergeStableAvatarFields = (nextProfile: Profile, previousProfile: Profile | null): Profile => {
+    if (!previousProfile || previousProfile.id !== nextProfile.id) {
+      return nextProfile;
+    }
+
+    const nextAvatarUrl = String((nextProfile as any)?.avatar_url || '').trim();
+    const previousAvatarUrl = String((previousProfile as any)?.avatar_url || '').trim();
+    const nextAvatarGender = (nextProfile as any)?.avatar_gender;
+    const previousAvatarGender = (previousProfile as any)?.avatar_gender;
+
+    return {
+      ...(nextProfile as any),
+      avatar_url: nextAvatarUrl || previousAvatarUrl || null,
+      avatar_gender:
+        nextAvatarGender === 'male' || nextAvatarGender === 'female'
+          ? nextAvatarGender
+          : previousAvatarGender ?? null,
+    } as Profile;
+  };
 
   const resolveProfileAvatar = (currentProfile: Profile | null, currentUser: User): string => {
     return resolveAvatarUrl({
@@ -83,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     syncUser(storeUser);
   };
 
-  const buildFallbackProfile = (currentUser: User): Profile => {
+  const buildFallbackProfile = (currentUser: User, previousProfile: Profile | null): Profile => {
     const emailPrefix = currentUser.email?.split('@')[0] || 'user';
     return {
       id: currentUser.id,
@@ -93,7 +114,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user_type: (currentUser.user_metadata?.user_type as 'business' | 'private') || 'private',
       followers_count: 0,
       following_count: 0,
-      avatar_url: currentUser.user_metadata?.avatar_url || undefined,
+      avatar_url: previousProfile?.avatar_url || currentUser.user_metadata?.avatar_url || undefined,
+      ...(previousProfile && (previousProfile as any).avatar_gender !== undefined
+        ? { avatar_gender: (previousProfile as any).avatar_gender }
+        : {}),
       bio: undefined,
       location_city: undefined,
       business_name: currentUser.user_metadata?.business_name || undefined,
@@ -105,8 +129,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   };
 
-  const resolveUserProfile = async (currentUser: User): Promise<Profile> => {
-    const fallbackProfile = buildFallbackProfile(currentUser);
+  const resolveUserProfile = async (currentUser: User, previousProfile: Profile | null): Promise<Profile> => {
+    const fallbackProfile = buildFallbackProfile(currentUser, previousProfile);
 
     // Race profile resolution against a 10-second timeout so the auth
     // listener never hangs indefinitely when Supabase is slow.
@@ -157,6 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
         setUser(null);
         setProfile(null);
+        latestProfileRef.current = null;
         syncStoreUser(null, null);
 
         // Keep the transient session alive so verify-otp finalization can use the access token.
@@ -169,6 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
         setUser(null);
         setProfile(null);
+        latestProfileRef.current = null;
         syncStoreUser(null, null);
         setLoading(false);
         return;
@@ -183,29 +209,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         setProfile(null);
+        latestProfileRef.current = null;
         syncStoreUser(null, null);
         setLoading(false);
         return;
       }
 
       try {
-        const userProfile = await resolveUserProfile(nextSession.user);
+        const previousProfile = latestProfileRef.current;
+        const userProfile = await resolveUserProfile(nextSession.user, previousProfile);
+        const mergedProfile = mergeStableAvatarFields(userProfile, previousProfile);
 
         if (!isActive || requestId !== authRequestIdRef.current) {
           return;
         }
 
-        setProfile(userProfile);
-        syncStoreUser(nextSession.user, userProfile);
+        setProfile(mergedProfile);
+        latestProfileRef.current = mergedProfile;
+        syncStoreUser(nextSession.user, mergedProfile);
       } catch (error) {
-        const fallbackProfile = buildFallbackProfile(nextSession.user);
+        const previousProfile = latestProfileRef.current;
+        const fallbackProfile = buildFallbackProfile(nextSession.user, previousProfile);
+        const mergedFallbackProfile = mergeStableAvatarFields(fallbackProfile, previousProfile);
 
         if (!isActive || requestId !== authRequestIdRef.current) {
           return;
         }
 
-        setProfile(fallbackProfile);
-        syncStoreUser(nextSession.user, fallbackProfile);
+        setProfile(mergedFallbackProfile);
+        latestProfileRef.current = mergedFallbackProfile;
+        syncStoreUser(nextSession.user, mergedFallbackProfile);
       } finally {
         if (isActive && requestId === authRequestIdRef.current) {
           setLoading(false);
@@ -404,15 +437,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     try {
       const updatedProfile = await profileService.updateProfile(user.id, updates);
-      setProfile(updatedProfile);
-      syncStoreUser(user, updatedProfile);
+      const resolvedAvatarGender =
+        (updatedProfile as any).avatar_gender ??
+        ((updates as any).avatar_gender !== undefined ? (updates as any).avatar_gender : undefined);
+      const mergedProfile =
+        resolvedAvatarGender !== undefined
+          ? ({ ...(updatedProfile as any), avatar_gender: resolvedAvatarGender } as Profile)
+          : updatedProfile;
+
+      setProfile(mergedProfile);
+      latestProfileRef.current = mergedProfile;
+      syncStoreUser(user, mergedProfile);
       
       // Broadcast avatar changes to all screens
       if ('avatar_url' in updates || 'avatar_gender' in updates) {
         const { updateAvatarInfo } = useAuthStore.getState();
         updateAvatarInfo({
-          avatar: updatedProfile.avatar_url || undefined,
-          avatarGender: (updatedProfile as any).avatar_gender as any,
+          avatar: mergedProfile.avatar_url || undefined,
+          avatarGender: (mergedProfile as any).avatar_gender as any,
         });
       }
       
@@ -426,15 +468,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { avatar_gender, ...fallbackUpdates } = updates as any;
         try {
           const updatedProfile = await profileService.updateProfile(user.id, fallbackUpdates);
-          setProfile(updatedProfile);
-          syncStoreUser(user, updatedProfile);
+          const resolvedAvatarGender =
+            (updatedProfile as any).avatar_gender ??
+            ((updates as any).avatar_gender !== undefined ? (updates as any).avatar_gender : undefined);
+          const mergedProfile =
+            resolvedAvatarGender !== undefined
+              ? ({ ...(updatedProfile as any), avatar_gender: resolvedAvatarGender } as Profile)
+              : updatedProfile;
+
+          setProfile(mergedProfile);
+          latestProfileRef.current = mergedProfile;
+          syncStoreUser(user, mergedProfile);
           
           // Broadcast avatar changes to all screens
           if ('avatar_url' in fallbackUpdates || 'avatar_gender' in updates) {
             const { updateAvatarInfo } = useAuthStore.getState();
             updateAvatarInfo({
-              avatar: updatedProfile.avatar_url || undefined,
-              avatarGender: (updatedProfile as any).avatar_gender as any,
+              avatar: mergedProfile.avatar_url || undefined,
+              avatarGender: (mergedProfile as any).avatar_gender as any,
             });
           }
           

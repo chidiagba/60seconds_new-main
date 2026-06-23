@@ -75,6 +75,8 @@ export interface BusinessBankAccount {
   verificationReason?: string;
   paystackRecipientCode?: string;
   paystackRecipientId?: string;
+  paystackSubaccountCode?: string;
+  paystackSubaccountId?: string;
   stripeExternalAccountId?: string;
   verifiedAt?: string;
   createdAt: string;

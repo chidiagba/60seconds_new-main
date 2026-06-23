@@ -290,7 +290,7 @@ export default function VideoInfo({ video }: VideoInfoProps) {
 
   React.useEffect(() => {
     setAttendanceStatus(isAttending(video.id));
-  }, [isAttending, video.id]);
+  }, [isAttending, video.id, video.attendees]);
 
   const handleLocationPress = () => {
     const name = video.location?.name || video.eventName || "Event";
@@ -381,8 +381,10 @@ export default function VideoInfo({ video }: VideoInfoProps) {
 
     if (attendanceStatus === AttendanceStatus.GOING) {
       cancelAttendance(video.id);
+      setAttendanceStatus(null);
     } else {
       attendEvent(video.id, AttendanceStatus.GOING);
+      setAttendanceStatus(AttendanceStatus.GOING);
     }
   };
 

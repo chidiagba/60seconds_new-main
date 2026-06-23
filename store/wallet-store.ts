@@ -28,6 +28,8 @@ type BusinessBankAccountRow = {
   verification_reason?: string | null;
   paystack_recipient_code?: string | null;
   paystack_recipient_id?: string | null;
+  paystack_subaccount_code?: string | null;
+  paystack_subaccount_id?: string | null;
   stripe_external_account_id?: string | null;
   verified_at?: string | null;
   created_at: string;
@@ -52,6 +54,8 @@ type BusinessBankAccountMetadata = {
   verification_reason?: string;
   paystack_recipient_code?: string;
   paystack_recipient_id?: string;
+  paystack_subaccount_code?: string;
+  paystack_subaccount_id?: string;
   stripe_external_account_id?: string;
   verified_at?: string;
   created_at?: string;
@@ -318,6 +322,8 @@ const mapBusinessBankAccountRow = (row: BusinessBankAccountRow): BusinessBankAcc
   verificationReason: row.verification_reason || undefined,
   paystackRecipientCode: row.paystack_recipient_code || undefined,
   paystackRecipientId: row.paystack_recipient_id || undefined,
+  paystackSubaccountCode: row.paystack_subaccount_code || undefined,
+  paystackSubaccountId: row.paystack_subaccount_id || undefined,
   stripeExternalAccountId: row.stripe_external_account_id || undefined,
   verifiedAt: row.verified_at || undefined,
   createdAt: row.created_at,
@@ -349,6 +355,8 @@ const mapBusinessBankAccountMetadata = (userId: string, payload: BusinessBankAcc
     verificationReason: payload.verification_reason || undefined,
     paystackRecipientCode: payload.paystack_recipient_code || undefined,
     paystackRecipientId: payload.paystack_recipient_id || undefined,
+    paystackSubaccountCode: payload.paystack_subaccount_code || undefined,
+    paystackSubaccountId: payload.paystack_subaccount_id || undefined,
     stripeExternalAccountId: payload.stripe_external_account_id || undefined,
     verifiedAt: payload.verified_at || undefined,
     createdAt: payload.created_at || new Date().toISOString(),
@@ -472,6 +480,8 @@ type PaystackBankVerificationResult = {
   accountName?: string | null;
   paystackRecipientCode?: string | null;
   paystackRecipientId?: string | null;
+  paystackSubaccountCode?: string | null;
+  paystackSubaccountId?: string | null;
   bankCode?: string | null;
 };
 
@@ -523,6 +533,7 @@ const verifyBusinessBankAccountWithPaystack = async (payload: {
   countryCode?: string;
   currency?: string;
   paystackRecipientCode?: string;
+  paystackSubaccountCode?: string;
   refreshOnly?: boolean;
   resolveOnly?: boolean;
 }): Promise<PaystackBankVerificationResult> => {
@@ -535,6 +546,7 @@ const verifyBusinessBankAccountWithPaystack = async (payload: {
       countryCode: payload.countryCode || '',
       currency: payload.currency || DEFAULT_CURRENCY,
       paystackRecipientCode: payload.paystackRecipientCode || '',
+      paystackSubaccountCode: payload.paystackSubaccountCode || '',
       refreshOnly: payload.refreshOnly === true,
       resolveOnly: payload.resolveOnly === true,
     },
@@ -546,6 +558,7 @@ const verifyBusinessBankAccountWithPaystack = async (payload: {
       verificationStatus: 'failed',
       verificationReason: error.message || 'Paystack verification request failed.',
       paystackRecipientCode: payload.paystackRecipientCode || null,
+      paystackSubaccountCode: payload.paystackSubaccountCode || null,
       bankCode: payload.bankCode || null,
     };
   }
@@ -557,6 +570,8 @@ const verifyBusinessBankAccountWithPaystack = async (payload: {
     accountName: data?.accountName || payload.accountName,
     paystackRecipientCode: data?.paystackRecipientCode || payload.paystackRecipientCode || null,
     paystackRecipientId: data?.paystackRecipientId || null,
+    paystackSubaccountCode: data?.paystackSubaccountCode || payload.paystackSubaccountCode || null,
+    paystackSubaccountId: data?.paystackSubaccountId || null,
     bankCode: data?.bankCode || payload.bankCode || null,
   };
 };
@@ -640,9 +655,7 @@ export const useWalletStore = create<WalletState>()(
             .eq('id', effectiveUserId)
             .maybeSingle();
 
-          if (!get().businessBankAccount) {
-            await get().fetchBusinessBankAccount();
-          }
+          await get().fetchBusinessBankAccount();
 
           const existingBusinessBankAccount = get().businessBankAccount;
           const businessBankCurrency = resolveBusinessBankCurrency(existingBusinessBankAccount);
@@ -1307,7 +1320,10 @@ export const useWalletStore = create<WalletState>()(
         set({ isLoading: true, error: null });
         try {
           const { user } = useAuthStore.getState();
-          if (!user) {
+          const { data: authUserData } = await supabase.auth.getUser();
+          const effectiveUserId = authUserData.user?.id || user?.id;
+
+          if (!effectiveUserId) {
             throw new Error('User not authenticated');
           }
           
@@ -1315,7 +1331,7 @@ export const useWalletStore = create<WalletState>()(
             (supabase as any)
               .from('business_bank_accounts')
               .select('*')
-              .eq('user_id', user.id)
+              .eq('user_id', effectiveUserId)
               .eq('is_active', true)
               .maybeSingle(),
             12000,
@@ -1329,7 +1345,7 @@ export const useWalletStore = create<WalletState>()(
             }
 
             const metadataPayload = (authData.user?.user_metadata as any)?.business_bank_account as BusinessBankAccountMetadata | undefined;
-            let mappedFromMetadata = mapBusinessBankAccountMetadata(user.id, metadataPayload || {});
+            let mappedFromMetadata = mapBusinessBankAccountMetadata(effectiveUserId, metadataPayload || {});
 
             if (
               mappedFromMetadata &&
@@ -1346,6 +1362,7 @@ export const useWalletStore = create<WalletState>()(
                 countryCode: mappedFromMetadata.countryCode,
                 refreshOnly: true,
                 paystackRecipientCode: mappedFromMetadata.paystackRecipientCode,
+                paystackSubaccountCode: mappedFromMetadata.paystackSubaccountCode,
               });
 
               const existingMeta = (authData.user?.user_metadata || {}) as Record<string, any>;
@@ -1358,6 +1375,8 @@ export const useWalletStore = create<WalletState>()(
                 bank_code: verification.bankCode || mappedFromMetadata.bankCode || undefined,
                 paystack_recipient_code: verification.paystackRecipientCode || mappedFromMetadata.paystackRecipientCode,
                 paystack_recipient_id: verification.paystackRecipientId || mappedFromMetadata.paystackRecipientId,
+                paystack_subaccount_code: verification.paystackSubaccountCode || mappedFromMetadata.paystackSubaccountCode,
+                paystack_subaccount_id: verification.paystackSubaccountId || mappedFromMetadata.paystackSubaccountId,
                 verified_at: verification.verified ? new Date().toISOString() : undefined,
                 updated_at: new Date().toISOString(),
               };
@@ -1370,7 +1389,7 @@ export const useWalletStore = create<WalletState>()(
               });
 
               mappedFromMetadata = mapBusinessBankAccountMetadata(
-                user.id,
+                effectiveUserId,
                 ((updatedUserData.user?.user_metadata as any)?.business_bank_account || refreshedMeta) as BusinessBankAccountMetadata
               );
             }
@@ -1403,6 +1422,7 @@ export const useWalletStore = create<WalletState>()(
               countryCode: mappedFromTable.countryCode,
               refreshOnly: true,
               paystackRecipientCode: mappedFromTable.paystackRecipientCode,
+              paystackSubaccountCode: mappedFromTable.paystackSubaccountCode,
             });
 
             const verificationUpdatePayload = {
@@ -1413,6 +1433,8 @@ export const useWalletStore = create<WalletState>()(
               bank_code: verification.bankCode || mappedFromTable.bankCode || null,
               paystack_recipient_code: verification.paystackRecipientCode || mappedFromTable.paystackRecipientCode || null,
               paystack_recipient_id: verification.paystackRecipientId || mappedFromTable.paystackRecipientId || null,
+              paystack_subaccount_code: verification.paystackSubaccountCode || mappedFromTable.paystackSubaccountCode || null,
+              paystack_subaccount_id: verification.paystackSubaccountId || mappedFromTable.paystackSubaccountId || null,
               verified_at: verification.verified ? new Date().toISOString() : null,
             };
 
@@ -1425,6 +1447,8 @@ export const useWalletStore = create<WalletState>()(
               bankCode: verification.bankCode || mappedFromTable.bankCode,
               paystackRecipientCode: verification.paystackRecipientCode || mappedFromTable.paystackRecipientCode,
               paystackRecipientId: verification.paystackRecipientId || mappedFromTable.paystackRecipientId,
+              paystackSubaccountCode: verification.paystackSubaccountCode || mappedFromTable.paystackSubaccountCode,
+              paystackSubaccountId: verification.paystackSubaccountId || mappedFromTable.paystackSubaccountId,
               verifiedAt: verification.verified ? new Date().toISOString() : undefined,
             };
 
@@ -1982,12 +2006,22 @@ export const useWalletStore = create<WalletState>()(
         try {
           const { wallet, businessBankAccount, withdrawalRequests } = get();
           const { user } = useAuthStore.getState();
+          const { data: authUserData } = await supabase.auth.getUser();
+          const effectiveUserId = authUserData.user?.id || user?.id;
+          const isBusinessUser =
+            Boolean(user?.isBusinessAccount) ||
+            Boolean((authUserData.user?.user_metadata as any)?.isBusinessAccount) ||
+            Boolean((authUserData.user?.user_metadata as any)?.is_business_account);
           
           if (!wallet) {
             throw new Error('Wallet not initialized');
           }
           
-          if (!user?.isBusinessAccount) {
+          if (!effectiveUserId) {
+            throw new Error('User not authenticated');
+          }
+
+          if (!isBusinessUser) {
             throw new Error('Only business accounts can withdraw funds');
           }
           
@@ -2013,7 +2047,7 @@ export const useWalletStore = create<WalletState>()(
             const { data: bankRow, error: bankRowError } = await (supabase as any)
               .from('business_bank_accounts')
               .select('id')
-              .eq('user_id', user.id)
+              .eq('user_id', effectiveUserId)
               .eq('is_active', true)
               .order('updated_at', { ascending: false })
               .limit(1)
@@ -2032,7 +2066,7 @@ export const useWalletStore = create<WalletState>()(
           const { data, error } = await (supabase as any)
             .from('withdrawal_requests')
             .insert({
-              user_id: user.id,
+              user_id: effectiveUserId,
               amount,
               status: 'pending',
               business_bank_account_id: resolvedBusinessBankAccountId,
@@ -2290,6 +2324,7 @@ export const useWalletStore = create<WalletState>()(
               bankCode: bankAccount.bankCode,
               countryCode: bankAccount.countryCode,
               currency: bankAccount.currency || get().selectedCurrency || DEFAULT_CURRENCY,
+              paystackSubaccountCode: bankAccount.paystackSubaccountCode,
             });
 
             if (verification.verificationStatus === 'failed' && !verification.verified) {
@@ -2324,6 +2359,8 @@ export const useWalletStore = create<WalletState>()(
               swift_code: bankAccount.swiftCode || null,
               paystack_recipient_code: verification.paystackRecipientCode || null,
               paystack_recipient_id: verification.paystackRecipientId || null,
+              paystack_subaccount_code: verification.paystackSubaccountCode || null,
+              paystack_subaccount_id: verification.paystackSubaccountId || null,
             };
 
             let data: any = null;
@@ -2339,7 +2376,7 @@ export const useWalletStore = create<WalletState>()(
               'Bank account save timeout'
             ));
 
-            if (error && /column|bank_code|paystack_recipient|iban|swift_code|schema cache/i.test(error.message || '')) {
+            if (error && /column|bank_code|paystack_|iban|swift_code|schema cache/i.test(error.message || '')) {
               ({ data, error } = await withTimeout<{ data: any; error: any }>(
                 (supabase as any)
                   .from('business_bank_accounts')
@@ -2376,6 +2413,8 @@ export const useWalletStore = create<WalletState>()(
                 verification_reason: verification.verificationReason || undefined,
                 paystack_recipient_code: verification.paystackRecipientCode || undefined,
                 paystack_recipient_id: verification.paystackRecipientId || undefined,
+                paystack_subaccount_code: verification.paystackSubaccountCode || undefined,
+                paystack_subaccount_id: verification.paystackSubaccountId || undefined,
                 stripe_external_account_id: undefined,
                 verified_at: verification.verified ? now : undefined,
                 created_at: existingMeta.business_bank_account?.created_at || now,
@@ -2435,6 +2474,8 @@ export const useWalletStore = create<WalletState>()(
             stripe_external_account_id: null,
             paystack_recipient_code: null,
             paystack_recipient_id: null,
+            paystack_subaccount_code: null,
+            paystack_subaccount_id: null,
             verified_at: now,
             is_active: true,
           };
@@ -2496,6 +2537,8 @@ export const useWalletStore = create<WalletState>()(
               verification_reason: undefined,
               paystack_recipient_code: undefined,
               paystack_recipient_id: undefined,
+              paystack_subaccount_code: undefined,
+              paystack_subaccount_id: undefined,
               stripe_external_account_id: undefined,
               verified_at: now,
               created_at: existingMeta.business_bank_account?.created_at || now,
@@ -2570,6 +2613,7 @@ export const useWalletStore = create<WalletState>()(
               countryCode: bankAccount.countryCode || businessBankAccount.countryCode,
               currency: bankAccount.currency || businessBankAccount.currency,
               paystackRecipientCode: businessBankAccount.paystackRecipientCode,
+              paystackSubaccountCode: businessBankAccount.paystackSubaccountCode,
             });
 
             if (verification.verificationStatus === 'failed' && !verification.verified) {
@@ -2603,6 +2647,8 @@ export const useWalletStore = create<WalletState>()(
               swift_code: bankAccount.swiftCode !== undefined ? bankAccount.swiftCode || null : businessBankAccount.swiftCode || null,
               paystack_recipient_code: verification.paystackRecipientCode || businessBankAccount.paystackRecipientCode || null,
               paystack_recipient_id: verification.paystackRecipientId || businessBankAccount.paystackRecipientId || null,
+              paystack_subaccount_code: verification.paystackSubaccountCode || businessBankAccount.paystackSubaccountCode || null,
+              paystack_subaccount_id: verification.paystackSubaccountId || businessBankAccount.paystackSubaccountId || null,
             };
 
             let data: any = null;
@@ -2619,7 +2665,7 @@ export const useWalletStore = create<WalletState>()(
               'Bank account update timeout'
             ));
 
-            if (error && /column|bank_code|paystack_recipient|iban|swift_code|schema cache/i.test(error.message || '')) {
+            if (error && /column|bank_code|paystack_|iban|swift_code|schema cache/i.test(error.message || '')) {
               ({ data, error } = await withTimeout<{ data: any; error: any }>(
                 (supabase as any)
                   .from('business_bank_accounts')
@@ -2659,6 +2705,8 @@ export const useWalletStore = create<WalletState>()(
                 verification_reason: verification.verificationReason || undefined,
                 paystack_recipient_code: verification.paystackRecipientCode || businessBankAccount.paystackRecipientCode,
                 paystack_recipient_id: verification.paystackRecipientId || businessBankAccount.paystackRecipientId,
+                paystack_subaccount_code: verification.paystackSubaccountCode || businessBankAccount.paystackSubaccountCode,
+                paystack_subaccount_id: verification.paystackSubaccountId || businessBankAccount.paystackSubaccountId,
                 stripe_external_account_id: undefined,
                 verified_at: verification.verified ? nowIso : undefined,
                 updated_at: nowIso,
@@ -2728,6 +2776,8 @@ export const useWalletStore = create<WalletState>()(
               verification_reason: undefined,
               paystack_recipient_code: undefined,
               paystack_recipient_id: undefined,
+              paystack_subaccount_code: undefined,
+              paystack_subaccount_id: undefined,
               stripe_external_account_id: undefined,
               verified_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
@@ -2784,6 +2834,8 @@ export const useWalletStore = create<WalletState>()(
           updatePayload.stripe_external_account_id = null;
           updatePayload.paystack_recipient_code = null;
           updatePayload.paystack_recipient_id = null;
+          updatePayload.paystack_subaccount_code = null;
+          updatePayload.paystack_subaccount_id = null;
           updatePayload.verified_at = new Date().toISOString();
 
           let data: any = null;

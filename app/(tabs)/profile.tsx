@@ -66,6 +66,11 @@ export default function ProfileScreen() {
   const { showActionSheetWithOptions } = useActionSheet();
 
   const { videos: allVideos, userLikedVideos, deletedVideoIds, fetchVideos, loadUserLikes, removeVideo } = useVideoStore();
+  const resolvedProfileAvatar = resolveAvatarUrl({
+    avatarUrl: authProfile?.avatar_url || currentUser?.avatar,
+    avatarGender: (authProfile as any)?.avatar_gender ?? avatarGender,
+    fallbackUrl: 'https://via.placeholder.com/150',
+  });
 
   const getCachedUserVideos = useCallback((targetUserId?: string) => {
     if (!targetUserId) return [];
@@ -87,7 +92,7 @@ export default function ProfileScreen() {
           name: authProfile.full_name,
           displayName: authProfile.full_name,
           username: authProfile.username,
-          avatar: authProfile.avatar_url || 'https://via.placeholder.com/150',
+          avatar: resolvedProfileAvatar,
           bio: authProfile.bio,
           location: authProfile.location_city,
           isBusinessAccount: authProfile.user_type === 'business',
@@ -96,11 +101,22 @@ export default function ProfileScreen() {
           following: authProfile.following_count,
         };
         setProfileUser(realProfileUser as any);
-        setAvatarGender((authProfile as any).avatar_gender ?? null);
+        const profileAvatarGender = (authProfile as any).avatar_gender;
+        setAvatarGender((previousGender) => {
+          if (profileAvatarGender === 'male' || profileAvatarGender === 'female') {
+            return profileAvatarGender;
+          }
+
+          if (authProfile.avatar_url) {
+            return null;
+          }
+
+          return previousGender;
+        });
         setIsCurrentUserProfile(true);
       }
     }
-  }, [userId, authUser, authProfile, router]);
+  }, [userId, authUser, authProfile, resolvedProfileAvatar, router]);
 
   // Load user's uploaded videos — runs on mount and whenever the screen is focused
   const loadUserVideos = useCallback(async () => {
@@ -475,20 +491,13 @@ export default function ProfileScreen() {
 
       <View style={styles.profileSection}>
         <View style={styles.avatarContainer}>
-          {authProfile.avatar_url ? (
+          {resolvedProfileAvatar ? (
             <Image
-              source={{ uri: authProfile.avatar_url }}
+              source={{ uri: resolvedProfileAvatar }}
               style={styles.profileImage}
               contentFit="cover"
               transition={300}
             />
-          ) : avatarGender ? (
-            <View style={[
-              styles.profileImage,
-              { backgroundColor: avatarGender === 'male' ? '#3B82F6' : '#EC4899', justifyContent: 'center', alignItems: 'center' }
-            ]}>
-              <Text style={{ fontSize: 52 }}>{avatarGender === 'male' ? '👨' : '👩'}</Text>
-            </View>
           ) : (
             <View style={styles.profileImageEmpty} />
           )}

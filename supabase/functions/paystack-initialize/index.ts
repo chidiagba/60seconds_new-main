@@ -83,6 +83,10 @@ Deno.serve(async (req) => {
       callback_url,
       metadata = {},
       channels,
+      subaccount,
+      split_code,
+      transaction_charge,
+      bearer,
       userId,
       orderId,
       walletId,
@@ -98,6 +102,16 @@ Deno.serve(async (req) => {
     // Paystack expects amount in kobo (1 NGN = 100 kobo). Minimum is ₦100 (10,000 kobo).
     const rawKobo = Math.round(amountNGN * 100);
     const amountKobo = Math.max(rawKobo, 10000); // enforce ₦100 minimum
+
+    const parsedTransactionCharge = Number(transaction_charge);
+    let transactionChargeKobo: number | undefined = undefined;
+    if (Number.isFinite(parsedTransactionCharge) && parsedTransactionCharge > 0) {
+      // Accept both major-unit values (e.g. 120.50) and minor-unit values (e.g. 12050).
+      const inferredKobo = parsedTransactionCharge <= amountNGN
+        ? Math.round(parsedTransactionCharge * 100)
+        : Math.round(parsedTransactionCharge);
+      transactionChargeKobo = Math.min(Math.max(inferredKobo, 0), amountKobo);
+    }
 
     const ref = reference || `60s_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -121,6 +135,15 @@ Deno.serve(async (req) => {
         timestamp: new Date().toISOString(),
       },
       channels: channels ?? ['card', 'bank', 'ussd', 'qr', 'mobile_money', 'bank_transfer'],
+      subaccount: subaccount || undefined,
+      split_code: split_code || undefined,
+      transaction_charge: transactionChargeKobo,
+      bearer:
+        bearer === 'account' || bearer === 'subaccount'
+          ? bearer
+          : (subaccount || split_code)
+            ? 'account'
+            : undefined,
     };
 
     const paystackRes = await fetch(`${PAYSTACK_BASE_URL}/transaction/initialize`, {
