@@ -1278,24 +1278,16 @@ export const useWalletStore = create<WalletState>()(
           }
           
           console.log('🔍 Fetching payment methods for user:', user.id);
-          
-          // Add timeout to prevent infinite loading
-          const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Payment methods fetch timeout')), 8000);
-          });
-          
-          // Fetch payment methods from Supabase
-          const fetchPromise = supabase
-            .from('payment_methods')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('is_active', true)
-            .order('created_at', { ascending: false });
-          
-          const { data: paymentMethodsData, error: paymentMethodsError } = await Promise.race([
-            fetchPromise,
-            timeoutPromise
-          ]) as any;
+          const { data: paymentMethodsData, error: paymentMethodsError } = await withTimeout<any>(
+            supabase
+              .from('payment_methods')
+              .select('*')
+              .eq('user_id', user.id)
+              .eq('is_active', true)
+              .order('created_at', { ascending: false }),
+            8000,
+            'Payment methods fetch timeout'
+          );
           
           if (paymentMethodsError) {
             if (paymentMethodsError.message === 'Payment methods fetch timeout') {
@@ -1310,7 +1302,11 @@ export const useWalletStore = create<WalletState>()(
           set({ paymentMethods: paymentMethodsData || [], isLoading: false });
           console.log('✅ Payment methods fetched successfully:', paymentMethodsData);
         } catch (error: any) {
-          console.error('❌ Payment methods fetch error:', error);
+          if (error?.message === 'Payment methods fetch timeout') {
+            console.log('⏰ Payment methods fetch timeout - using empty array');
+          } else {
+            console.warn('⚠️ Payment methods fetch error:', error?.message || error);
+          }
           // Don't fail completely, just show empty state
           set({ paymentMethods: [], isLoading: false, error: null });
         }

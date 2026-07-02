@@ -93,6 +93,13 @@ Deno.serve(async (req) => {
       paymentType = 'order_payment',
     } = payload;
 
+    const normalizedSubaccount = String(subaccount || '').trim();
+    const normalizedSplitCode = String(split_code || '').trim();
+    // Paystack requires subaccount for one beneficiary and split_code for split groups.
+    // If both are sent, prefer subaccount to avoid API routing ambiguity.
+    const effectiveSubaccount = normalizedSubaccount || undefined;
+    const effectiveSplitCode = effectiveSubaccount ? undefined : (normalizedSplitCode || undefined);
+
     if (!email) return respond({ success: false, error: 'email is required' });
     if (!amount || amount <= 0) return respond({ success: false, error: 'amount must be a positive number' });
 
@@ -132,16 +139,17 @@ Deno.serve(async (req) => {
         orderId,
         walletId,
         paymentType,
+        split_mode: effectiveSubaccount ? 'single_subaccount' : (effectiveSplitCode ? 'split_group' : 'none'),
         timestamp: new Date().toISOString(),
       },
       channels: channels ?? ['card', 'bank', 'ussd', 'qr', 'mobile_money', 'bank_transfer'],
-      subaccount: subaccount || undefined,
-      split_code: split_code || undefined,
+      subaccount: effectiveSubaccount,
+      split_code: effectiveSplitCode,
       transaction_charge: transactionChargeKobo,
       bearer:
         bearer === 'account' || bearer === 'subaccount'
           ? bearer
-          : (subaccount || split_code)
+          : (effectiveSubaccount || effectiveSplitCode)
             ? 'account'
             : undefined,
     };

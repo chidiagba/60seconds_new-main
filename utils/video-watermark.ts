@@ -395,38 +395,99 @@ export class VideoWatermarkService {
       `[0:v][wm]overlay=${overlayExpr}:format=auto[v]`,
     ].join(';');
 
-    const session = await FFmpegKit.executeWithArguments([
-      '-y',
-      '-i',
-      inputPath,
-      '-i',
-      watermarkPath,
-      '-filter_complex',
-      filterComplex,
-      '-map',
-      '[v]',
-      '-map',
-      '0:a?',
-      '-c:v',
-      'mpeg4',
-      '-q:v',
-      '4',
-      '-pix_fmt',
-      'yuv420p',
-      '-c:a',
-      'copy',
-      '-movflags',
-      '+faststart',
-      outputPath,
-    ]);
+    const candidateCommands: string[][] = [
+      [
+        '-y',
+        '-i',
+        inputPath,
+        '-i',
+        watermarkPath,
+        '-filter_complex',
+        filterComplex,
+        '-map',
+        '[v]',
+        '-map',
+        '0:a?',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '23',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        '-movflags',
+        '+faststart',
+        outputPath,
+      ],
+      [
+        '-y',
+        '-i',
+        inputPath,
+        '-i',
+        watermarkPath,
+        '-filter_complex',
+        filterComplex,
+        '-map',
+        '[v]',
+        '-map',
+        '0:a?',
+        '-c:v',
+        'h264',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        '-movflags',
+        '+faststart',
+        outputPath,
+      ],
+      [
+        '-y',
+        '-i',
+        inputPath,
+        '-i',
+        watermarkPath,
+        '-filter_complex',
+        filterComplex,
+        '-map',
+        '[v]',
+        '-map',
+        '0:a?',
+        '-c:v',
+        'mpeg4',
+        '-q:v',
+        '4',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        '-movflags',
+        '+faststart',
+        outputPath,
+      ],
+    ];
 
-    const rc = await session.getReturnCode();
-    if (ReturnCode.isSuccess(rc)) {
-      return outputUri;
+    let lastLogs = '';
+    for (const args of candidateCommands) {
+      const session = await FFmpegKit.executeWithArguments(args);
+      const rc = await session.getReturnCode();
+      if (ReturnCode.isSuccess(rc)) {
+        return outputUri;
+      }
+      const logs = await session.getAllLogsAsString();
+      lastLogs = logs ?? '';
     }
 
-    const logs = await session.getAllLogsAsString();
-    console.warn('[Watermark] Local FFmpeg strategy failed logs:', (logs ?? '').slice(-800));
+    console.warn('[Watermark] Local FFmpeg strategy failed logs:', lastLogs.slice(-800));
     return null;
   }
 }

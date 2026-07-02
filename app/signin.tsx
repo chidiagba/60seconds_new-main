@@ -63,7 +63,10 @@ export default function CleanSigninScreen() {
         body: { email: normalizedEmail },
       });
 
-      if (!verificationError && verificationData?.uid && verificationData?.otp_verified !== true) {
+      const lookupUserType = verificationData?.user_type === 'business' ? 'business' : 'private';
+      const requiresOtp = lookupUserType === 'business';
+
+      if (!verificationError && verificationData?.uid && requiresOtp && verificationData?.otp_verified !== true) {
         let pinSent = false;
         const { data: otpData, error: otpSendError } = await supabase.functions.invoke('send-otp', {
           body: {
@@ -121,8 +124,13 @@ export default function CleanSigninScreen() {
         return;
       }
 
+      const authedUserType =
+        (authData.user.user_metadata?.user_type as string | undefined) ||
+        (authData.user.app_metadata?.user_type as string | undefined) ||
+        'private';
       const signupOtpVerifiedAt = authData.user.app_metadata?.signup_otp_verified_at;
-      if (!signupOtpVerifiedAt) {
+      const mustHaveOtp = authedUserType === 'business';
+      if (mustHaveOtp && !signupOtpVerifiedAt) {
         try {
           await supabase.auth.signOut();
         } catch (signOutError) {

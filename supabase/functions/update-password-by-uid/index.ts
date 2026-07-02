@@ -125,6 +125,7 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Consume the recovery PIN after successful password update
     if (normalizedEmail && normalizedCode) {
       const { error: cleanupError } = await supabaseAdmin
         .from("otp_codes")

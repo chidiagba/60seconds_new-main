@@ -50,6 +50,7 @@ import WorldlineService from '@/lib/worldline';
 import { useAuth } from "@/lib/auth";
 import { resolveCurrencyFromCountry } from "@/utils/country-currency";
 import { getPaystackRoutingForOwner } from "@/constants/paystack-routing";
+import { createStripePaymentSheetSession } from '@/lib/stripe-payment-sheet-session';
 
 let stripeUseHook: null | (() => {
   presentPaymentSheet: (options?: any) => Promise<{ error?: { message?: string } | null }>;
@@ -378,61 +379,6 @@ export default function CartScreen() {
     );
   };
 
-  const createPaymentSheetSession = async (params: {
-    amount: number;
-    currency: string;
-    platformFeeAmount: number;
-    customerEmail?: string;
-    productId?: string;
-    productName?: string;
-    paymentMethod?: string;
-    connectedAccountId?: string | null;
-  }) => {
-    const primary = await supabase.functions.invoke("stripe-create-checkout", {
-      body: params,
-    });
-
-    const primaryFailed =
-      !!primary.error ||
-      !!primary.data?.error ||
-      !primary.data?.paymentIntentClientSecret;
-
-    if (!primaryFailed) {
-      return primary.data;
-    }
-
-    console.warn("stripe-create-checkout failed, retrying with stripe-create-payment-sheet", {
-      error: primary.error,
-      data: primary.data,
-    });
-
-    const fallback = await supabase.functions.invoke("stripe-create-payment-sheet", {
-      body: {
-        amount: params.amount,
-        currency: params.currency,
-        customerEmail: params.customerEmail,
-        productId: params.productId,
-        productName: params.productName,
-        platformFeeAmount: 0,
-      },
-    });
-
-    const fallbackFailed =
-      !!fallback.error ||
-      !!fallback.data?.error ||
-      !fallback.data?.paymentIntentClientSecret;
-
-    if (fallbackFailed) {
-      const primaryMessage =
-        primary.error?.message || primary.data?.error || "stripe-create-checkout failed";
-      const fallbackMessage =
-        fallback.error?.message || fallback.data?.error || "stripe-create-payment-sheet failed";
-      throw new Error(`${primaryMessage}. Fallback failed: ${fallbackMessage}`);
-    }
-
-    return fallback.data;
-  };
-
   const finalizeTwintPayment = async () => {
     try {
       setProcessingPayment(true);
@@ -728,6 +674,10 @@ export default function CartScreen() {
     try {
       setProcessingPayment(true);
 
+      if (!currentUser?.id) {
+        throw new Error("Please sign in before starting a Stripe checkout.");
+      }
+
       const firstItem = cart[0];
       const currencyCode = resolveProductCurrency(firstItem?.product?.currency);
       const currency = currencyCode.toLowerCase();
@@ -741,7 +691,7 @@ export default function CartScreen() {
         (firstItem.product as any).connectedAccountId ||
         null;
 
-      const data = await createPaymentSheetSession({
+      const data = await createStripePaymentSheetSession({
         amount: amountCents,
         platformFeeAmount: platformFeeCents,
         currency,
@@ -1213,6 +1163,7 @@ export default function CartScreen() {
             ? 'subaccount'
             : getPaystackRoutingForOwner(resolveProductOwnerId(cart[0]?.product)).bearer
         }
+        requireSplitRouting={true}
       />
 
       <TwintPaymentModal

@@ -28,12 +28,14 @@ export default function VideoWatermark({
         left: "50%",
         transform: [{ translateX: -size.width / 2 }, { translateY: -size.height / 2 }],
         zIndex: 10,
+        elevation: 10,
       };
     }
 
     const baseStyle = {
       position: "absolute" as const,
       zIndex: 10,
+      elevation: 10,
     };
 
     switch (position) {
@@ -55,7 +57,7 @@ export default function VideoWatermark({
   const borderRadius = circleSize / 2;
 
   return (
-    <View style={getPositionStyle()}>
+    <View pointerEvents="none" style={getPositionStyle()}>
       <Image
         source={require("../assets/images/second.png")}
         style={[

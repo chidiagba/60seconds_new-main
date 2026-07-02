@@ -42,6 +42,7 @@ import { canOpenTwintApp, openTwintApp } from "@/lib/twint";
 import WorldlineService from "@/lib/worldline";
 import { resolveCurrencyFromCountry } from "@/utils/country-currency";
 import { getPaystackRoutingForOwner } from "@/constants/paystack-routing";
+import { createStripePaymentSheetSession } from "@/lib/stripe-payment-sheet-session";
 
 // Constants
 const PLATFORM_FEE_PERCENTAGE = 0.04;
@@ -93,8 +94,8 @@ const ProductsList = ({
   buyerEmail,
   buyerId,
 }: ProductsListProps) => {
-  const { products: storeProducts, fetchProducts, addToCart, isLoading } = useProductStore();
-  const { makePayment, fetchPaymentMethods } = useWalletStore();
+  const { addToCart, isLoading } = useProductStore();
+  const { makePayment } = useWalletStore();
   const {
     vouchers,
     activeVoucher,
@@ -133,6 +134,8 @@ const ProductsList = ({
   }, []);
 
   const [isPaying, setIsPaying] = React.useState(false);
+  const [displayProducts, setDisplayProducts] = React.useState<Product[]>(products);
+  const [liveProducts, setLiveProducts] = React.useState<Product[]>([]);
   const [paymentMethod, setPaymentMethod] = React.useState<string | null>(null);
   const [showPaymentOptions, setShowPaymentOptions] = React.useState(false);
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null);
@@ -169,6 +172,24 @@ const ProductsList = ({
   });
   const resolveProductCurrency = (currency?: string | null) =>
     normalizeCurrencyCode(currency, buyerFallbackCurrency);
+
+  const mapRowToProduct = React.useCallback(
+    (row: any): Product => ({
+      id: String(row.id),
+      videoId,
+      name: row.name || "Unnamed Item",
+      description: row.description || "",
+      price: Number(row.price || 0),
+      image: row.image_url || "",
+      type: row.type,
+      available: Number(row.available_quantity || 0),
+      sold: Number(row.sold_quantity || 0),
+      createdAt: row.created_at || new Date().toISOString(),
+      ownerId: row.business_id || undefined,
+      currency: resolveProductCurrency(row.currency),
+    }),
+    [videoId, resolveProductCurrency]
+  );
   const isLoggedInNigerianUser =
     !!(user?.id || authUser?.id || buyerId) &&
     [
@@ -185,9 +206,69 @@ const ProductsList = ({
   const flatListRef = React.useRef<FlatList>(null);
 
   React.useEffect(() => {
-    if (!products.length) fetchProducts(videoId); // Only fetch if products is empty
-    if (user) fetchPaymentMethods();
-  }, [videoId, products, fetchProducts, fetchPaymentMethods, user]);
+    let isMounted = true;
+
+    const hydrateLiveProducts = async () => {
+      try {
+        const { data: eventRows, error: eventError } = await supabase
+          .from("events")
+          .select("id")
+          .eq("video_id", videoId);
+
+        if (eventError) {
+          throw eventError;
+        }
+
+        const eventIds = (eventRows || []).map((row) => row.id).filter(Boolean);
+        if (!eventIds.length) {
+          if (isMounted) {
+            setLiveProducts([]);
+          }
+          return;
+        }
+
+        const { data: productRows, error: productsError } = await supabase
+          .from("products")
+          .select("*")
+          .in("event_id", eventIds)
+          .eq("is_active", true)
+          .order("created_at", { ascending: true });
+
+        if (productsError) {
+          throw productsError;
+        }
+
+        if (isMounted) {
+          setLiveProducts((productRows || []).map(mapRowToProduct));
+        }
+      } catch (error) {
+        console.warn("ProductsList: failed to hydrate live products:", error);
+      }
+    };
+
+    hydrateLiveProducts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [videoId, mapRowToProduct]);
+
+  React.useEffect(() => {
+    const merged = new Map<string, Product>();
+
+    // Keep prop products first for instant UI, then overwrite with live DB rows when available.
+    for (const item of products) {
+      if (!item?.id) continue;
+      merged.set(String(item.id), item);
+    }
+
+    for (const item of liveProducts) {
+      if (!item?.id) continue;
+      merged.set(String(item.id), item);
+    }
+
+    setDisplayProducts(Array.from(merged.values()));
+  }, [products, liveProducts]);
 
   React.useEffect(() => {
     if (!showPaymentOptions || !selectedProduct) return;
@@ -264,6 +345,19 @@ const ProductsList = ({
     return !!user?.id && resolveProductOwnerId(product) === user.id;
   };
 
+  const decrementDisplayedAvailability = React.useCallback((productId: string) => {
+    const normalizedId = String(productId || '').trim();
+    if (!normalizedId) return;
+
+    setDisplayProducts((prev) =>
+      prev.map((product) =>
+        product.id === normalizedId
+          ? { ...product, available: Math.max(0, Number(product.available || 0) - 1) }
+          : product
+      )
+    );
+  }, []);
+
   const handleEditProduct = (product: Product) => {
     if (!product.videoId) {
       Alert.alert("Edit unavailable", "This product is missing the linked event reference.");
@@ -274,61 +368,6 @@ const ProductsList = ({
       pathname: "/upload",
       params: { editVideoId: String(product.videoId) },
     });
-  };
-
-  const createPaymentSheetSession = async (params: {
-    amount: number;
-    currency: string;
-    platformFeeAmount: number;
-    customerEmail?: string;
-    productId?: string;
-    productName?: string;
-    paymentMethod?: string;
-    connectedAccountId?: string | null;
-  }) => {
-    const primary = await supabase.functions.invoke("stripe-create-checkout", {
-      body: params,
-    });
-
-    const primaryFailed =
-      !!primary.error ||
-      !!primary.data?.error ||
-      !primary.data?.paymentIntentClientSecret;
-
-    if (!primaryFailed) {
-      return primary.data;
-    }
-
-    console.warn("stripe-create-checkout failed, retrying with stripe-create-payment-sheet", {
-      error: primary.error,
-      data: primary.data,
-    });
-
-    const fallback = await supabase.functions.invoke("stripe-create-payment-sheet", {
-      body: {
-        amount: params.amount,
-        currency: params.currency,
-        customerEmail: params.customerEmail,
-        productId: params.productId,
-        productName: params.productName,
-        platformFeeAmount: 0,
-      },
-    });
-
-    const fallbackFailed =
-      !!fallback.error ||
-      !!fallback.data?.error ||
-      !fallback.data?.paymentIntentClientSecret;
-
-    if (fallbackFailed) {
-      const primaryMessage =
-        primary.error?.message || primary.data?.error || "stripe-create-checkout failed";
-      const fallbackMessage =
-        fallback.error?.message || fallback.data?.error || "stripe-create-payment-sheet failed";
-      throw new Error(`${primaryMessage}. Fallback failed: ${fallbackMessage}`);
-    }
-
-    return fallback.data;
   };
 
   const startStripeCheckout = async (selectedMethod: string) => {
@@ -361,9 +400,14 @@ const ProductsList = ({
     const { subtotalWithFee, total, discount } = getDiscountedCheckoutTotal(productForPayment);
     const discountedPlatformFee = getDiscountedPlatformFee(total);
     const productCurrency = resolveProductCurrency(productForPayment.currency);
+    const currentAuthId = buyerId || user?.id || authUser?.id;
 
     try {
       setIsPaying(true);
+
+      if (!currentAuthId) {
+        throw new Error("Please sign in before starting a Stripe checkout.");
+      }
 
       // Determine connected account (Stripe Connect destination) from product metadata
       const connectedAccountId =
@@ -378,7 +422,7 @@ const ProductsList = ({
         amount_cents: Math.round(total * 100),
       });
 
-      const data = await createPaymentSheetSession({
+      const data = await createStripePaymentSheetSession({
         amount: Math.round(total * 100),
         currency: productCurrency.toLowerCase(),
         platformFeeAmount: Math.round(discountedPlatformFee * 100),
@@ -477,8 +521,6 @@ const ProductsList = ({
           totalAmount: total,
           stripePaymentIntentClientSecret: paymentIntentClientSecret,
         });
-
-        const currentAuthId = buyerId || user?.id;
 
         if (currentAuthId) {
           const order = await orderService.createOrder({
@@ -601,6 +643,7 @@ const ProductsList = ({
       if (activeVoucher && discount > 0) {
         incrementUsageCount(activeVoucher.id);
       }
+      decrementDisplayedAvailability(productForPayment.id);
       setShowPaymentOptions(false);
       setSelectedProduct(null);
       setDiscountAmount(0);
@@ -727,6 +770,7 @@ const ProductsList = ({
       if (activeVoucher && discount > 0) {
         incrementUsageCount(activeVoucher.id);
       }
+      decrementDisplayedAvailability(twintProduct.id);
       setShowTwintPaymentModal(false);
       setShowTwintWebViewModal(false);
       setTwintProduct(null);
@@ -1125,7 +1169,7 @@ const ProductsList = ({
   );
 
   const listEmptyComponent =
-    products.length === 0 && !isLoading ? (
+    displayProducts.length === 0 && !isLoading ? (
       <View style={styles.emptyContainer}>
         <ShoppingBag size={48} color={Colors.dark.subtext} />
         <Text style={styles.emptyText}>No products available for this event</Text>
@@ -1236,6 +1280,7 @@ const ProductsList = ({
     if (activeVoucher && discount > 0) {
       incrementUsageCount(activeVoucher.id);
     }
+    decrementDisplayedAvailability(product.id);
     paystackProductRef.current = null;
     setPaystackProduct(null);
     setDiscountAmount(0);
@@ -1247,14 +1292,16 @@ const ProductsList = ({
     <>
       <FlatList
         ref={flatListRef}
-        data={products}
+        data={displayProducts}
         renderItem={renderProductItem}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={listHeaderComponent}
         ListEmptyComponent={listEmptyComponent}
-        contentContainerStyle={[styles.container, styles.productsList]}
+        style={styles.list}
+        contentContainerStyle={styles.productsList}
         showsVerticalScrollIndicator={false}
-        scrollEnabled={false}
+        scrollEnabled={true}
+        nestedScrollEnabled={true}
       />
       {paystackProduct && (
         (() => {
@@ -1305,6 +1352,7 @@ const ProductsList = ({
               ? 'subaccount'
               : routing.bearer
           }
+          requireSplitRouting={true}
         />
           );
         })()
@@ -1372,6 +1420,7 @@ const ProductsList = ({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.background },
+  list: { flex: 1, backgroundColor: Colors.dark.background },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",

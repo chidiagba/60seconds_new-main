@@ -165,6 +165,7 @@ export default function VerifyOtpScreen() {
       const verifiedUid = statusUid || user_id;
       let finalized = false;
 
+      // Try Supabase SMTP-verified flow first (signup_email_otp)
       const { data: smtpVerifyData, error: smtpVerifyErr } = await supabase.auth.verifyOtp({
         email: normalizedEmail,
         token: otp,
@@ -188,15 +189,16 @@ export default function VerifyOtpScreen() {
         }
       }
 
+      // Fallback: use OTP table-based verification (for signup or recovery)
       if (!finalized) {
         const { data, error: markErr } = await supabase.functions.invoke("verify-otp", {
-        body: {
-          type: "signup",
-          code: otp,
-          user_id: verifiedUid,
-          email: normalizedEmail,
-        },
-      });
+          body: {
+            type: "signup",
+            code: otp,
+            user_id: verifiedUid,
+            email: normalizedEmail,
+          },
+        });
 
         if (markErr || !data?.success) {
           setError((data as any)?.error || markErr?.message || smtpVerifyErr?.message || "Invalid or expired code");
@@ -215,6 +217,7 @@ export default function VerifyOtpScreen() {
 
       setShowCongratsModal(true);
     } catch (e) {
+      console.error("Verification error:", e);
       setError("Verification failed. Try again.");
     } finally {
       setVerifyLoading(false);

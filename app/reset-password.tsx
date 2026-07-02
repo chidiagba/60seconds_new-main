@@ -112,11 +112,10 @@ export default function ResetPasswordScreen() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setError(
-          (data as any)?.error ||
-            (data as any)?.message ||
-            `Request failed (${res.status}). Check that the password reset function is deployed.`
-        );
+        const errorMsg = (data as any)?.error ||
+          (data as any)?.message ||
+          `Request failed (${res.status}). Check that the password reset function is deployed.`;
+        setError(errorMsg);
         setIsLoading(false);
         return;
       }
@@ -127,9 +126,15 @@ export default function ResetPasswordScreen() {
         return;
       }
 
-      setPasswordReset(true);
-      setIsLoading(false);
+      if (data?.success || data?.userId) {
+        setPasswordReset(true);
+        setIsLoading(false);
+      } else {
+        setError("Password update did not complete. Please try again.");
+        setIsLoading(false);
+      }
     } catch (err: any) {
+      console.error("Password reset error:", err);
       setError(err?.message || "An unexpected error occurred. Please try again.");
       setIsLoading(false);
     }

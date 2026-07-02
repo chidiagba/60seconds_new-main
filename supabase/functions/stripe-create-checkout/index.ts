@@ -35,6 +35,26 @@ type OwnerResolution = {
   connectedAccountId: string | null;
 };
 
+const normalizeCurrency = (value: unknown): string => {
+  const candidate = String(value || "").trim().toLowerCase();
+  return /^[a-z]{3}$/.test(candidate) ? candidate : "usd";
+};
+
+const parseAmountCents = (value: unknown): number | null => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const rounded = Math.round(parsed);
+  if (rounded <= 0) return null;
+  return rounded;
+};
+
+const parseOptionalAmountCents = (value: unknown): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  const rounded = Math.round(parsed);
+  return rounded > 0 ? rounded : 0;
+};
+
 const resolveOwnerAndConnectedAccount = async (
   productId?: string,
   explicitConnectedAccountId?: string | null
@@ -62,11 +82,19 @@ const resolveOwnerAndConnectedAccount = async (
     .maybeSingle();
 
   if (productErr) {
-    throw new Error(`Failed to resolve product owner: ${productErr.message}`);
+    console.warn("Failed to resolve product owner; continuing with platform-only Stripe intent:", productErr.message);
+    return {
+      ownerId: null,
+      connectedAccountId: null,
+    };
   }
 
   if (!productRow) {
-    throw new Error("Product not found for Stripe checkout.");
+    console.warn("Product not found during Stripe checkout owner resolution; continuing with platform-only intent.");
+    return {
+      ownerId: null,
+      connectedAccountId: null,
+    };
   }
 
   let ownerId = String(productRow.business_id || "").trim() || null;
@@ -79,10 +107,11 @@ const resolveOwnerAndConnectedAccount = async (
       .maybeSingle();
 
     if (eventErr) {
-      throw new Error(`Failed to resolve event owner: ${eventErr.message}`);
+      console.warn("Failed to resolve event owner; continuing without destination account:", eventErr.message);
+      ownerId = null;
+    } else {
+      ownerId = String(eventRow?.user_id || "").trim() || null;
     }
-
-    ownerId = String(eventRow?.user_id || "").trim() || null;
   }
 
   if (!ownerId) {
@@ -99,7 +128,11 @@ const resolveOwnerAndConnectedAccount = async (
     .maybeSingle();
 
   if (profileErr) {
-    throw new Error(`Failed to resolve Stripe connected account: ${profileErr.message}`);
+    console.warn("Failed to resolve Stripe connected account; continuing with platform-only intent:", profileErr.message);
+    return {
+      ownerId,
+      connectedAccountId: null,
+    };
   }
 
   const connectedAccountId = String(profileRow?.stripe_connected_account_id || "").trim() || null;
@@ -162,16 +195,18 @@ Deno.serve(async (req) => {
       connectedAccountId = null,
     } = body;
 
-    if (!amount || !currency) {
+    if (amount == null || currency == null) {
       return new Response(
         JSON.stringify({ error: "Amount and currency are required." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    const totalAmount = typeof amount === "number" ? amount : parseInt(amount, 10);
+    const totalAmount = parseAmountCents(amount);
+    const normalizedCurrency = normalizeCurrency(currency);
+    const normalizedPlatformFeeAmount = parseOptionalAmountCents(platformFeeAmount);
 
-    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+    if (!totalAmount) {
       return new Response(
         JSON.stringify({ error: "Amount must be a valid positive number." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -199,7 +234,7 @@ Deno.serve(async (req) => {
     // Build PaymentIntent params; support Stripe Connect destination transfers if connectedAccountId provided
     const paymentIntentParams: any = {
       amount: totalAmount,
-      currency: currency.toLowerCase(),
+      currency: normalizedCurrency,
       customer: customer.id,
       automatic_payment_methods: { enabled: true },
       metadata: {
@@ -214,8 +249,8 @@ Deno.serve(async (req) => {
     if (destinationConnectedAccountId) {
       // Route funds to the connected account and optionally collect an application fee
       paymentIntentParams.transfer_data = { destination: destinationConnectedAccountId };
-      if (platformFeeAmount && Number(platformFeeAmount) > 0) {
-        paymentIntentParams.application_fee_amount = Number(platformFeeAmount);
+      if (normalizedPlatformFeeAmount > 0) {
+        paymentIntentParams.application_fee_amount = normalizedPlatformFeeAmount;
       }
     }
 

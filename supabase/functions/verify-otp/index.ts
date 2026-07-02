@@ -93,6 +93,7 @@ Deno.serve(async (req) => {
           ...existingMeta,
           signup_otp_verified_at: otpVerifiedAt,
           signup_otp_verified: true,
+          otp_verified: true,
           latest_otp_code: null,
           latest_otp_type: null,
           latest_otp_email: null,
@@ -183,6 +184,7 @@ Deno.serve(async (req) => {
           ...existingMeta,
           signup_otp_verified_at: otpVerifiedAt,
           signup_otp_verified: true,
+          otp_verified: true,
           latest_otp_code: null,
           latest_otp_type: null,
           latest_otp_email: null,
@@ -205,16 +207,20 @@ Deno.serve(async (req) => {
 
       const authUserEmail = (authUserData?.user?.email || normalizedEmail).toLowerCase();
       const welcomeName = authUserEmail.split("@")[0] || "there";
-      const { error: welcomeErr } = await supabase.functions.invoke("send-welcome-email", {
-        body: {
-          user_id: uid,
-          email: authUserEmail,
-          name: welcomeName,
-          trigger: "post_signup_otp_table_verification_server",
-        },
-      });
-      if (welcomeErr) {
-        console.warn("send-welcome-email invocation failed (non-blocking):", welcomeErr);
+      try {
+        const { error: welcomeErr } = await supabase.functions.invoke("send-welcome-email", {
+          body: {
+            user_id: uid,
+            email: authUserEmail,
+            name: welcomeName,
+            trigger: "post_signup_otp_table_verification_server",
+          },
+        });
+        if (welcomeErr) {
+          console.warn("send-welcome-email invocation failed (non-blocking):", welcomeErr);
+        }
+      } catch (invokeErr) {
+        console.warn("send-welcome-email invoke error (non-blocking):", invokeErr);
       }
     }
 

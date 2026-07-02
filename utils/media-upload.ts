@@ -22,7 +22,11 @@ export const getSafeFileExtension = (
 };
 
 const ensureReadableUri = async (uri: string, extension: string) => {
-  if (!uri.startsWith("content://")) {
+  if (
+    !uri.startsWith("content://") &&
+    !uri.startsWith("ph://") &&
+    !uri.startsWith("assets-library://")
+  ) {
     return uri;
   }
 

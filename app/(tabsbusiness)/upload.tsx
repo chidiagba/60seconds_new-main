@@ -49,6 +49,7 @@ const VIDEO_DURATION_TOLERANCE_MS = 1200;
 const MIN_EVENT_END_OFFSET_MS = 60 * 1000;
 const DEFAULT_EVENT_DURATION_MS = 60 * 60 * 1000;
 const VIDEO_FILE_EXTENSIONS = ["mp4", "mov", "m4v", "webm"] as const;
+const IMAGE_FILE_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "heic"] as const;
 const MAX_UPLOAD_ATTEMPTS = 4;
 const UPLOAD_ATTEMPT_TIMEOUT_MS = 480000;
 const RECORD_PROGRESS_RADIUS = 46;
@@ -1531,13 +1532,10 @@ export default function UploadScreen() {
 
                     if (product.image) {
                       try {
-                        const imgResp = await fetch(product.image);
-                        if (!imgResp.ok) {
-                          throw new Error("Failed to read product image for upload");
-                        }
-
-                        const imgBuffer = await imgResp.arrayBuffer();
-                        const fileExtImg = product.image.split(".").pop()?.toLowerCase() ?? "jpg";
+                        const { arrayBuffer: imgBuffer, extension: fileExtImg } = await readUriAsArrayBuffer(product.image, {
+                          allowedExtensions: IMAGE_FILE_EXTENSIONS,
+                          fallbackExtension: "jpg",
+                        });
                         const fileNameImg = `products/${uploadSnapshot.currentUserId}/${Date.now()}_${product.name.replace(
                           /[^a-zA-Z0-9]/g,
                           "_"

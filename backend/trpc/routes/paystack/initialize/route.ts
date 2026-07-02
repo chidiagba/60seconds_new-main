@@ -28,6 +28,13 @@ export const initializePaymentProcedure = publicProcedure
     try {
       // Convert amount to kobo (Paystack uses kobo for NGN, cents for USD)
       const amountInMinorUnit = Math.round(input.amount * 100);
+
+      const normalizedSubaccount = String(input.subaccount || '').trim();
+      const normalizedSplitCode = String(input.split_code || '').trim();
+      // Paystack expects subaccount for one beneficiary and split_code for split groups.
+      // Prefer subaccount if both are present so single-split flow remains valid.
+      const effectiveSubaccount = normalizedSubaccount || undefined;
+      const effectiveSplitCode = effectiveSubaccount ? undefined : (normalizedSplitCode || undefined);
       
       // Generate reference if not provided
       const reference = input.reference || `60seconds_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -46,12 +53,13 @@ export const initializePaymentProcedure = publicProcedure
           orderId: input.orderId,
           walletId: input.walletId,
           paymentType: input.paymentType,
+          split_mode: effectiveSubaccount ? 'single_subaccount' : (effectiveSplitCode ? 'split_group' : 'none'),
         },
         channels: input.channels || ['card', 'bank', 'ussd', 'qr', 'mobile_money', 'bank_transfer'],
-        split_code: input.split_code,
-        subaccount: input.subaccount,
+        split_code: effectiveSplitCode,
+        subaccount: effectiveSubaccount,
         transaction_charge: input.transaction_charge,
-        bearer: input.bearer,
+        bearer: input.bearer || ((effectiveSubaccount || effectiveSplitCode) ? 'account' : undefined),
       };
       
       const response = await fetch(`${PAYSTACK_BASE_URL}/transaction/initialize`, {

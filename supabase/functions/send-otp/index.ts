@@ -245,25 +245,35 @@ Deno.serve(async (req) => {
       }
 
       if (!resolvedUser) {
-        resolvedUser = await resolveUserByEmail(supabase, normalizedEmail);
+        try {
+          resolvedUser = await resolveUserByEmail(supabase, normalizedEmail);
+        } catch (emailLookupErr) {
+          console.warn("send-otp: email lookup also failed:", emailLookupErr);
+        }
       }
 
       if (!resolvedUser) {
         return new Response(
-          JSON.stringify({ success: false, message: "No account found with this email" }),
+          JSON.stringify({ success: false, message: "No account found with this email or user ID" }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
       const registeredEmail = String(resolvedUser.email || "").trim().toLowerCase();
-      if (!registeredEmail || registeredEmail !== normalizedEmail) {
+      // For signup PIN, email mismatch is acceptable (user_id takes precedence)
+      if (t === "recovery" && (!registeredEmail || registeredEmail !== normalizedEmail)) {
         return new Response(
-          JSON.stringify({ success: false, message: "Reset PIN can only be sent to the registered email address" }),
+          JSON.stringify({ success: false, message: "Password reset PIN can only be sent to the registered email address" }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
     } else {
-      resolvedUser = await resolveUserByEmail(supabase, normalizedEmail);
+      try {
+        resolvedUser = await resolveUserByEmail(supabase, normalizedEmail);
+      } catch (emailLookupErr) {
+        console.warn("send-otp: email lookup failed:", emailLookupErr);
+      }
+      
       if (!resolvedUser) {
         return new Response(
           JSON.stringify({ success: false, message: "No account found with this email" }),

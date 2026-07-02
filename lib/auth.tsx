@@ -169,11 +169,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const requestId = ++authRequestIdRef.current;
 
       // Never allow a partially verified user session to propagate in app state.
-      const signupOtpVerifiedAt =
-        (nextSession?.user?.app_metadata as Record<string, unknown> | undefined)?.signup_otp_verified_at;
+      const appMetadata =
+        (nextSession?.user?.app_metadata as Record<string, unknown> | undefined) || {};
+      const userMetadata =
+        (nextSession?.user?.user_metadata as Record<string, unknown> | undefined) || {};
+      const signupOtpVerifiedAt = appMetadata.signup_otp_verified_at;
       const hasCompletedOtpStep = typeof signupOtpVerifiedAt === 'string' && signupOtpVerifiedAt.length > 0;
+      const userType =
+        (typeof userMetadata.user_type === 'string' && userMetadata.user_type) ||
+        (typeof appMetadata.user_type === 'string' && appMetadata.user_type) ||
+        'private';
+      const requiresOtpVerification = userType === 'business';
 
-      if (nextSession?.user && !hasCompletedOtpStep) {
+      if (nextSession?.user && requiresOtpVerification && !hasCompletedOtpStep) {
         if (!isActive || requestId !== authRequestIdRef.current) {
           return;
         }
@@ -403,7 +411,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return {
         error: null,
-        needsVerification: true,
+        needsVerification: profileData?.user_type === 'business',
         userId: data?.user_id,
       };
     } catch (err) {

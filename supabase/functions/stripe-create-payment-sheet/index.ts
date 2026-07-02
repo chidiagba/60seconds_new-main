@@ -16,6 +16,26 @@ const stripe = new Stripe(stripeSecretKey, {
   apiVersion: "2023-10-16",
 });
 
+const normalizeCurrency = (value: unknown): string => {
+  const candidate = String(value || "").trim().toLowerCase();
+  return /^[a-z]{3}$/.test(candidate) ? candidate : "usd";
+};
+
+const parseAmountCents = (value: unknown): number | null => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  const rounded = Math.round(parsed);
+  if (rounded <= 0) return null;
+  return rounded;
+};
+
+const parseOptionalAmountCents = (value: unknown): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  const rounded = Math.round(parsed);
+  return rounded > 0 ? rounded : 0;
+};
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, content-type",
@@ -40,14 +60,24 @@ Deno.serve(async (req) => {
       platformFeeAmount,
     } = body;
 
-    if (!amount || !currency) {
+    if (amount == null || currency == null) {
       return new Response(
         JSON.stringify({ error: "Amount and currency are required." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    const totalAmount = amount + platformFeeAmount;
+    const baseAmount = parseAmountCents(amount);
+    if (!baseAmount) {
+      return new Response(
+        JSON.stringify({ error: "Amount must be a valid positive number." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const feeAmount = parseOptionalAmountCents(platformFeeAmount);
+    const totalAmount = baseAmount + feeAmount;
+    const normalizedCurrency = normalizeCurrency(currency);
 
     const customer = await stripe.customers.create({
       email: customerEmail || undefined,
@@ -60,7 +90,7 @@ Deno.serve(async (req) => {
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: totalAmount,
-      currency,
+      currency: normalizedCurrency,
       customer: customer.id,
       automatic_payment_methods: { enabled: true },
       metadata: {

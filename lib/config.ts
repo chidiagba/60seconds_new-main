@@ -7,7 +7,7 @@ export const config = {
   // Supabase Configuration
   supabase: {
     url: process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://rvvujgbaswecqohixgog.supabase.co',
-    anonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ2dnVqZ2Jhc3dlY3FvaGl4Z29nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzk1NDc3NDUsImV4cCI6MjA1NTEyMzc0NX0.7tN4mfu7H6mYCTzGkCO6qzIoEzvIffa_iveNxXkJkXc',
+    anonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_sIzCwLBlhd1--vlMsdY1Hg_UEWYbGVp',
     serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   },
 

@@ -54,6 +54,7 @@ interface PaystackWebViewProps {
   paystackSplitCode?: string;
   paystackTransactionCharge?: number;
   paystackBearer?: 'account' | 'subaccount';
+  requireSplitRouting?: boolean;
 }
 
 export default function PaystackWebView({
@@ -73,6 +74,7 @@ export default function PaystackWebView({
   paystackSplitCode,
   paystackTransactionCharge,
   paystackBearer,
+  requireSplitRouting = false,
 }: PaystackWebViewProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success' | 'failed'>('idle');
@@ -234,6 +236,15 @@ export default function PaystackWebView({
 
   const openHostedCheckoutFlow = async (channels: PaystackChannel[]) => {
     const reference = buildReference();
+    const normalizedSubaccount = String(paystackSubaccount || '').trim();
+    const normalizedSplitCode = String(paystackSplitCode || '').trim();
+    const effectiveSubaccount = normalizedSubaccount || undefined;
+    const effectiveSplitCode = effectiveSubaccount ? undefined : (normalizedSplitCode || undefined);
+    const effectiveBearer = paystackBearer || ((effectiveSubaccount || effectiveSplitCode) ? 'account' : undefined);
+
+    if (requireSplitRouting && !effectiveSubaccount && !effectiveSplitCode) {
+      throw new Error('Organizer split routing is missing. Configure Paystack subaccount/split before checkout.');
+    }
 
     await trackPaymentEvent('started', {
       reference,
@@ -247,10 +258,10 @@ export default function PaystackWebView({
       currency: currency || 'NGN',
       reference,
       callback_url: 'myapp://paystack/callback',
-      subaccount: paystackSubaccount,
-      split_code: paystackSplitCode,
+      subaccount: effectiveSubaccount,
+      split_code: effectiveSplitCode,
       transaction_charge: paystackTransactionCharge,
-      bearer: paystackBearer,
+      bearer: effectiveBearer,
       metadata: {
         ...metadata,
         firstName,
@@ -259,6 +270,7 @@ export default function PaystackWebView({
         description,
         platform: Platform.OS,
         checkout_mode: 'hosted_url',
+        split_mode: effectiveSubaccount ? 'single_subaccount' : (effectiveSplitCode ? 'split_group' : 'none'),
         timestamp: new Date().toISOString(),
       },
       channels,

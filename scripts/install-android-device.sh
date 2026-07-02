@@ -25,4 +25,4 @@ adb -s "$DEVICE_SERIAL" reverse tcp:19001 tcp:19001 >/dev/null || true
 
 cd "$PROJECT_ROOT"
 echo "Building and installing on Android device ${DEVICE_SERIAL}..."
-npx expo run:android --device "$DEVICE_SERIAL"
+ANDROID_SERIAL="$DEVICE_SERIAL" npx expo run:android

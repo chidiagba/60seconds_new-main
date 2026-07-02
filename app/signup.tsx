@@ -284,8 +284,13 @@ export default function SignUpScreen() {
       if (!existingUserErr && existingUserData?.uid) {
         const existingUid = String(existingUserData.uid);
         const alreadyOtpVerified = existingUserData.otp_verified === true;
+        const existingUserType =
+          existingUserData.user_type === "business" || existingUserData.user_type === "private"
+            ? existingUserData.user_type
+            : null;
+        const requiresOtp = accountType === "business" || existingUserType === "business";
 
-        if (!alreadyOtpVerified) {
+        if (requiresOtp && !alreadyOtpVerified) {
           Alert.alert(
             "PIN verification required",
             "This email is already registered. Please complete PIN verification before login.",
@@ -319,24 +324,75 @@ export default function SignUpScreen() {
       const signUpResult = await supabaseSignUp(normalizedEmail, password, profileData);
 
       if (!signUpResult.error) {
-        let pinSent = false;
-        const { data: otpData, error: otpSendError } = await supabase.functions.invoke("send-otp", {
-          body: {
-            email: normalizedEmail,
-            type: "signup",
-            user_id: signUpResult.userId,
-          },
-        });
+        if (accountType === "personal") {
+          try {
+            const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
+              email: normalizedEmail,
+              password,
+            });
 
-        if (!otpSendError && otpData?.success) {
-          pinSent = true;
+            if (signInError || !authData?.user) {
+              Alert.alert(
+                "Account Created",
+                "Your account has been created and your welcome email is on the way. Please sign in to continue."
+              );
+              router.replace("/signin");
+              return;
+            }
+
+            router.replace("/(tabs)");
+            return;
+          } catch (autoSignInErr) {
+            console.warn("Auto sign-in after private signup failed:", autoSignInErr);
+            Alert.alert(
+              "Account Created",
+              "Your account has been created and your welcome email is on the way. Please sign in to continue."
+            );
+            router.replace("/signin");
+            return;
+          }
+        }
+
+        let pinSent = false;
+        let pinSendAttempts = 0;
+        const maxPinRetries = 3;
+
+        // Retry PIN sending up to maxPinRetries times for robustness
+        while (!pinSent && pinSendAttempts < maxPinRetries) {
+          pinSendAttempts++;
+          try {
+            const { data: otpData, error: otpSendError } = await supabase.functions.invoke("send-otp", {
+              body: {
+                email: normalizedEmail,
+                type: "signup",
+                user_id: signUpResult.userId,
+              },
+            });
+
+            if (!otpSendError && otpData?.success) {
+              pinSent = true;
+              console.log("✅ PIN sent successfully");
+              break;
+            } else {
+              const reason = (otpData as any)?.message || otpSendError?.message || "Failed to send PIN code.";
+              console.warn(`⚠️ PIN send attempt ${pinSendAttempts} failed: ${reason}`);
+              
+              if (pinSendAttempts < maxPinRetries) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * pinSendAttempts));
+              }
+            }
+          } catch (sendErr) {
+            console.error(`❌ PIN send attempt ${pinSendAttempts} threw error:`, sendErr);
+            if (pinSendAttempts < maxPinRetries) {
+              await new Promise(resolve => setTimeout(resolve, 1000 * pinSendAttempts));
+            }
+          }
         }
 
         if (!pinSent) {
           const smtpHint =
-            "PIN email could not be sent right now. You can retry from the verification screen. Check Supabase SMTP settings (Auth > Email > SMTP), sender domain verification, and spam folder.";
-          const reason = (otpData as any)?.message || otpSendError?.message || "Failed to send PIN code.";
-          Alert.alert("PIN Send Delayed", `${reason}\n\n${smtpHint}`);
+            "PIN email could not be sent. You can retry from the verification screen. Check Supabase SMTP settings (Auth > Email > SMTP), sender domain verification, and spam folder.";
+          Alert.alert("PIN Send Delayed", `Failed after ${maxPinRetries} attempts.\n\n${smtpHint}`);
         }
 
         const query = `email=${encodeURIComponent(normalizedEmail)}&user_id=${encodeURIComponent(signUpResult.userId || "")}&pin_sent=${pinSent ? "1" : "0"}`;

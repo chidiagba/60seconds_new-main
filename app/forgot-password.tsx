@@ -122,8 +122,8 @@ export default function ForgotPasswordScreen() {
       if (invokeError) {
         const rawMessage = (data as any)?.error || (data as any)?.message || invokeError.message || "";
         const fallback = /non-2xx/i.test(rawMessage)
-          ? "Could not verify code. Please try again."
-          : "Invalid or expired code";
+          ? "Could not verify code. Please check the code and try again."
+          : "Invalid or expired code. Please request a new one.";
         setError(rawMessage || fallback);
         return;
       }
@@ -131,10 +131,11 @@ export default function ForgotPasswordScreen() {
       if (data?.success && data?.code) {
         router.push(`/reset-password?email=${encodeURIComponent(normalizedEmail)}&code=${encodeURIComponent(data.code)}`);
       } else {
-        setError((data as any)?.error || "Invalid or expired code");
+        setError((data as any)?.error || "Invalid or expired code. Please request a new one.");
       }
-    } catch {
-      setError("Verification failed. Try again.");
+    } catch (err) {
+      console.error("PIN verification error:", err);
+      setError("Verification failed. Please try again.");
     } finally {
       setVerifyLoading(false);
     }

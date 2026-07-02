@@ -79,6 +79,12 @@ class PaystackService {
    */
   async initializePayment(params: PaystackInitializeParams) {
     try {
+      const normalizedSubaccount = String(params.subaccount || '').trim();
+      const normalizedSplitCode = String(params.split_code || '').trim();
+      const effectiveSubaccount = normalizedSubaccount || undefined;
+      const effectiveSplitCode = effectiveSubaccount ? undefined : (normalizedSplitCode || undefined);
+      const effectiveBearer = params.bearer || ((effectiveSubaccount || effectiveSplitCode) ? 'account' : undefined);
+
       const { data, error } = await supabase.functions.invoke('paystack-initialize', {
         body: {
           email: params.email,
@@ -88,10 +94,10 @@ class PaystackService {
           callback_url: params.callback_url,
           metadata: params.metadata,
           channels: params.channels,
-          subaccount: params.subaccount,
-          split_code: params.split_code,
+          subaccount: effectiveSubaccount,
+          split_code: effectiveSplitCode,
           transaction_charge: params.transaction_charge,
-          bearer: params.bearer,
+          bearer: effectiveBearer,
           userId: params.userId,
           orderId: params.orderId,
           walletId: params.walletId,

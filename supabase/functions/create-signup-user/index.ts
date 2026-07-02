@@ -163,6 +163,9 @@ Deno.serve(async (req) => {
       );
     }
 
+    const isBusinessSignup = profileData.user_type === "business";
+    const otpVerifiedAt = isBusinessSignup ? null : new Date().toISOString();
+
     const userMetadata = {
       full_name: profileData.full_name,
       username: profileData.username,
@@ -180,7 +183,10 @@ Deno.serve(async (req) => {
       email_confirm: true,
       user_metadata: userMetadata,
       app_metadata: {
-        signup_otp_verified: false,
+        signup_otp_verified: !isBusinessSignup,
+        otp_verified: !isBusinessSignup,
+        signup_otp_verified_at: otpVerifiedAt,
+        user_type: profileData.user_type,
       },
     });
 
@@ -191,8 +197,41 @@ Deno.serve(async (req) => {
       });
     }
 
+    let welcomeEmailTriggered = false;
+    if (!isBusinessSignup) {
+      const fallbackName =
+        String(profileData.full_name || "").trim() ||
+        String(email.split("@")[0] || "there").trim() ||
+        "there";
+
+      try {
+        const { data: welcomeData, error: welcomeErr } = await admin.functions.invoke("send-welcome-email", {
+          body: {
+            user_id: created.user.id,
+            email,
+            name: fallbackName,
+            trigger: "post_private_signup_autoverified",
+          },
+        });
+
+        if (!welcomeErr && welcomeData?.success) {
+          welcomeEmailTriggered = true;
+        }
+      } catch (welcomeInvokeErr) {
+        console.warn("Failed to trigger welcome email for private signup (non-blocking):", welcomeInvokeErr);
+      }
+    }
+
     return new Response(
-      JSON.stringify({ success: true, user_id: created.user.id, email }),
+      JSON.stringify({
+        success: true,
+        user_id: created.user.id,
+        email,
+        user_type: profileData.user_type,
+        needs_verification: isBusinessSignup,
+        otp_verified: !isBusinessSignup,
+        welcome_email_triggered: welcomeEmailTriggered,
+      }),
       {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

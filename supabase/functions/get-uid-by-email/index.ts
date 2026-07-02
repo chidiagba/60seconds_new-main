@@ -145,12 +145,17 @@ Deno.serve(async (req) => {
     }
 
     const emailConfirmed = found.email_confirmed_at != null;
+    const userMetadata = (found.user_metadata || {}) as Record<string, unknown>;
     const appMetadata = (found.app_metadata || {}) as Record<string, unknown>;
+    const userType =
+      (typeof userMetadata.user_type === "string" && userMetadata.user_type) ||
+      (typeof appMetadata.user_type === "string" && appMetadata.user_type) ||
+      null;
     const signupOtpVerifiedAt =
       typeof appMetadata.signup_otp_verified_at === "string"
         ? appMetadata.signup_otp_verified_at
         : null;
-    const otpVerified = signupOtpVerifiedAt != null;
+    const otpVerified = signupOtpVerifiedAt != null || userType === "private";
 
     // Return the UID of the found user
     console.log(`✅ Successfully found user: ${found.id}`);
@@ -161,6 +166,7 @@ Deno.serve(async (req) => {
         email: found.email,
         email_confirmed: emailConfirmed,
         email_confirmed_at: found.email_confirmed_at ?? null,
+        user_type: userType,
         otp_verified: otpVerified,
         signup_otp_verified_at: signupOtpVerifiedAt,
       }),

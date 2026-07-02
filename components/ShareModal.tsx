@@ -211,13 +211,24 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
     return normalized.includes('_wm_') || normalized.includes('/wm_') || normalized.includes('watermarked');
   };
 
+  const getVideoUrlCacheToken = () => {
+    const normalizedUrl = videoUrl.trim().toLowerCase();
+    let hash = 0;
+
+    for (let index = 0; index < normalizedUrl.length; index += 1) {
+      hash = (hash * 31 + normalizedUrl.charCodeAt(index)) >>> 0;
+    }
+
+    return hash.toString(36) || 'src';
+  };
+
   const getRemoteExtension = () => {
     const cleanRemote = videoUrl.split('?')[0].toLowerCase();
     return cleanRemote.split('.').pop() || 'mp4';
   };
 
-  const getOriginalCacheUri = () => `${FileSystem.cacheDirectory}share_video_${video.id}.${getRemoteExtension()}`;
-  const getWatermarkCacheKey = () => `share_${video.id}`;
+  const getOriginalCacheUri = () => `${FileSystem.cacheDirectory}share_video_${video.id}_${getVideoUrlCacheToken()}.${getRemoteExtension()}`;
+  const getWatermarkCacheKey = () => `share_${video.id}_${getVideoUrlCacheToken()}`;
 
   const getCachedFileIfPresent = async (uri: string) => {
     try {
@@ -402,6 +413,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
       const socialTarget = resolveShareSocialTarget(options.target);
 
       if (socialTarget) {
+        const supportsMessageWithVideo = options.target === 'twitter' || options.target === 'whatsapp';
         if (Platform.OS === 'android') {
           const androidPackages: Partial<Record<NonNullable<ShareVideoFileOptions['target']>, string>> = {
             instagram: 'com.instagram.android',
@@ -425,7 +437,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
           social: socialTarget,
           url: localUri,
           type: mimeType,
-          message: shareMessage,
+          ...(supportsMessageWithVideo ? { message: shareMessage } : {}),
           failOnCancel: false,
         });
 

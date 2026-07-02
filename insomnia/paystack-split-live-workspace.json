@@ -1,0 +1,168 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-06-27T00:00:00.000Z",
+  "__export_source": "60seconds-paystack-split-setup",
+  "resources": [
+    {
+      "_id": "wrk_60seconds_paystack_split",
+      "_type": "workspace",
+      "name": "60Seconds Paystack Split Live",
+      "description": "Requests for organizer split payments and payout checks"
+    },
+    {
+      "_id": "env_60seconds_paystack_split",
+      "_type": "environment",
+      "parentId": "wrk_60seconds_paystack_split",
+      "name": "Base Environment",
+      "data": {
+        "PAYSTACK_BASE": "https://api.paystack.co",
+        "PAYSTACK_SECRET_KEY": "",
+        "TEST_EMAIL": "buyer@example.com",
+        "SUBACCOUNT_CODE": "ACCT_xxx",
+        "SPLIT_CODE": "SPL_xxx",
+        "REFERENCE": "60seconds_{{ _.now }}",
+        "APP_BASE_URL": "https://your-api-domain.com",
+        "APP_VERIFY_WEBHOOK_URL": "https://your-api-domain.com/api/paystack/webhook"
+      }
+    },
+    {
+      "_id": "fld_paystack_direct",
+      "_type": "request_group",
+      "parentId": "wrk_60seconds_paystack_split",
+      "name": "Paystack Direct API"
+    },
+    {
+      "_id": "req_init_single_subaccount",
+      "_type": "request",
+      "parentId": "fld_paystack_direct",
+      "name": "Initialize - Single Subaccount",
+      "method": "POST",
+      "url": "{{ PAYSTACK_BASE }}/transaction/initialize",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"{{ TEST_EMAIL }}\",\n  \"amount\": 250000,\n  \"currency\": \"NGN\",\n  \"reference\": \"single_sub_{{ _.now }}\",\n  \"callback_url\": \"myapp://paystack/callback\",\n  \"subaccount\": \"{{ SUBACCOUNT_CODE }}\",\n  \"transaction_charge\": 10000,\n  \"bearer\": \"account\",\n  \"metadata\": {\n    \"paymentType\": \"order_payment\",\n    \"split_mode\": \"single_subaccount\",\n    \"source\": \"insomnia\"\n  }\n}"
+      },
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ PAYSTACK_SECRET_KEY }}"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ]
+    },
+    {
+      "_id": "req_init_split_group",
+      "_type": "request",
+      "parentId": "fld_paystack_direct",
+      "name": "Initialize - Split Group",
+      "method": "POST",
+      "url": "{{ PAYSTACK_BASE }}/transaction/initialize",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"{{ TEST_EMAIL }}\",\n  \"amount\": 250000,\n  \"currency\": \"NGN\",\n  \"reference\": \"split_group_{{ _.now }}\",\n  \"callback_url\": \"myapp://paystack/callback\",\n  \"split_code\": \"{{ SPLIT_CODE }}\",\n  \"metadata\": {\n    \"paymentType\": \"order_payment\",\n    \"split_mode\": \"split_group\",\n    \"source\": \"insomnia\"\n  }\n}"
+      },
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ PAYSTACK_SECRET_KEY }}"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ]
+    },
+    {
+      "_id": "req_verify_tx",
+      "_type": "request",
+      "parentId": "fld_paystack_direct",
+      "name": "Verify Transaction by Reference",
+      "method": "GET",
+      "url": "{{ PAYSTACK_BASE }}/transaction/verify/{{ REFERENCE }}",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ PAYSTACK_SECRET_KEY }}"
+        }
+      ]
+    },
+    {
+      "_id": "req_list_subaccounts",
+      "_type": "request",
+      "parentId": "fld_paystack_direct",
+      "name": "List Subaccounts",
+      "method": "GET",
+      "url": "{{ PAYSTACK_BASE }}/subaccount?perPage=50&page=1",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ PAYSTACK_SECRET_KEY }}"
+        }
+      ]
+    },
+    {
+      "_id": "req_list_split_groups",
+      "_type": "request",
+      "parentId": "fld_paystack_direct",
+      "name": "List Split Groups",
+      "method": "GET",
+      "url": "{{ PAYSTACK_BASE }}/split",
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ PAYSTACK_SECRET_KEY }}"
+        }
+      ]
+    },
+    {
+      "_id": "fld_app_flow",
+      "_type": "request_group",
+      "parentId": "wrk_60seconds_paystack_split",
+      "name": "App Flow Endpoints"
+    },
+    {
+      "_id": "req_app_initialize",
+      "_type": "request",
+      "parentId": "fld_app_flow",
+      "name": "App Edge Function - paystack-initialize",
+      "method": "POST",
+      "url": "{{ APP_BASE_URL }}/functions/v1/paystack-initialize",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"{{ TEST_EMAIL }}\",\n  \"amount\": 2500,\n  \"currency\": \"NGN\",\n  \"subaccount\": \"{{ SUBACCOUNT_CODE }}\",\n  \"transaction_charge\": 100,\n  \"bearer\": \"account\",\n  \"paymentType\": \"order_payment\",\n  \"metadata\": {\n    \"orderId\": \"test-order-id\",\n    \"source\": \"insomnia-app-flow\"\n  }\n}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ PAYSTACK_SECRET_KEY }}"
+        }
+      ]
+    },
+    {
+      "_id": "req_webhook_health",
+      "_type": "request",
+      "parentId": "fld_app_flow",
+      "name": "Webhook Endpoint Ping (POST sample)",
+      "method": "POST",
+      "url": "{{ APP_VERIFY_WEBHOOK_URL }}",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"event\": \"charge.success\",\n  \"data\": {\n    \"reference\": \"insomnia_probe_ref\",\n    \"id\": \"insomnia_probe_tx\",\n    \"amount\": 10000,\n    \"currency\": \"NGN\",\n    \"status\": \"success\",\n    \"metadata\": {\n      \"paymentType\": \"order_payment\",\n      \"orderId\": \"probe-order-id\"\n    }\n  }\n}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ]
+    }
+  ]
+}
