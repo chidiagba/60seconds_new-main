@@ -459,14 +459,28 @@ export default function BankAccountsScreen() {
 
       if (success) {
         await fetchBusinessBankAccount();
+        const latestBankAccount = useWalletStore.getState().businessBankAccount;
+        const latestIsPaystackNg =
+          String(latestBankAccount?.payoutProvider || '').trim().toLowerCase() === 'paystack' &&
+          String(latestBankAccount?.countryCode || '').trim().toUpperCase() === 'NG';
+        const latestRoutingReady =
+          Boolean(String(latestBankAccount?.paystackRecipientCode || '').trim()) &&
+          Boolean(String(latestBankAccount?.paystackSubaccountCode || '').trim());
+
         if (isCreateFlow && isStripeNonNgFlow) {
           setShowSuccessDialog(true);
         } else {
+          const successMessage = latestIsPaystackNg
+            ? latestRoutingReady
+              ? 'Bank account saved and verified. Paystack recipient/subaccount routing is ready for split payments and withdrawals.'
+              : 'Bank account saved, but Paystack routing is still incomplete. Please re-check your details to finish recipient/subaccount setup.'
+            : businessBankAccount
+              ? 'Bank account updated successfully.'
+              : 'Bank account added successfully.';
+
           Alert.alert(
             'Success',
-            businessBankAccount
-              ? 'Bank account updated successfully.'
-              : 'Bank account added successfully.',
+            successMessage,
             [{ text: 'OK' }]
           );
         }
@@ -803,7 +817,7 @@ export default function BankAccountsScreen() {
             <Text style={styles.successDialogSubtitle}>
               Your bank details were saved to Supabase and are ready for payouts.
             </Text>
-            <Text style={styles.successDialogStatus}>Bank added seccuessfully and verified</Text>
+            <Text style={styles.successDialogStatus}>Bank added successfully and verified</Text>
 
             <TouchableOpacity
               style={styles.successDialogButton}

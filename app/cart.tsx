@@ -1141,7 +1141,10 @@ export default function CartScreen() {
         currency={cartCurrency}
         email={currentUser?.email || ''}
         description={`Cart purchase (${cart.length} item${cart.length !== 1 ? 's' : ''})`}
-        metadata={{ cartItems: cart.map((i) => ({ productId: i.product.id, qty: i.quantity })) }}
+        metadata={{
+          ownerId: cartOwnerId,
+          cartItems: cart.map((i) => ({ productId: i.product.id, qty: i.quantity })),
+        }}
         paystackSubaccount={
           String((cart[0]?.product as any)?.paystackSubaccountCode || '').trim() ||
           getPaystackRoutingForOwner(resolveProductOwnerId(cart[0]?.product)).subaccount
@@ -1164,6 +1167,14 @@ export default function CartScreen() {
             : getPaystackRoutingForOwner(resolveProductOwnerId(cart[0]?.product)).bearer
         }
         requireSplitRouting={true}
+        onRoutingSetupRequired={
+          currentUser?.id && cartOwnerId && currentUser.id === cartOwnerId
+            ? () => {
+                setShowPaystackModal(false);
+                router.push('/bank-accounts');
+              }
+            : undefined
+        }
       />
 
       <TwintPaymentModal

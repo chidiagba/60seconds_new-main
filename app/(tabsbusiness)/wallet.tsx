@@ -388,6 +388,11 @@ export default function WalletScreen() {
                 <Text style={styles.linkedBankMeta}>
                   Status: {businessBankAccount.verificationStatus || (businessBankAccount.isVerified ? 'verified' : 'pending')}
                 </Text>
+                {String(businessBankAccount.countryCode || '').toUpperCase() === 'NG' && (
+                  <Text style={styles.linkedBankMeta}>
+                    Paystack subaccount: {businessBankAccount.paystackSubaccountCode ? 'linked' : 'pending setup'}
+                  </Text>
+                )}
                 {!!businessBankAccount.verificationReason && (
                   <Text style={styles.linkedBankMeta}>Reason: {businessBankAccount.verificationReason}</Text>
                 )}

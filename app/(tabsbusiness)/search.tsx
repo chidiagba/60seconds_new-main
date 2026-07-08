@@ -33,6 +33,7 @@ import { useSearchStore } from "@/store/search-store";
 import { useAuthStore } from "@/store/auth-store";
 import { SearchFilters } from "@/types";
 import * as Location from "expo-location";
+import { getCurrentLocation } from "@/utils/location";
 import SearchResultItem from "@/components/SearchResultItem";
 import EventClosedDialog from "@/components/EventClosedDialog";
 import { isEventClosed } from "@/utils/event-status";
@@ -109,9 +110,8 @@ export default function SearchScreen() {
       if (Platform.OS === "web") return;
 
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === "granted") {
-          const location = await Location.getCurrentPositionAsync({});
+        const location = await getCurrentLocation({ requestPermission: true });
+        if (location) {
           setUserLocation(location);
 
           setMapRegion({
@@ -122,7 +122,7 @@ export default function SearchScreen() {
           });
         }
       } catch (e) {
-        console.error("Error getting location:", e);
+        console.log("Location unavailable on this device/session");
       }
     })();
   }, []);

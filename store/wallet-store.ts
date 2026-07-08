@@ -364,13 +364,20 @@ const mapBusinessBankAccountMetadata = (userId: string, payload: BusinessBankAcc
   };
 };
 
+const normalizeBusinessBankAccountId = (value?: string | null): string => {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/^"+|"+$/g, '');
+};
+
 const isMetadataBackedBusinessBankAccountId = (id?: string | null): boolean => {
-  return typeof id === 'string' && id.startsWith('meta_');
+  const normalized = normalizeBusinessBankAccountId(id);
+  return normalized.startsWith('meta_');
 };
 
 const isUuidLike = (value?: string | null): boolean => {
-  if (typeof value !== 'string') return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+  const normalized = normalizeBusinessBankAccountId(value);
+  if (!normalized) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized);
 };
 
 const isBusinessBankTableUnavailableError = (error: any): boolean => {
@@ -421,6 +428,33 @@ const resolveBusinessBankCurrency = (bankAccount?: BusinessBankAccount | null): 
     isNigerianCurrencySignal(bankAccount.payoutProvider);
 
   return isNigerianBank ? 'NGN' : null;
+};
+
+const shouldAutoSyncPaystackBankAccount = (bankAccount?: Partial<BusinessBankAccount> | null): boolean => {
+  if (!bankAccount) return false;
+
+  const hasRequiredBankDetails =
+    Boolean(String(bankAccount.accountNumber || '').trim()) &&
+    Boolean(String(bankAccount.bankName || '').trim()) &&
+    Boolean(String(bankAccount.accountName || '').trim());
+
+  if (!hasRequiredBankDetails) return false;
+
+  const isNigerianBank =
+    isNigerianCurrencySignal(bankAccount.country || '') ||
+    isNigerianCurrencySignal(bankAccount.countryCode || '') ||
+    isNigerianCurrencySignal(bankAccount.currency || '') ||
+    isNigerianCurrencySignal(bankAccount.bankName || '') ||
+    isNigerianCurrencySignal(bankAccount.payoutProvider || '');
+
+  if (!isNigerianBank) return false;
+
+  const payoutProvider = String(bankAccount.payoutProvider || '').trim().toLowerCase();
+  const verificationStatus = String(bankAccount.verificationStatus || '').trim().toLowerCase();
+  const hasRecipientCode = Boolean(String(bankAccount.paystackRecipientCode || '').trim());
+  const hasSubaccountCode = Boolean(String(bankAccount.paystackSubaccountCode || '').trim());
+
+  return payoutProvider !== 'paystack' || verificationStatus !== 'verified' || !hasRecipientCode || !hasSubaccountCode;
 };
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
@@ -1343,12 +1377,7 @@ export const useWalletStore = create<WalletState>()(
             const metadataPayload = (authData.user?.user_metadata as any)?.business_bank_account as BusinessBankAccountMetadata | undefined;
             let mappedFromMetadata = mapBusinessBankAccountMetadata(effectiveUserId, metadataPayload || {});
 
-            if (
-              mappedFromMetadata &&
-              !mappedFromMetadata.isVerified &&
-              mappedFromMetadata.payoutProvider === 'paystack' &&
-              (mappedFromMetadata.paystackRecipientCode || mappedFromMetadata.bankCode || mappedFromMetadata.bankName)
-            ) {
+            if (shouldAutoSyncPaystackBankAccount(mappedFromMetadata)) {
               const verification = await verifyBusinessBankAccountWithPaystack({
                 accountName: mappedFromMetadata.accountName,
                 accountNumber: mappedFromMetadata.accountNumber,
@@ -1403,12 +1432,7 @@ export const useWalletStore = create<WalletState>()(
 
           let mappedFromTable = data ? mapBusinessBankAccountRow(data as BusinessBankAccountRow) : null;
 
-          if (
-            mappedFromTable &&
-            !mappedFromTable.isVerified &&
-            mappedFromTable.payoutProvider === 'paystack' &&
-            (mappedFromTable.paystackRecipientCode || mappedFromTable.bankCode || mappedFromTable.bankName)
-          ) {
+          if (shouldAutoSyncPaystackBankAccount(mappedFromTable)) {
             const verification = await verifyBusinessBankAccountWithPaystack({
               accountName: mappedFromTable.accountName,
               accountNumber: mappedFromTable.accountNumber,
@@ -2034,6 +2058,17 @@ export const useWalletStore = create<WalletState>()(
           const usesPaystackPayout = normalizedCountryCode === 'NG' || businessBankAccount.payoutProvider === 'paystack';
           const payoutFunctionName = usesPaystackPayout ? 'paystack-direct-transfer' : 'stripe-withdraw-business-bank-account';
 
+          if (usesPaystackPayout) {
+            const hasRecipientCode = Boolean(String(businessBankAccount.paystackRecipientCode || '').trim());
+            const hasSubaccountCode = Boolean(String(businessBankAccount.paystackSubaccountCode || '').trim());
+
+            if (!hasRecipientCode || !hasSubaccountCode) {
+              throw new Error(
+                'Paystack payout routing is incomplete. Please update and verify your bank details to generate recipient and subaccount routing before withdrawing.'
+              );
+            }
+          }
+
           // Metadata-backed records use synthetic ids like meta_<uid> and cannot be inserted into UUID columns.
           let resolvedBusinessBankAccountId: string | null = isUuidLike(businessBankAccount.id)
             ? businessBankAccount.id
@@ -2597,6 +2632,33 @@ export const useWalletStore = create<WalletState>()(
             throw new Error('User not authenticated');
           }
 
+          const resolvedExistingBankAccountId = normalizeBusinessBankAccountId(businessBankAccount.id);
+
+          const resolveTableBusinessBankAccountId = async (): Promise<string | null> => {
+            if (isUuidLike(resolvedExistingBankAccountId)) {
+              return normalizeBusinessBankAccountId(resolvedExistingBankAccountId);
+            }
+
+            const { data: bankRow, error: bankRowError } = await (supabase as any)
+              .from('business_bank_accounts')
+              .select('id')
+              .eq('user_id', user.id)
+              .eq('is_active', true)
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (bankRowError && !isBusinessBankTableUnavailableError(bankRowError)) {
+              throw new Error(`Failed to resolve bank account for update: ${bankRowError.message}`);
+            }
+
+            if (isUuidLike(bankRow?.id)) {
+              return normalizeBusinessBankAccountId(bankRow.id);
+            }
+
+            return null;
+          };
+
           const resolvedPayoutProvider = bankAccount.payoutProvider || businessBankAccount.payoutProvider || 'stripe';
           const isPaystackSelection = resolvedPayoutProvider === 'paystack' && String(bankAccount.countryCode || businessBankAccount.countryCode || '').toUpperCase() === 'NG';
 
@@ -2647,31 +2709,74 @@ export const useWalletStore = create<WalletState>()(
               paystack_subaccount_id: verification.paystackSubaccountId || businessBankAccount.paystackSubaccountId || null,
             };
 
+            const tableBusinessBankAccountId = await resolveTableBusinessBankAccountId();
+            const shouldUpsertByUser = !tableBusinessBankAccountId;
+
+            const paystackExtendedWritePayload: Record<string, any> = shouldUpsertByUser
+              ? {
+                  user_id: user.id,
+                  is_active: true,
+                  ...paystackExtendedPayload,
+                }
+              : paystackExtendedPayload;
+
+            const paystackBaseWritePayload: Record<string, any> = shouldUpsertByUser
+              ? {
+                  user_id: user.id,
+                  is_active: true,
+                  ...paystackBasePayload,
+                }
+              : paystackBasePayload;
+
             let data: any = null;
             let error: any = null;
 
-            ({ data, error } = await withTimeout<{ data: any; error: any }>(
-              (supabase as any)
-                .from('business_bank_accounts')
-                .update(paystackExtendedPayload)
-                .eq('id', businessBankAccount.id)
-                .select('*')
-                .single(),
-              12000,
-              'Bank account update timeout'
-            ));
-
-            if (error && /column|bank_code|paystack_|iban|swift_code|schema cache/i.test(error.message || '')) {
+            if (shouldUpsertByUser) {
               ({ data, error } = await withTimeout<{ data: any; error: any }>(
                 (supabase as any)
                   .from('business_bank_accounts')
-                  .update(paystackBasePayload)
-                  .eq('id', businessBankAccount.id)
+                  .upsert(paystackExtendedWritePayload, { onConflict: 'user_id' })
                   .select('*')
                   .single(),
                 12000,
                 'Bank account update timeout'
               ));
+            } else {
+              ({ data, error } = await withTimeout<{ data: any; error: any }>(
+                (supabase as any)
+                  .from('business_bank_accounts')
+                  .update(paystackExtendedWritePayload)
+                  .eq('id', tableBusinessBankAccountId)
+                  .select('*')
+                  .single(),
+                12000,
+                'Bank account update timeout'
+              ));
+            }
+
+            if (error && /column|bank_code|paystack_|iban|swift_code|schema cache/i.test(error.message || '')) {
+              if (shouldUpsertByUser) {
+                ({ data, error } = await withTimeout<{ data: any; error: any }>(
+                  (supabase as any)
+                    .from('business_bank_accounts')
+                    .upsert(paystackBaseWritePayload, { onConflict: 'user_id' })
+                    .select('*')
+                    .single(),
+                  12000,
+                  'Bank account update timeout'
+                ));
+              } else {
+                ({ data, error } = await withTimeout<{ data: any; error: any }>(
+                  (supabase as any)
+                    .from('business_bank_accounts')
+                    .update(paystackBaseWritePayload)
+                    .eq('id', tableBusinessBankAccountId)
+                    .select('*')
+                    .single(),
+                  12000,
+                  'Bank account update timeout'
+                ));
+              }
             }
 
             if (error && isBusinessBankTableUnavailableError(error)) {

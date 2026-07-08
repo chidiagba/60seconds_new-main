@@ -19,6 +19,8 @@ import Colors from '@/constants/colors';
 import { WebView } from 'react-native-webview';
 import PaystackService from '@/lib/paystack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '@/store/auth-store';
 
 type PaystackChannel = 'card' | 'bank' | 'ussd' | 'qr' | 'mobile_money' | 'bank_transfer';
 type ChannelSelection = 'all' | PaystackChannel;
@@ -55,6 +57,7 @@ interface PaystackWebViewProps {
   paystackTransactionCharge?: number;
   paystackBearer?: 'account' | 'subaccount';
   requireSplitRouting?: boolean;
+  onRoutingSetupRequired?: () => void;
 }
 
 export default function PaystackWebView({
@@ -75,6 +78,7 @@ export default function PaystackWebView({
   paystackTransactionCharge,
   paystackBearer,
   requireSplitRouting = false,
+  onRoutingSetupRequired,
 }: PaystackWebViewProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success' | 'failed'>('idle');
@@ -85,6 +89,7 @@ export default function PaystackWebView({
   const [checkoutWebViewReady, setCheckoutWebViewReady] = useState(false);
   const [externalCheckoutMode, setExternalCheckoutMode] = useState(false);
   const insets = useSafeAreaInsets();
+  const authUser = useAuthStore((state) => state.user);
 
   // Ref to prevent stale-closure success fire after the user has cancelled/navigated away
   const isCancelledRef = useRef(false);
@@ -234,17 +239,92 @@ export default function PaystackWebView({
     return [selectedChannel];
   };
 
+  const resolveRoutingBeforeCheckout = async (input: {
+    subaccount?: string;
+    splitCode?: string;
+  }): Promise<{
+    subaccount?: string;
+    splitCode?: string;
+    bearer?: 'account' | 'subaccount';
+  }> => {
+    const normalizedSubaccount = String(input.subaccount || '').trim();
+    const normalizedSplitCode = String(input.splitCode || '').trim();
+
+    if (!requireSplitRouting) {
+      return {
+        subaccount: normalizedSubaccount || undefined,
+        splitCode: normalizedSplitCode || undefined,
+        bearer: paystackBearer || ((normalizedSubaccount || normalizedSplitCode) ? 'account' : undefined),
+      };
+    }
+
+    if (normalizedSubaccount || normalizedSplitCode) {
+      return {
+        subaccount: normalizedSubaccount || undefined,
+        splitCode: normalizedSubaccount ? undefined : (normalizedSplitCode || undefined),
+        bearer: paystackBearer || 'account',
+      };
+    }
+
+    const ownerId = String(metadata?.ownerId || metadata?.recipientId || '').trim();
+    const currentUserId = String(authUser?.id || '').trim();
+    const canUpdateBankDetails = Boolean(ownerId && currentUserId && ownerId === currentUserId);
+
+    if (!ownerId) {
+      const missingOwnerError: any = new Error(
+        'Organizer split routing is missing. Configure Paystack subaccount/split before checkout.'
+      );
+      missingOwnerError.routingErrorCode = 'SPLIT_ROUTING_MISSING';
+      missingOwnerError.canUpdateBankDetails = canUpdateBankDetails;
+      throw missingOwnerError;
+    }
+
+    const { data, error } = await supabase.functions.invoke('paystack-resolve-routing', {
+      body: { ownerId },
+    });
+
+    if (error) {
+      const resolveError: any = new Error(
+        `Unable to confirm organizer payout routing right now. ${error.message || 'Please try again.'}`
+      );
+      resolveError.routingErrorCode = 'ROUTING_LOOKUP_FAILED';
+      resolveError.canUpdateBankDetails = canUpdateBankDetails;
+      throw resolveError;
+    }
+
+    if (data?.success) {
+      const resolvedSubaccount = String(data?.routing?.subaccount || '').trim();
+      const resolvedSplitCode = String(data?.routing?.splitCode || '').trim();
+      if (resolvedSubaccount || resolvedSplitCode) {
+        return {
+          subaccount: resolvedSubaccount || undefined,
+          splitCode: resolvedSubaccount ? undefined : (resolvedSplitCode || undefined),
+          bearer: paystackBearer || ((resolvedSubaccount || resolvedSplitCode) ? 'account' : undefined),
+        };
+      }
+    }
+
+    const routingErrorMessage = String(
+      data?.error ||
+        data?.verificationReason ||
+        'Organizer split routing is missing. Configure Paystack subaccount/split before checkout.'
+    );
+
+    const routingError: any = new Error(routingErrorMessage);
+    routingError.routingErrorCode = String(data?.code || 'SPLIT_ROUTING_MISSING').trim() || 'SPLIT_ROUTING_MISSING';
+    routingError.canUpdateBankDetails = canUpdateBankDetails;
+    throw routingError;
+  };
+
   const openHostedCheckoutFlow = async (channels: PaystackChannel[]) => {
     const reference = buildReference();
-    const normalizedSubaccount = String(paystackSubaccount || '').trim();
-    const normalizedSplitCode = String(paystackSplitCode || '').trim();
-    const effectiveSubaccount = normalizedSubaccount || undefined;
-    const effectiveSplitCode = effectiveSubaccount ? undefined : (normalizedSplitCode || undefined);
-    const effectiveBearer = paystackBearer || ((effectiveSubaccount || effectiveSplitCode) ? 'account' : undefined);
-
-    if (requireSplitRouting && !effectiveSubaccount && !effectiveSplitCode) {
-      throw new Error('Organizer split routing is missing. Configure Paystack subaccount/split before checkout.');
-    }
+    const resolvedRouting = await resolveRoutingBeforeCheckout({
+      subaccount: paystackSubaccount,
+      splitCode: paystackSplitCode,
+    });
+    const effectiveSubaccount = resolvedRouting.subaccount;
+    const effectiveSplitCode = resolvedRouting.splitCode;
+    const effectiveBearer = resolvedRouting.bearer;
 
     await trackPaymentEvent('started', {
       reference,
@@ -339,6 +419,9 @@ export default function PaystackWebView({
       console.error('Paystack payment error:', error);
 
       const message = error?.message || 'There was an error starting the Paystack payment.';
+      const canShowRoutingFixButton =
+        typeof onRoutingSetupRequired === 'function' &&
+        (error?.canUpdateBankDetails === true || /split routing|subaccount|bank details|bank account/i.test(message));
       setPaymentStatus('failed');
       setErrorMessage(message);
       setIsLoading(false);
@@ -346,13 +429,26 @@ export default function PaystackWebView({
         source: 'hosted',
         message,
       });
+
+      const alertButtons: Array<{ text: string; style?: 'cancel' | 'default' | 'destructive'; onPress?: () => void }> = [];
+      if (canShowRoutingFixButton) {
+        alertButtons.push({
+          text: 'Update Bank Details',
+          onPress: () => {
+            onRoutingSetupRequired?.();
+          },
+        });
+      }
+
+      alertButtons.push(
+        { text: 'Retry', onPress: handlePaystackPayment },
+        { text: 'Cancel Payment', style: 'cancel', onPress: onCancel }
+      );
+
       Alert.alert(
         'Payment Unavailable',
         message,
-        [
-          { text: 'Cancel Payment', style: 'cancel', onPress: onCancel },
-          { text: 'Retry', onPress: handlePaystackPayment },
-        ]
+        alertButtons
       );
     }
   };

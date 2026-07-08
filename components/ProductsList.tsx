@@ -1306,6 +1306,7 @@ const ProductsList = ({
       {paystackProduct && (
         (() => {
           const ownerId = resolveProductOwnerId(paystackProduct);
+          const canCurrentUserFixRouting = Boolean(user?.id && ownerId && user.id === ownerId);
           const routing = getPaystackRoutingForOwner(ownerId);
           const productSubaccount = String((paystackProduct as any)?.paystackSubaccountCode || '').trim();
           const productSplitCode = String((paystackProduct as any)?.paystackSplitCode || '').trim();
@@ -1333,6 +1334,7 @@ const ProductsList = ({
           description={`Purchase: ${paystackProduct.name}`}
           metadata={{
             productId: paystackProduct.id,
+            ownerId,
             videoId,
             voucherId: activeVoucher?.id,
             discountAmount,
@@ -1353,6 +1355,17 @@ const ProductsList = ({
               : routing.bearer
           }
           requireSplitRouting={true}
+          onRoutingSetupRequired={
+            canCurrentUserFixRouting
+              ? () => {
+                  paystackCancelledRef.current = true;
+                  paystackProductRef.current = null;
+                  setShowPaystackModal(false);
+                  setPaystackProduct(null);
+                  router.push('/bank-accounts');
+                }
+              : undefined
+          }
         />
           );
         })()

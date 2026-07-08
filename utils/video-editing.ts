@@ -1,9 +1,17 @@
-import { Platform } from "react-native";
+import { NativeModules, Platform } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 
 let FFmpegKit: any = null;
 let ReturnCode: any = null;
 let ffmpegModuleLoadAttempted = false;
+
+function loadFFmpegKitFromPackage(packageName: string) {
+  if (packageName === "ffmpeg-kit-react-native") {
+    return require("ffmpeg-kit-react-native");
+  }
+
+  return null;
+}
 
 function ensureFFmpegModuleLoaded() {
   if (ffmpegModuleLoadAttempted) {
@@ -12,21 +20,26 @@ function ensureFFmpegModuleLoaded() {
 
   ffmpegModuleLoadAttempted = true;
 
-  try {
-    const m = require("@fathah_cr/react-native-ffmpeg-kit");
-    FFmpegKit = m.FFmpegKit;
-    ReturnCode = m.ReturnCode;
+  const nativeModule = NativeModules.FFmpegKitReactNativeModule as Record<string, unknown> | undefined;
+  const hasCallableNativeModule = !!nativeModule && typeof nativeModule.ffmpegSession === "function";
+
+  if (!hasCallableNativeModule) {
     return;
-  } catch {
-    // Fall through to alternate package name.
   }
 
-  try {
-    const m = require("ffmpeg-kit-react-native");
-    FFmpegKit = m.FFmpegKit;
-    ReturnCode = m.ReturnCode;
-  } catch {
-    // Native ffmpeg is not linked in this build.
+  const packageCandidates = ["ffmpeg-kit-react-native"];
+
+  for (const packageName of packageCandidates) {
+    try {
+      const m = loadFFmpegKitFromPackage(packageName);
+      if (m?.FFmpegKit && m?.ReturnCode) {
+        FFmpegKit = m.FFmpegKit;
+        ReturnCode = m.ReturnCode;
+        return;
+      }
+    } catch {
+      // Try next package candidate.
+    }
   }
 }
 
@@ -54,7 +67,7 @@ class VideoEditService {
 
   private async getFileSizeBytes(uri: string): Promise<number | null> {
     try {
-      const fileInfo = await FileSystem.getInfoAsync(uri, { size: true });
+      const fileInfo = await FileSystem.getInfoAsync(uri);
       return fileInfo.exists && typeof fileInfo.size === "number" ? fileInfo.size : null;
     } catch {
       return null;

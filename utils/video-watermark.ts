@@ -1,5 +1,6 @@
 import { NativeModules, Platform } from 'react-native';
 import { Asset } from 'expo-asset';
+import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
 
 let FFmpegKit: any = null;
@@ -7,7 +8,13 @@ let ReturnCode: any = null;
 let ffmpegModuleLoadAttempted = false;
 
 function hasNativeFFmpegModule() {
-  return !!NativeModules.FFmpegKitReactNativeModule;
+  const nativeModule = NativeModules.FFmpegKitReactNativeModule as Record<string, unknown> | undefined;
+  if (!nativeModule) {
+    return false;
+  }
+
+  // In some embedded/dev-client runtimes, a partial stub can exist but is not callable.
+  return typeof nativeModule.ffmpegSession === 'function';
 }
 
 function assignFFmpegPackage(m: any) {
@@ -18,6 +25,14 @@ function assignFFmpegPackage(m: any) {
   FFmpegKit = m.FFmpegKit;
   ReturnCode = m.ReturnCode;
   return true;
+}
+
+function loadFFmpegKitFromPackage(packageName: string) {
+  if (packageName === 'ffmpeg-kit-react-native') {
+    return require('ffmpeg-kit-react-native');
+  }
+
+  return null;
 }
 
 function ensureFFmpegModuleLoaded() {
@@ -31,29 +46,23 @@ function ensureFFmpegModuleLoaded() {
 
   if (!hasNativeFFmpegModule()) {
     console.warn(
-      '[Watermark] FFmpeg native module is not linked in this app binary. Rebuild the native app after installing @fathah_cr/react-native-ffmpeg-kit.'
+      '[Watermark] FFmpeg native module is not linked in this app binary. Rebuild the native app after installing ffmpeg-kit-react-native.'
     );
     return false;
   }
 
-  try {
-    const m = require('@fathah_cr/react-native-ffmpeg-kit');
-    if (assignFFmpegPackage(m)) {
-      return true;
-    }
-  } catch (error) {
-    console.warn('[Watermark] Failed to load @fathah_cr/react-native-ffmpeg-kit:', error);
-    // Fall through to alternate package name.
-  }
+  const packageCandidates = ['ffmpeg-kit-react-native'];
 
-  try {
-    const m = require('ffmpeg-kit-react-native');
-    if (assignFFmpegPackage(m)) {
-      return true;
+  for (const packageName of packageCandidates) {
+    try {
+      const m = loadFFmpegKitFromPackage(packageName);
+      if (assignFFmpegPackage(m)) {
+        console.log(`[Watermark] Loaded FFmpeg module from ${packageName}`);
+        return true;
+      }
+    } catch (error) {
+      console.warn(`[Watermark] Failed to load ${packageName}:`, error);
     }
-  } catch (error) {
-    console.warn('[Watermark] Failed to load ffmpeg-kit-react-native:', error);
-    // Native ffmpeg is not linked in this build.
   }
 
   FFmpegKit = null;
@@ -84,6 +93,8 @@ export class VideoWatermarkService {
   private static instance: VideoWatermarkService;
   private watermarkUri: string | null = null;
   private backgroundWatermarkJobs = new Map<string, Promise<string>>();
+  private cachedWatermarkApiBaseUrl: string | null = null;
+  private lastWatermarkApiResolutionAt = 0;
 
   private resolveFileExtension(inputUri: string, fallback: string): string {
     const normalizedFallback = fallback.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'bin';
@@ -157,6 +168,174 @@ export class VideoWatermarkService {
 
   private sanitizeCacheKey(cacheKey: string): string {
     return cacheKey.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+  }
+
+  private getWatermarkApiCandidates(): string[] {
+    const urls: string[] = [];
+
+    const explicit = process.env.EXPO_PUBLIC_RORK_API_BASE_URL?.trim();
+    if (explicit) {
+      urls.push(explicit.replace(/\/+$/, ''));
+    }
+
+    const productionApi = process.env.EXPO_PUBLIC_PRODUCTION_API_BASE_URL?.trim();
+    if (productionApi) {
+      urls.push(productionApi.replace(/\/+$/, ''));
+    }
+
+    const hostUri =
+      Constants.expoConfig?.hostUri ||
+      (Constants as any)?.manifest2?.extra?.expoGo?.debuggerHost ||
+      (Constants as any)?.manifest?.debuggerHost ||
+      '';
+
+    const host = hostUri.split(':')[0];
+    if (host && host !== 'localhost' && host !== '127.0.0.1') {
+      urls.push(`http://${host}:3001`);
+    }
+
+    urls.push('http://localhost:3001');
+    urls.push('http://127.0.0.1:3001');
+
+    if (Platform.OS === 'android') {
+      urls.push('http://10.0.2.2:3001');
+    }
+
+    return Array.from(new Set(urls));
+  }
+
+  private async callWatermarkApi(baseUrl: string, path: string, init: RequestInit): Promise<any | null> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20_000);
+
+    try {
+      const response = await fetch(`${baseUrl}${path}`, {
+        ...init,
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.toLowerCase().includes('application/json')) {
+        return null;
+      }
+
+      return await response.json();
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  private async tryRemoteWatermarkByUrl(
+    baseUrl: string,
+    sourceUrl: string,
+    options: { position: string; opacity: number; scale: number }
+  ): Promise<string | null> {
+    const payload = {
+      videoUrl: sourceUrl,
+      position: options.position,
+      opacity: options.opacity,
+      scale: options.scale,
+    };
+
+    const json = await this.callWatermarkApi(baseUrl, '/api/video/watermark', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const remoteUrl = typeof json?.watermarkedUrl === 'string' ? json.watermarkedUrl : '';
+    if (!json?.success || !remoteUrl) {
+      return null;
+    }
+
+    return this.ensureLocalFile(remoteUrl, 'wm_remote_result');
+  }
+
+  private async tryRemoteWatermarkByUpload(
+    baseUrl: string,
+    localVideoUri: string,
+    options: { position: string; opacity: number; scale: number }
+  ): Promise<string | null> {
+    const form = new FormData();
+    form.append('video', {
+      uri: localVideoUri,
+      name: 'share-source.mp4',
+      type: 'video/mp4',
+    } as any);
+    form.append('position', options.position);
+    form.append('opacity', String(options.opacity));
+    form.append('scale', String(options.scale));
+
+    const json = await this.callWatermarkApi(baseUrl, '/api/video/watermark-upload', {
+      method: 'POST',
+      body: form,
+    });
+
+    const remoteUrl = typeof json?.watermarkedUrl === 'string' ? json.watermarkedUrl : '';
+    if (!json?.success || !remoteUrl) {
+      return null;
+    }
+
+    return this.ensureLocalFile(remoteUrl, 'wm_remote_upload_result');
+  }
+
+  private isRemoteEligibleSourceUrl(uri: string): boolean {
+    const value = (uri || '').trim().toLowerCase();
+    if (!value) return false;
+    if (value.startsWith('http://') || value.startsWith('https://')) return true;
+    return false;
+  }
+
+  private async addWatermarkRemotely(
+    videoUri: string,
+    options: { position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'; opacity: number; scale: number },
+    sourceUrl?: string
+  ): Promise<string | null> {
+    const now = Date.now();
+    const candidates = this.getWatermarkApiCandidates();
+    const prioritized = this.cachedWatermarkApiBaseUrl
+      && now - this.lastWatermarkApiResolutionAt < 60_000
+      ? [
+          this.cachedWatermarkApiBaseUrl,
+          ...candidates.filter((candidate) => candidate !== this.cachedWatermarkApiBaseUrl),
+        ]
+      : candidates;
+
+    const localVideoUri = await this.ensureLocalFile(videoUri, 'wm_remote_src');
+
+    for (const baseUrl of prioritized) {
+      try {
+        let resultUri: string | null = null;
+
+        if (sourceUrl && this.isRemoteEligibleSourceUrl(sourceUrl)) {
+          resultUri = await this.tryRemoteWatermarkByUrl(baseUrl, sourceUrl, options);
+        }
+
+        if (!resultUri) {
+          resultUri = await this.tryRemoteWatermarkByUpload(baseUrl, localVideoUri, options);
+        }
+
+        if (resultUri) {
+          this.cachedWatermarkApiBaseUrl = baseUrl;
+          this.lastWatermarkApiResolutionAt = Date.now();
+          console.log('[Watermark] Successfully applied watermark via backend:', baseUrl);
+          return resultUri;
+        }
+      } catch (error) {
+        console.warn('[Watermark] Backend watermark attempt failed for', baseUrl, error);
+      }
+    }
+
+    this.lastWatermarkApiResolutionAt = Date.now();
+    return null;
   }
 
   private getCachedWatermarkUri(cacheKey: string): string {
@@ -326,12 +505,21 @@ export class VideoWatermarkService {
       console.error('[Watermark] Local FFmpeg watermark threw error:', error);
     }
 
+    try {
+      const remoteResult = await this.addWatermarkRemotely(videoUri, opts, options.sourceUrl);
+      if (remoteResult) {
+        return remoteResult;
+      }
+    } catch (error) {
+      console.error('[Watermark] Remote watermark fallback threw error:', error);
+    }
+
     const msg =
-      'Watermark failed: local on-device watermarking is unavailable on this build.';
+      'Watermark failed: both local and backend watermarking are unavailable right now.';
     console.warn('[Watermark]', msg, 'Returning original video');
     
     if (strict && !allowFallback) {
-      throw new Error(msg + ' Install and rebuild with ffmpeg-kit-react-native (or @fathah_cr/react-native-ffmpeg-kit).');
+      throw new Error(msg + ' Install and rebuild with ffmpeg-kit-react-native.');
     }
     
     return videoUri;

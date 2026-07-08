@@ -26,6 +26,8 @@ const paystackHeaders = {
   'Content-Type': 'application/json',
 };
 
+const paystackMode = paystackSecretKey.startsWith('sk_live_') ? 'live' : 'test';
+
 const normalize = (value: string) =>
   String(value || '')
     .trim()
@@ -116,8 +118,8 @@ const createSubaccount = async (payload: {
   return body.data;
 };
 
-const listSubaccounts = async () => {
-  const response = await fetch('https://api.paystack.co/subaccount?perPage=100&page=1', {
+const listSubaccountsPage = async (page: number, perPage = 100) => {
+  const response = await fetch(`https://api.paystack.co/subaccount?perPage=${perPage}&page=${page}`, {
     headers: paystackHeaders,
   });
 
@@ -127,6 +129,32 @@ const listSubaccounts = async () => {
   }
 
   return Array.isArray(body.data) ? body.data : [];
+};
+
+const findMatchingSubaccount = async (payload: { accountNumber: string; bankCode: string }) => {
+  const targetAccountNumber = String(payload.accountNumber || '').trim();
+  const targetBankCode = String(payload.bankCode || '').trim();
+  if (!targetAccountNumber) return null;
+
+  const perPage = 100;
+  const maxPages = 20;
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const pageRows = await listSubaccountsPage(page, perPage);
+    if (!pageRows.length) break;
+
+    const exactMatch = pageRows.find((entry: any) => {
+      const entryAccountNumber = String(entry?.account_number || '').trim();
+      const entryBankCode = String(entry?.settlement_bank_code || '').trim();
+      return entryAccountNumber === targetAccountNumber && (!entryBankCode || entryBankCode === targetBankCode);
+    });
+
+    if (exactMatch) return exactMatch;
+
+    if (pageRows.length < perPage) break;
+  }
+
+  return null;
 };
 
 const getSubaccountByCode = async (subaccountCode: string) => {
@@ -316,13 +344,10 @@ Deno.serve(async (req) => {
         id: payload?.paystackSubaccountId || null,
       };
     } else {
-      const availableSubaccounts = await listSubaccounts();
-      const matchedSubaccount =
-        availableSubaccounts.find((entry: any) => {
-          const entryAccountNumber = String(entry?.account_number || '').trim();
-          const entryBankCode = String(entry?.settlement_bank_code || '').trim();
-          return entryAccountNumber === accountNumber && (!entryBankCode || entryBankCode === bankCode);
-        }) || null;
+      const matchedSubaccount = await findMatchingSubaccount({
+        accountNumber,
+        bankCode,
+      });
 
       subaccount =
         matchedSubaccount ||
@@ -337,23 +362,28 @@ Deno.serve(async (req) => {
     const subaccountCode = String(subaccount?.subaccount_code || existingSubaccountCode || '').trim();
     const hydratedSubaccount = subaccountCode ? await getSubaccountByCode(subaccountCode) : null;
     const paystackSubaccountVerified = hydratedSubaccount?.is_verified === true;
-    const verificationStatus = paystackSubaccountVerified ? 'verified' : 'pending';
-    const subaccountReason = paystackSubaccountVerified
-      ? null
-      : 'Paystack subaccount is pending verification. Open Paystack Dashboard > Subaccounts and complete Verify Subaccount to enable full payout readiness.';
+    const recipientCode = String(recipient?.recipient_code || existingRecipientCode || '').trim();
+    const splitRoutingReady = Boolean(recipientCode && subaccountCode);
+    const verificationStatus = splitRoutingReady ? 'verified' : 'failed';
+    const subaccountReason = !paystackSubaccountVerified
+      ? 'Paystack subaccount KYC is still pending on the dashboard, but payout routing has been created.'
+      : null;
     const combinedReason = [verificationWarning, subaccountReason].filter(Boolean).join(' ');
 
     return new Response(
       JSON.stringify({
-        verified: true,
+        verified: splitRoutingReady,
         verificationStatus,
         verificationReason: combinedReason || null,
+        paystackMode,
         accountName: effectiveAccountName,
         bankCode,
-        paystackRecipientCode: recipient?.recipient_code || existingRecipientCode || null,
+        paystackSplitRoutingReady: splitRoutingReady,
+        paystackRecipientCode: recipientCode || null,
         paystackRecipientId: recipient?.id || payload?.paystackRecipientId || null,
         paystackSubaccountCode: subaccountCode || null,
         paystackSubaccountId: hydratedSubaccount?.id || subaccount?.id || payload?.paystackSubaccountId || null,
+        paystackSubaccountName: hydratedSubaccount?.business_name || subaccount?.business_name || null,
         paystackSubaccountVerified,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

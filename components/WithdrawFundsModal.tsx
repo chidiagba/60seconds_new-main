@@ -12,6 +12,7 @@ import {
   Alert
 } from 'react-native';
 import { X, Landmark, AlertTriangle } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
 import { useWalletStore } from '@/store/wallet-store';
 import { BusinessBankAccount } from '@/types/wallet';
@@ -23,6 +24,7 @@ interface WithdrawFundsModalProps {
 }
 
 export default function WithdrawFundsModal({ visible, onClose }: WithdrawFundsModalProps) {
+  const router = useRouter();
   const { 
     wallet, 
     transactions,
@@ -46,6 +48,8 @@ export default function WithdrawFundsModal({ visible, onClose }: WithdrawFundsMo
     businessBankAccount?.payoutProvider === 'paystack';
   const bankVerificationState =
     businessBankAccount?.verificationStatus || (businessBankAccount?.isVerified ? 'verified' : 'pending');
+  const hasPaystackRecipientCode = Boolean(String(businessBankAccount?.paystackRecipientCode || '').trim());
+  const hasPaystackSubaccountCode = Boolean(String(businessBankAccount?.paystackSubaccountCode || '').trim());
   const claimableBalance = React.useMemo(() => {
     const isCompletedLike = (status?: string) => {
       const normalized = String(status || '').trim().toLowerCase();
@@ -115,7 +119,60 @@ export default function WithdrawFundsModal({ visible, onClose }: WithdrawFundsMo
     }
     
     if (!businessBankAccount) {
-      Alert.alert('Bank Account Required', 'Please add a bank account to your profile.');
+      Alert.alert(
+        'Bank Account Required',
+        'Please add and verify your bank account before withdrawing.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Update Bank Details',
+            onPress: () => {
+              onClose();
+              router.push('/bank-accounts');
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    if (!businessBankAccount.isVerified) {
+      const reason =
+        businessBankAccount.verificationReason ||
+        'Your bank details could not be verified. Please update your account details and try again.';
+
+      Alert.alert(
+        'Bank Verification Required',
+        reason,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Update Bank Details',
+            onPress: () => {
+              onClose();
+              router.push('/bank-accounts');
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    if (usesDirectPayout && (!hasPaystackRecipientCode || !hasPaystackSubaccountCode)) {
+      Alert.alert(
+        'Paystack Routing Incomplete',
+        'Your Paystack recipient/subaccount setup is incomplete. Please update your bank details to finish payout routing.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Update Bank Details',
+            onPress: () => {
+              onClose();
+              router.push('/bank-accounts');
+            },
+          },
+        ]
+      );
       return;
     }
     
