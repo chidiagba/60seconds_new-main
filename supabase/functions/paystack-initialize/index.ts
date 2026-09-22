@@ -120,6 +120,12 @@ Deno.serve(async (req) => {
       transactionChargeKobo = Math.min(Math.max(inferredKobo, 0), amountKobo);
     }
 
+    // Default to a 4% platform fee split when routing to a single subaccount and
+    // no explicit transaction charge was supplied by the caller.
+    if (transactionChargeKobo === undefined && effectiveSubaccount) {
+      transactionChargeKobo = Math.min(Math.round(amountKobo * 0.04), amountKobo);
+    }
+
     const ref = reference || `60s_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     const paystackPayload: Record<string, unknown> = {

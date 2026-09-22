@@ -24,6 +24,18 @@ interface TransactionItemProps {
 export default function TransactionItem({ transaction, onPress }: TransactionItemProps) {
   const router = useRouter();
   const selectedCurrency = useWalletStore((state) => state.selectedCurrency);
+  const ledgerEntry = String((transaction.metadata as any)?.entry || '').trim();
+  const provider = String((transaction.metadata as any)?.paymentProvider || (transaction.metadata as any)?.payment_provider || '').toLowerCase();
+  const purchaseItems = Array.isArray((transaction.metadata as any)?.items)
+    ? (transaction.metadata as any).items
+    : [];
+  const firstItem = purchaseItems[0] || {};
+  const itemQuantity = purchaseItems.reduce(
+    (sum: number, item: any) => sum + Math.max(1, Number(item?.quantity || 1)),
+    0
+  );
+  const itemKind = String(firstItem?.type || '').toLowerCase();
+  const itemName = String(firstItem?.name || firstItem?.product_name || '').trim();
   
   const getTransactionIcon = () => {
     const isTwint = transaction.metadata?.paymentProvider === 'twint';
@@ -56,6 +68,14 @@ export default function TransactionItem({ transaction, onPress }: TransactionIte
   };
   
   const getTransactionTitle = () => {
+    if (ledgerEntry === 'owner_credit') {
+      if (itemKind.includes('ticket')) return 'Ticket Sale';
+      if (itemKind) return 'Product Sale';
+      return 'Purchase Payment';
+    }
+    if (ledgerEntry === 'paystack_bank_settlement') {
+      return transaction.status === 'completed' ? 'Bank Settlement' : 'Bank Settlement Pending';
+    }
     const isTwint = transaction.metadata?.paymentProvider === 'twint';
     
     switch (transaction.type) {
@@ -74,6 +94,24 @@ export default function TransactionItem({ transaction, onPress }: TransactionIte
       default:
         return 'Transaction';
     }
+  };
+
+  const getDescription = () => {
+    if (ledgerEntry === 'owner_credit') {
+      const count = itemQuantity > 0 ? `${itemQuantity}× ` : '';
+      const order = String((transaction.metadata as any)?.order_id || '').slice(0, 8);
+      if (itemName) return `${count}${itemName}${purchaseItems.length > 1 ? ` +${purchaseItems.length - 1}` : ''}`;
+      if (order) return `Paid order #${order}`;
+      return provider === 'paystack' ? 'Paid purchase via Paystack' : 'Paid purchase';
+    }
+    if (ledgerEntry === 'paystack_bank_settlement') {
+      const bank = String((transaction.metadata as any)?.bank_name || 'connected bank');
+      const ending = String((transaction.metadata as any)?.bank_account_ending || '');
+      return transaction.status === 'completed'
+        ? `Paystack subaccount to ${bank}${ending ? ` • ${ending}` : ''}`
+        : `Awaiting settlement to ${bank}${ending ? ` • ${ending}` : ''}`;
+    }
+    return String(transaction.description || 'Transaction');
   };
   
   const getStatusColor = () => {
@@ -124,7 +162,12 @@ export default function TransactionItem({ transaction, onPress }: TransactionIte
     (transaction.metadata as any)?.currency,
     selectedCurrency
   );
-  const formattedAmount = formatCurrency(Math.abs(transaction.amount), transactionCurrency);
+  const safeAmount = Number.isFinite(Number(transaction?.amount)) ? Number(transaction.amount) : 0;
+  const isOutgoing = transaction.type === 'withdrawal' ||
+    String((transaction.metadata as any)?.entry || '').trim() === 'owner_withdrawal' ||
+    safeAmount < 0;
+  const safeStatus = String(transaction?.status || 'pending').trim().toLowerCase();
+  const formattedAmount = formatCurrency(Math.abs(safeAmount), transactionCurrency);
   
   return (
     <TouchableOpacity style={styles.container} onPress={handlePress}>
@@ -138,7 +181,7 @@ export default function TransactionItem({ transaction, onPress }: TransactionIte
       <View style={styles.detailsContainer}>
         <Text style={styles.title}>{getTransactionTitle()}</Text>
         <Text style={styles.description} numberOfLines={1}>
-          {transaction.description}
+          {getDescription()}
         </Text>
         <Text style={styles.date}>{formatDateTime(transaction.createdAt)}</Text>
       </View>
@@ -146,14 +189,14 @@ export default function TransactionItem({ transaction, onPress }: TransactionIte
       <View style={styles.amountContainer}>
         <Text style={[
           styles.amount, 
-          transaction.amount > 0 ? styles.positive : styles.negative
+          !isOutgoing ? styles.positive : styles.negative
         ]}>
-          {transaction.amount > 0 ? '+' : '-'}{formattedAmount}
+          {!isOutgoing ? '+' : '-'}{formattedAmount}
         </Text>
         
         <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor()}20` }]}>
           <Text style={[styles.statusText, { color: getStatusColor() }]}>
-            {transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)}
+            {safeStatus.charAt(0).toUpperCase() + safeStatus.slice(1)}
           </Text>
         </View>
         

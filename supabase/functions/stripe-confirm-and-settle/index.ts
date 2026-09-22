@@ -318,7 +318,7 @@ Deno.serve(async (req) => {
         .from("orders")
         .update({
           payment_status: "paid",
-          status: "completed",
+          status: "open",
           payment_reference: paymentIntentId,
           business_id: ownerId,
           updated_at: nowIso,

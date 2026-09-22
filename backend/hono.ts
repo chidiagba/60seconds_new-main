@@ -6,10 +6,6 @@ import { createContext } from "./trpc/create-context.js";
 import { z } from "zod";
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
-import ffmpegPath from 'ffmpeg-static';
-import path from 'path';
-import { mkdir, readFile, unlink, writeFile } from 'fs/promises';
-import { spawn } from 'child_process';
 
 // Initialize Supabase client for server-side operations
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
@@ -21,39 +17,6 @@ const supabase = supabaseUrl && supabaseServiceKey
 
 // app will be mounted at /api
 const app = new Hono();
-
-const WATERMARKED_VIDEO_DIR = path.join(process.cwd(), 'public', 'watermarked-videos');
-const WATERMARK_IMAGE_PATH = path.join(process.cwd(), 'assets', 'images', 'second.png');
-
-const WatermarkRequestSchema = z.object({
-  videoUrl: z.string().url(),
-  position: z.enum(['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center']).optional(),
-  opacity: z.number().min(0.15).max(1).optional(),
-  scale: z.number().min(0.04).max(0.2).optional(),
-});
-
-function getOverlayExpression(position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center') {
-  switch (position) {
-    case 'top-left':
-      return '20:20';
-    case 'top-right':
-      return 'main_w-overlay_w-20:20';
-    case 'bottom-left':
-      return '20:main_h-overlay_h-20';
-    case 'bottom-right':
-      return 'main_w-overlay_w-20:main_h-overlay_h-20';
-    default:
-      return '(main_w-overlay_w)/2:(main_h-overlay_h)/2';
-  }
-}
-
-async function ensureWatermarkDir() {
-  await mkdir(WATERMARKED_VIDEO_DIR, { recursive: true });
-}
-
-function getPublicBaseUrl(c: any) {
-  return process.env.EXPO_PUBLIC_RORK_API_BASE_URL || process.env.RORK_API_BASE_URL || new URL(c.req.url).origin;
-}
 
 function extractStoragePath(fileUrl: string | null | undefined, bucketName: string): string | null {
   if (!fileUrl) {
@@ -534,61 +497,6 @@ async function settlePaystackWalletFunding(args: {
   return { userId, amount, newBalance, alreadySettled: false };
 }
 
-async function runWatermarkFfmpeg(inputPath: string, outputPath: string, options: { position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'; opacity: number; scale: number; }) {
-  const ffmpegBin = ffmpegPath || 'ffmpeg';
-  const overlayExpression = getOverlayExpression(options.position);
-  const filterComplex = [
-    `[1:v]format=rgba,colorkey=0xFFFFFF:0.22:0.08[wmraw]`,
-    `[wmraw][0:v]scale2ref=w=main_w*${options.scale}:h=ow/mdar[wm][base]`,
-    `[wm]colorchannelmixer=aa=${options.opacity}[wm2]`,
-    `[base][wm2]overlay=${overlayExpression}:format=auto[v]`,
-  ].join(';');
-
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(ffmpegBin, [
-      '-y',
-      '-i', inputPath,
-      '-i', WATERMARK_IMAGE_PATH,
-      '-filter_complex', filterComplex,
-      '-map', '[v]',
-      '-map', '0:a?',
-      '-c:v', 'libx264',
-      '-pix_fmt', 'yuv420p',
-      '-profile:v', 'main',
-      '-preset', 'veryfast',
-      '-crf', '23',
-      '-c:a', 'aac',
-      '-b:a', '128k',
-      '-movflags', '+faststart',
-      outputPath,
-    ]);
-
-    let stderr = '';
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    child.on('error', (error) => reject(error));
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(new Error(`FFmpeg failed with code ${code}: ${stderr.slice(-1200)}`));
-    });
-  });
-}
-
-async function downloadUrlToFile(url: string, targetPath: string) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to download source video (${response.status})`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  await writeFile(targetPath, Buffer.from(arrayBuffer));
-}
-
 // Enable CORS for all routes
 app.use("*", cors());
 
@@ -705,94 +613,6 @@ app.delete('/api/videos/:videoId', async (c) => {
   } catch (error: any) {
     console.error('❌ /api/videos/:videoId delete error:', error);
     return c.json({ success: false, error: error?.message || 'Failed to delete video.' }, 500);
-  }
-});
-
-app.get('/media/watermarked/:fileName', async (c) => {
-  const fileName = path.basename(c.req.param('fileName'));
-  const filePath = path.join(WATERMARKED_VIDEO_DIR, fileName);
-
-  try {
-    const file = await readFile(filePath);
-    c.header('Content-Type', 'video/mp4');
-    c.header('Cache-Control', 'public, max-age=31536000, immutable');
-    return c.body(file);
-  } catch {
-    return c.json({ error: 'Watermarked video not found' }, 404);
-  }
-});
-
-app.post('/api/video/watermark', async (c) => {
-  try {
-    const body = await c.req.json();
-    const parsed = WatermarkRequestSchema.parse(body);
-
-    await ensureWatermarkDir();
-
-    const position = parsed.position || 'bottom-right';
-    const opacity = parsed.opacity ?? 0.82;
-    const scale = parsed.scale ?? 0.16;
-
-    const token = crypto.randomUUID();
-    const inputPath = path.join(WATERMARKED_VIDEO_DIR, `${token}_in.mp4`);
-    const outputFile = `${token}.mp4`;
-    const outputPath = path.join(WATERMARKED_VIDEO_DIR, outputFile);
-
-    await downloadUrlToFile(parsed.videoUrl, inputPath);
-    await runWatermarkFfmpeg(inputPath, outputPath, { position, opacity, scale });
-    await unlink(inputPath).catch(() => {});
-
-    const baseUrl = getPublicBaseUrl(c);
-    return c.json({
-      success: true,
-      watermarkedUrl: `${baseUrl}/media/watermarked/${outputFile}`,
-    });
-  } catch (error: any) {
-    console.error('❌ /api/video/watermark error:', error);
-    return c.json({
-      success: false,
-      error: error?.message || 'Failed to watermark video',
-    }, 500);
-  }
-});
-
-app.post('/api/video/watermark-upload', async (c) => {
-  try {
-    const formData = await c.req.formData();
-    const file = formData.get('video') as any;
-    if (!file || typeof file.arrayBuffer !== 'function') {
-      return c.json({ success: false, error: 'Missing uploaded video file' }, 400);
-    }
-
-    await ensureWatermarkDir();
-
-    const positionRaw = (formData.get('position')?.toString() || 'bottom-right') as 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
-    const validPositions = new Set(['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center']);
-    const position = validPositions.has(positionRaw) ? positionRaw : 'bottom-right';
-    const opacity = Math.max(0.15, Math.min(1, Number(formData.get('opacity') ?? 0.82)));
-    const scale = Math.max(0.08, Math.min(0.4, Number(formData.get('scale') ?? 0.16)));
-
-    const token = crypto.randomUUID();
-    const inputPath = path.join(WATERMARKED_VIDEO_DIR, `${token}_upload_in.mp4`);
-    const outputFile = `${token}.mp4`;
-    const outputPath = path.join(WATERMARKED_VIDEO_DIR, outputFile);
-
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(inputPath, fileBuffer);
-    await runWatermarkFfmpeg(inputPath, outputPath, { position, opacity, scale });
-    await unlink(inputPath).catch(() => {});
-
-    const baseUrl = getPublicBaseUrl(c);
-    return c.json({
-      success: true,
-      watermarkedUrl: `${baseUrl}/media/watermarked/${outputFile}`,
-    });
-  } catch (error: any) {
-    console.error('❌ /api/video/watermark-upload error:', error);
-    return c.json({
-      success: false,
-      error: error?.message || 'Failed to watermark uploaded video',
-    }, 500);
   }
 });
 

@@ -150,6 +150,165 @@ const resolveOwnerId = async (recipientId: string | null | undefined, orderRow: 
   return Array.from(owners)[0] || null;
 };
 
+const ensureTicketReceiptsAndInventory = async (input: {
+  orderId: string;
+  buyerId: string;
+  ownerId: string;
+  orderRow: any;
+  metadata: any;
+  fallbackCurrency: string;
+}) => {
+  const { orderId, buyerId, ownerId, orderRow, metadata, fallbackCurrency } = input;
+
+  const { data: existingReceipts, error: existingReceiptsError } = await supabaseAdmin
+    .from("ticket_receipts")
+    .select("id")
+    .eq("order_id", orderId)
+    .limit(1);
+
+  if (existingReceiptsError) {
+    throw new Error(`Failed checking existing ticket receipts: ${existingReceiptsError.message}`);
+  }
+  if ((existingReceipts || []).length > 0) {
+    return;
+  }
+
+  const normalizedItems: Array<{ productId: string; quantity: number; unitPrice: number; currency?: string }> = [];
+  if (Array.isArray(metadata?.items)) {
+    for (const item of metadata.items) {
+      const productId = String(item?.productId || item?.product_id || "").trim();
+      if (!productId) continue;
+      normalizedItems.push({
+        productId,
+        quantity: Math.max(1, Number(item?.quantity || 1)),
+        unitPrice: Number(item?.unitPrice || item?.unit_price || item?.price || 0),
+        currency: item?.currency,
+      });
+    }
+  }
+
+  if (!normalizedItems.length && Array.isArray(orderRow?.items)) {
+    for (const item of orderRow.items) {
+      const productId = String(item?.product_id || "").trim();
+      if (!productId) continue;
+      normalizedItems.push({
+        productId,
+        quantity: Math.max(1, Number(item?.quantity || 1)),
+        unitPrice: Number(item?.price || 0),
+        currency: item?.currency,
+      });
+    }
+  }
+
+  if (!normalizedItems.length) {
+    return;
+  }
+
+  const productIds = Array.from(new Set(normalizedItems.map((item) => item.productId)));
+  const { data: products, error: productsError } = await supabaseAdmin
+    .from("products")
+    .select("id,name,type,price,currency,event_id,business_id,available_quantity,sold_quantity")
+    .in("id", productIds);
+
+  if (productsError) {
+    throw new Error(`Failed loading products for ticket issuance: ${productsError.message}`);
+  }
+
+  const productsById = new Map<string, any>((products || []).map((product: any) => [product.id, product]));
+  const eventIds = Array.from(new Set((products || []).map((product: any) => product.event_id).filter(Boolean)));
+  let eventsById = new Map<string, any>();
+
+  if (eventIds.length > 0) {
+    const { data: events, error: eventsError } = await supabaseAdmin
+      .from("events")
+      .select("id,user_id,event_name,start_date,end_date,location_name,video_id")
+      .in("id", eventIds);
+
+    if (eventsError) {
+      throw new Error(`Failed loading events for ticket issuance: ${eventsError.message}`);
+    }
+
+    eventsById = new Map<string, any>((events || []).map((event: any) => [event.id, event]));
+  }
+
+  const nowIso = new Date().toISOString();
+  const orderNumber = `ORD-${String(orderId).slice(0, 8).toUpperCase()}`;
+  let serial = 1;
+  const rows: Record<string, any>[] = [];
+
+  for (const item of normalizedItems) {
+    const product = productsById.get(item.productId);
+    if (!product) continue;
+    const event = product?.event_id ? eventsById.get(product.event_id) : null;
+    const qty = Math.max(1, Number(item.quantity || 1));
+    const unitPrice = Number.isFinite(Number(item.unitPrice)) && Number(item.unitPrice) > 0
+      ? Number(item.unitPrice)
+      : Number(product?.price || 0);
+    const receiptType = String(product?.type || "ticket").toLowerCase();
+    const isTicket = receiptType === "ticket";
+    const receiptCount = isTicket ? qty : 1;
+
+    for (let i = 0; i < receiptCount; i += 1) {
+      const receiptQuantity = isTicket ? 1 : qty;
+      const seatNo = isTicket ? `A${String(serial).padStart(2, "0")}` : null;
+      rows.push({
+        order_id: orderId,
+        order_number: orderNumber,
+        buyer_id: buyerId,
+        owner_id: ownerId,
+        video_id: event?.video_id || orderRow?.video_id || null,
+        event_id: product?.event_id || null,
+        product_id: product.id,
+        ticket_type: receiptType,
+        receipt_kind: isTicket ? "ticket" : "product",
+        ticket_title: product?.name || (isTicket ? "Ticket" : "Product"),
+        quantity: receiptQuantity,
+        unit_price: unitPrice,
+        total_price: unitPrice * receiptQuantity,
+        currency: String(item.currency || product?.currency || fallbackCurrency || "USD").toUpperCase(),
+        qr_code_data: `${isTicket ? "TICKET" : "PRODUCT"}:${orderNumber}:${product.id}:${serial}:${Date.now()}`,
+        seat_no: seatNo,
+        event_name: event?.event_name || "60seconds Event",
+        event_start_date: event?.start_date || null,
+        event_end_date: event?.end_date || null,
+        location_name: event?.location_name || "Location not specified",
+        is_active: true,
+        issued_at: nowIso,
+        created_at: nowIso,
+        updated_at: nowIso,
+      });
+      serial += 1;
+    }
+  }
+
+  if (!rows.length) {
+    return;
+  }
+
+  const { error: ticketInsertError } = await supabaseAdmin.from("ticket_receipts").insert(rows);
+  if (ticketInsertError) {
+    throw new Error(`Failed creating ticket receipts: ${ticketInsertError.message}`);
+  }
+
+  const qtyByProduct = new Map<string, number>();
+  for (const item of normalizedItems) {
+    qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) || 0) + Math.max(1, Number(item.quantity || 1)));
+  }
+
+  for (const [productId, qty] of qtyByProduct.entries()) {
+    const product = productsById.get(productId);
+    if (!product) continue;
+
+    const { error: stockUpdateError } = await supabaseAdmin.rpc("reconcile_product_inventory", {
+      target_product_id: productId,
+    });
+
+    if (stockUpdateError) {
+      throw new Error(`Failed updating product inventory for ${productId}: ${stockUpdateError.message}`);
+    }
+  }
+};
+
 const settleWalletFunding = async (data: any, metadata: any) => {
   const userId = String(metadata?.userId || metadata?.user_id || "").trim();
   if (!userId) {
@@ -182,7 +341,6 @@ const settleWalletFunding = async (data: any, metadata: any) => {
     .upsert(
       {
         user_id: userId,
-        currency,
         is_active: true,
         updated_at: nowIso,
       },
@@ -235,12 +393,21 @@ const settleWalletFunding = async (data: any, metadata: any) => {
 };
 
 const settleOrderPayment = async (data: any, metadata: any) => {
-  const orderId = String(metadata?.orderId || metadata?.order_id || "").trim();
+  const paymentReference = String(data?.reference || "").trim() || null;
+  let orderId = String(metadata?.orderId || metadata?.order_id || "").trim();
+  let expectedPayment: any = null;
+  if (paymentReference) {
+    const { data: paymentRow, error: paymentLookupError } = await supabaseAdmin
+      .from("payments").select("id,order_id,user_id,organizer_id,amount,currency,status")
+      .eq("payment_provider", "paystack").eq("provider_reference", paymentReference).maybeSingle();
+    if (paymentLookupError) throw new Error(`Payment lookup failed: ${paymentLookupError.message}`);
+    expectedPayment = paymentRow;
+    orderId = orderId || String(paymentRow?.order_id || "").trim();
+  }
   if (!orderId) {
     throw new Error("Missing orderId in Paystack metadata.");
   }
 
-  const paymentReference = String(data?.reference || "").trim() || null;
   const paymentTransactionId = String(data?.id || paymentReference || "").trim() || null;
   const grossAmount = roundMoney(Number(data?.amount || 0) / 100);
   const nowIso = new Date().toISOString();
@@ -270,6 +437,16 @@ const settleOrderPayment = async (data: any, metadata: any) => {
   }
 
   const effectiveGrossAmount = grossAmount > 0 ? grossAmount : roundMoney(Number(orderRow.total_amount || 0));
+  const expectedAmount = roundMoney(Number(expectedPayment?.amount ?? orderRow.total_amount ?? 0));
+  const expectedCurrency = String(expectedPayment?.currency || "NGN").toUpperCase();
+  const paidCurrency = String(data?.currency || "NGN").toUpperCase();
+  if (Math.abs(effectiveGrossAmount - expectedAmount) > 0.01 || paidCurrency !== expectedCurrency) {
+    await supabaseAdmin.from("payments").update({ status: "failed", provider_status: "amount_mismatch",
+      failure_reason: `Expected ${expectedAmount} ${expectedCurrency}; received ${effectiveGrossAmount} ${paidCurrency}`,
+      gateway_response: data, updated_at: nowIso }).eq("payment_provider", "paystack").eq("provider_reference", paymentReference);
+    console.error(JSON.stringify({ event: "payment_amount_mismatch", orderId, paymentReference, expectedAmount, expectedCurrency, effectiveGrossAmount, paidCurrency }));
+    throw new Error("Paystack amount or currency does not match the order.");
+  }
   const netAmount = deriveNetAmount(
     effectiveGrossAmount,
     Number(metadata?.netAmount ?? metadata?.net_amount ?? null),
@@ -289,11 +466,14 @@ const settleOrderPayment = async (data: any, metadata: any) => {
       {
         order_id: orderId,
         user_id: metadata?.userId || orderRow.user_id || null,
+        organizer_id: expectedPayment?.organizer_id || null,
         payment_provider: "paystack",
+        provider_reference: paymentReference,
         payment_method_id: data?.authorization?.authorization_code || null,
         amount: effectiveGrossAmount,
         currency,
         status: "completed",
+        provider_status: String(data?.status || "success"),
         transaction_id: paymentTransactionId,
         gateway_reference: paymentReference,
         gateway_response: data,
@@ -307,9 +487,10 @@ const settleOrderPayment = async (data: any, metadata: any) => {
         processing_fee: platformFeeAmount,
         net_amount: netAmount,
         completed_at: nowIso,
+        paid_at: data?.paid_at || nowIso,
         updated_at: nowIso,
       },
-      { onConflict: "transaction_id" }
+      { onConflict: "payment_provider,provider_reference" }
     );
 
   if (paymentUpsertError) {
@@ -317,7 +498,7 @@ const settleOrderPayment = async (data: any, metadata: any) => {
   }
 
   let orderUpdatePayload: Record<string, any> = {
-    status: "completed",
+    status: "open",
     payment_status: "paid",
     payment_method: "paystack",
     payment_provider: "paystack",
@@ -331,6 +512,7 @@ const settleOrderPayment = async (data: any, metadata: any) => {
       platform_fee_amount: platformFeeAmount,
       net_amount: netAmount,
       currency,
+      items: Array.isArray(orderRow.items) ? orderRow.items : [],
     },
     business_id: ownerId,
     updated_at: nowIso,
@@ -348,7 +530,7 @@ const settleOrderPayment = async (data: any, metadata: any) => {
     )
   ) {
     orderUpdatePayload = {
-      status: "completed",
+      status: "open",
       payment_method: "paystack",
       business_id: ownerId,
       updated_at: nowIso,
@@ -363,6 +545,27 @@ const settleOrderPayment = async (data: any, metadata: any) => {
   if (orderUpdateError) {
     throw new Error(`Failed to update order settlement fields: ${orderUpdateError.message}`);
   }
+
+  const { data: ledgerResult, error: ledgerError } = await supabaseAdmin.rpc("finalize_paystack_ledger", {
+    p_order_id: orderId, p_reference: paymentReference, p_transaction_id: paymentTransactionId,
+    p_owner_id: ownerId, p_buyer_id: orderRow.user_id, p_gross: effectiveGrossAmount,
+    p_net: netAmount, p_fee: platformFeeAmount, p_currency: currency,
+    p_metadata: { items: Array.isArray(orderRow.items) ? orderRow.items : [] },
+  });
+  if (ledgerError) throw new Error(`Canonical payment finalization failed: ${ledgerError.message}`);
+
+  await ensureTicketReceiptsAndInventory({
+    orderId,
+    buyerId: orderRow.user_id,
+    ownerId,
+    orderRow,
+    metadata,
+    fallbackCurrency: currency,
+  });
+
+  console.log(JSON.stringify({ event: "order_completed", orderId, paymentReference, alreadyFinalized: !!ledgerResult?.alreadyFinalized }));
+  return { success: true, alreadySettled: !!ledgerResult?.alreadyFinalized, mode: "order_payment", orderId, ownerId,
+    grossAmount: effectiveGrossAmount, netAmount, platformFeeAmount, ownerWalletBalance: ledgerResult?.walletBalance };
 
   if (alreadySettled) {
     return {
@@ -382,7 +585,6 @@ const settleOrderPayment = async (data: any, metadata: any) => {
     .upsert(
       {
         user_id: ownerId,
-        currency,
         is_verified: true,
         is_active: true,
         updated_at: nowIso,
@@ -411,10 +613,11 @@ const settleOrderPayment = async (data: any, metadata: any) => {
     amount: netAmount,
     type: "deposit",
     status: "completed",
-    description: "Paystack sale settlement",
+    description: "Payment received and sent to Paystack subaccount",
     transaction_fee: 0,
     metadata: {
       entry: "owner_credit",
+      lifecycle_stage: "in_paystack_subaccount",
       payment_provider: "paystack",
       owner_id: ownerId,
       buyer_id: orderRow.user_id,
@@ -440,7 +643,6 @@ const settleOrderPayment = async (data: any, metadata: any) => {
     .upsert(
       {
         user_id: orderRow.user_id,
-        currency,
         is_active: true,
         updated_at: nowIso,
       },
@@ -468,6 +670,7 @@ const settleOrderPayment = async (data: any, metadata: any) => {
         platform_fee_amount: platformFeeAmount,
         net_amount: netAmount,
         currency,
+        items: Array.isArray(orderRow.items) ? orderRow.items : [],
       },
       created_at: nowIso,
       updated_at: nowIso,

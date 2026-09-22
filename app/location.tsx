@@ -113,11 +113,9 @@ export default function LocationScreen() {
       return;
     }
 
-    // Picker mode: resolve user's current location
+    // Picker mode: getCurrentLocation shows the Android prominent disclosure
+    // immediately before the system foreground-location permission dialog.
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
-
       try {
         const loc = await getCurrentLocation();
         if (!loc) return;

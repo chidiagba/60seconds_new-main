@@ -1,14 +1,14 @@
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { useFonts } from "expo-font";
-import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect, useState } from "react";
+import { Stack, useRouter, useSegments } from "expo-router";
+import React, { useEffect } from "react";
 import Constants from "expo-constants";
 import { StatusBar } from "expo-status-bar";
 import Colors from "@/constants/colors";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { trpc, trpcClient } from "@/lib/trpc";
-import { View, ActivityIndicator, Text, AppRegistry, Platform, AppState } from "react-native";
+import { AppRegistry, Platform, AppState } from "react-native";
 import { AuthProvider } from "@/lib/auth";
 import * as Linking from "expo-linking";
 import { AppBackButton, AppFloatingBackButton } from "@/components/AppBackButton";
@@ -46,6 +46,13 @@ import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 import { EmailVerificationGuard } from "@/components/EmailVerificationGuard";
 import MessageNotificationBridge from '@/components/chat/MessageNotificationBridge';
 import { PaystackProvider } from 'react-native-paystack-webview';
+import { settleExternalOrderPayment } from '@/lib/external-payment-settlement';
+
+// Reserve control of the native launch screen before React mounts. Calling
+// hideAsync without this can race iOS splash registration on a cold start.
+SplashScreen.preventAutoHideAsync().catch(() => {
+  // A previous fast refresh may already own the splash screen.
+});
 
 export const unstable_settings = {
   initialRouteName: "(tabs)",
@@ -53,85 +60,43 @@ export const unstable_settings = {
 
 // Create a client for React Query
 const queryClient = new QueryClient();
-let splashFallbackTimer: ReturnType<typeof setTimeout> | null = null;
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
-void SplashScreen.preventAutoHideAsync().catch((error) => {
-  // Prevent unhandled promise rejections from blocking startup.
-  console.warn("SplashScreen.preventAutoHideAsync failed:", error);
-});
-
-// Final startup failsafe: if render crashes before effects run, do not stay on splash forever.
-if (splashFallbackTimer === null) {
-  splashFallbackTimer = setTimeout(() => {
-    void SplashScreen.hideAsync().catch(() => {
-      try {
-        SplashScreen.hide();
-      } catch {
-        // Intentionally ignored: this is only a best-effort final fallback.
-      }
-    });
-  }, 4000);
-}
 
 
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
+  const [, error] = useFonts({
     ...FontAwesome.font,
   });
-  const [fontLoadTimedOut, setFontLoadTimedOut] = useState(false);
-
-  const safeHideSplash = React.useCallback(() => {
-    if (splashFallbackTimer) {
-      clearTimeout(splashFallbackTimer);
-      splashFallbackTimer = null;
-    }
-
-    void SplashScreen.hideAsync().catch((hideError) => {
-      console.warn("SplashScreen.hideAsync failed:", hideError);
-      try {
-        SplashScreen.hide();
-      } catch (fallbackHideError) {
-        console.warn("SplashScreen.hide fallback failed:", fallbackHideError);
-      }
-    });
-  }, []);
 
   useEffect(() => {
     if (error) {
-      console.error(error);
-      safeHideSplash();
+      console.warn("FontAwesome failed to load; continuing with system fallbacks:", error);
     }
-  }, [error, safeHideSplash]);
+  }, [error]);
 
   useEffect(() => {
-    if (loaded) {
-      safeHideSplash();
-    }
-  }, [loaded, safeHideSplash]);
-
-  // Guaranteed fallback so startup never remains on splash indefinitely.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      console.log('SplashScreen forced hide after 2500ms');
-      setFontLoadTimedOut(true);
-      safeHideSplash();
-    }, 2500);
+    // Release after React has committed its first frame. The short fallback
+    // avoids an iOS cold-start race while keeping fonts, auth and network work
+    // from ever blocking application startup.
+    const frame = requestAnimationFrame(() => {
+      SplashScreen.hideAsync().catch((splashError) => {
+        console.warn("Failed to hide the native splash screen:", splashError);
+      });
+    });
+    const fallback = setTimeout(() => {
+      SplashScreen.hideAsync().catch(() => {});
+    }, 1500);
 
     return () => {
-      clearTimeout(timer);
+      cancelAnimationFrame(frame);
+      clearTimeout(fallback);
     };
-  }, [safeHideSplash]);
+  }, []);
 
-  if (!loaded && !error && !fontLoadTimedOut) {
-    return (
-      <View style={{ flex: 1, backgroundColor: Colors.dark.background, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color={Colors.dark.primary} />
-        <Text style={{ color: Colors.dark.subtext, marginTop: 10 }}>Starting app...</Text>
-      </View>
-    );
-  }
-
+  // Render the application immediately and let Expo auto-hide the native launch
+  // screen after the first React frame. Waiting for a JS timer or font promise here
+  // can leave Android's splash activity unresponsive and can strand iOS on its
+  // launch screen when startup initialization fails. FontAwesome safely updates
+  // after loading; an icon fallback is preferable to blocking app startup.
   return <RootLayoutNav />;
 }
 
@@ -199,12 +164,25 @@ function AppContent() {
     };
   }, []);
 
-  const handleDeepLink = (url: string) => {
+  const handleDeepLink = async (url: string) => {
     console.log('🔗 Deep link received:', url);
     
     try {
       const parsed = Linking.parse(url);
       console.log('📋 Parsed deep link:', parsed);
+
+      if (parsed.scheme === 'myapp' && parsed.hostname === 'paystack' && parsed.path === 'callback') {
+        const reference = String(parsed.queryParams?.reference || '').trim();
+        const orderId = String(parsed.queryParams?.orderId || '').trim();
+        console.log(JSON.stringify({ event: 'paystack_callback_received', orderId, reference }));
+        if (reference && orderId) {
+          const result = await settleExternalOrderPayment({ orderId, provider: 'paystack', paymentReference: reference });
+          router.push({ pathname: '/order/[id]', params: { id: orderId, payment: result.success ? 'confirmed' : 'confirming' } });
+        } else {
+          router.push('/orders');
+        }
+        return;
+      }
 
       // Handle password reset deep link (myapp://reset-password)
       if (parsed.scheme === 'myapp' && parsed.hostname === 'reset-password') {
@@ -518,13 +496,21 @@ function AppContent() {
                     animation: "fade",
                   }}
                 />
-                 <Stack.Screen
+                <Stack.Screen
                   name="scan-qr"
                   options={{
                     title: "Scan Qr",
                     headerShown: false,
                     animation: "fade",
                   }}
+                />
+                <Stack.Screen
+                  name="orders"
+                  options={{ title: "Orders", headerShown: false, animation: "slide_from_right" }}
+                />
+                <Stack.Screen
+                  name="order/[id]"
+                  options={{ title: "Order Details", headerShown: false, animation: "slide_from_right" }}
                 />
                 <Stack.Screen
                   name="test-auth"

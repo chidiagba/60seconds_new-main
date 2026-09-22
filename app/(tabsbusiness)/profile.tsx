@@ -34,6 +34,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const { userId } = params as { userId?: string };
+  const requestedTab = typeof params.tab === 'string' ? params.tab : undefined;
 
   const {
     user: currentUser,
@@ -61,6 +62,12 @@ export default function ProfileScreen() {
   const [deletingVideoId, setDeletingVideoId] = useState<string | null>(null);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [createdEventsCount, setCreatedEventsCount] = useState(0);
+
+  useEffect(() => {
+    if (requestedTab === 'orders' && !userId) {
+      setActiveTab('orders');
+    }
+  }, [requestedTab, userId]);
 
   const { videos: allVideos, userLikedVideos, deletedVideoIds, fetchVideos, loadUserLikes, removeVideo } = useVideoStore();
   const resolvedProfileAvatar = resolveAvatarUrl({
@@ -665,7 +672,7 @@ export default function ProfileScreen() {
         {isCurrentUserProfile && (
           <TouchableOpacity
             style={[styles.tab, activeTab === 'orders' && styles.activeTab]}
-            onPress={() => setActiveTab('orders')}
+            onPress={() => router.push('/orders')}
           >
             <FileText size={24} color={activeTab === 'orders' ? Colors.dark.primary : Colors.dark.inactive} />
           </TouchableOpacity>

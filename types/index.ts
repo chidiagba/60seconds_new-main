@@ -19,6 +19,8 @@ export interface User {
 export interface Video {
   id: string;
   url: string;
+  watermarkedVideoUrl?: string;
+  watermarkStatus?: 'pending' | 'processing' | 'ready' | 'failed';
   thumbnail: string;
   description?: string;
   likes: number;

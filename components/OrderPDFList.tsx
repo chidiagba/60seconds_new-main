@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Calendar, ExternalLink, Download, Share2 } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
+import QRCodeGenerator from 'qrcode';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -30,8 +31,17 @@ type TicketRow = {
   location_name?: string | null;
   seat_no?: string | null;
   is_active: boolean;
+  redeemed_at?: string | null;
   issued_at: string;
+  created_at?: string | null;
   pdf_url?: string | null;
+  ticket_type?: string | null;
+  receipt_kind?: 'ticket' | 'product' | null;
+  quantity?: number | null;
+  unit_price?: number | null;
+  total_price?: number | null;
+  currency?: string | null;
+  purchased_at?: string | null;
 };
 
 interface OrderPDFListProps {
@@ -65,32 +75,82 @@ const encodeBase64 = (input: string) => {
   return output;
 };
 
+// Compact JPEG rendition of assets/images/icon.png for the self-contained PDF.
+const TICKET_LOGO_JPEG_BASE64 = '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';
+
+const decodeBase64 = (input: string) => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let output = '';
+  let buffer = 0;
+  let bits = 0;
+  for (const character of input.replace(/=+$/, '')) {
+    const value = chars.indexOf(character);
+    if (value < 0) continue;
+    buffer = (buffer << 6) | value;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      output += String.fromCharCode((buffer >> bits) & 0xff);
+    }
+  }
+  return output;
+};
+
 const buildTicketPdfBase64 = (ticket: TicketRow) => {
+  const logoJpeg = decodeBase64(TICKET_LOGO_JPEG_BASE64);
+  const isEventTicket = ticket.receipt_kind
+    ? ticket.receipt_kind === 'ticket'
+    : String(ticket.ticket_type || 'ticket').toLowerCase() === 'ticket';
+  const qrValue = ticket.qr_code_data || ticket.order_number || ticket.id;
+  const qr = QRCodeGenerator.create(qrValue, { errorCorrectionLevel: 'M' });
+  const qrSize = 190;
+  const quietZone = 12;
+  const qrX = (612 - qrSize) / 2;
+  const qrY = 500;
+  const moduleSize = (qrSize - quietZone * 2) / qr.modules.size;
+  const qrCommands: string[] = [
+    '1 1 1 rg',
+    `${qrX} ${qrY} ${qrSize} ${qrSize} re f`,
+    '0.039 0.039 0.059 rg',
+  ];
+
+  for (let row = 0; row < qr.modules.size; row += 1) {
+    for (let column = 0; column < qr.modules.size; column += 1) {
+      if (!qr.modules.get(row, column)) continue;
+      const x = qrX + quietZone + column * moduleSize;
+      const y = qrY + quietZone + (qr.modules.size - row - 1) * moduleSize;
+      qrCommands.push(`${x.toFixed(3)} ${y.toFixed(3)} ${moduleSize.toFixed(3)} ${moduleSize.toFixed(3)} re f`);
+    }
+  }
   const eventDate = ticket.event_start_date || ticket.issued_at;
   const issuedDate = ticket.issued_at ? new Date(ticket.issued_at).toLocaleString() : 'N/A';
   const rows = [
     ['Event', ticket.event_name || '60seconds Event'],
     ['Ticket', ticket.ticket_title || 'Ticket'],
     ['Order number', ticket.order_number || ticket.id],
+    ['Quantity', String(Math.max(1, Number(ticket.quantity || 1)))],
+    ['Unit price', `${ticket.currency || ''} ${Number(ticket.unit_price || 0).toFixed(2)}`.trim()],
+    ['Total', `${ticket.currency || ''} ${Number(ticket.total_price || 0).toFixed(2)}`.trim()],
     ['Seat', ticket.seat_no || '-'],
     ['Location', ticket.location_name || 'Location not specified'],
     ['Event date', eventDate ? new Date(eventDate).toLocaleString() : 'Date TBA'],
-    ['Status', ticket.is_active ? 'ACTIVE' : 'EXPIRED'],
+    ['Status', ticket.redeemed_at ? 'REDEEMED' : ticket.is_active ? 'OPEN' : 'INACTIVE'],
     ['Issued', issuedDate],
-    ['QR data', ticket.qr_code_data || ticket.order_number || ticket.id],
   ];
 
   const textLines = [
-    { size: 28, x: 54, y: 760, text: '60seconds Ticket' },
-    { size: 12, x: 54, y: 736, text: 'Official ticket receipt' },
+    { size: 28, x: 142, y: 758, text: isEventTicket ? '60seconds Ticket' : '60seconds' },
+    { size: 12, x: 142, y: 734, text: isEventTicket ? 'Official ticket receipt' : 'Official order document' },
     ...rows.flatMap((row, index) => {
-      const y = 690 - index * 44;
+      const y = 458 - index * 34;
       return [
         { size: 10, x: 54, y, text: row[0].toUpperCase() },
         { size: 16, x: 54, y: y - 20, text: row[1] },
       ];
     }),
-    { size: 10, x: 54, y: 84, text: 'Keep this PDF with you. Venue staff may verify the ticket using the QR data above.' },
+    { size: 10, x: 54, y: 84, text: isEventTicket
+      ? 'Keep this PDF with you. Venue staff may verify the ticket using the QR data above.'
+      : 'Keep this PDF with you. The business may verify your order using the QR data above.' },
   ];
 
   const content = [
@@ -101,6 +161,8 @@ const buildTicketPdfBase64 = (ticket: TicketRow) => {
     '36 44 540 704 re f',
     '0.388 0.4 0.945 rg',
     '36 704 540 88 re f',
+    'q 72 0 0 72 54 712 cm /Im1 Do Q',
+    ...qrCommands,
     '1 1 1 rg',
     ...textLines.map((line) => `BT /F1 ${line.size} Tf ${line.x} ${line.y} Td (${sanitizePdfText(line.text)}) Tj ET`),
     'Q',
@@ -109,9 +171,10 @@ const buildTicketPdfBase64 = (ticket: TicketRow) => {
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> /XObject << /Im1 6 0 R >> >> /Contents 5 0 R >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
     `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    `<< /Type /XObject /Subtype /Image /Width 96 /Height 96 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${logoJpeg.length} >>\nstream\n${logoJpeg}\nendstream`,
   ];
 
   let pdf = '%PDF-1.4\n';
@@ -157,9 +220,19 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
   const [tickets, setTickets] = React.useState<TicketRow[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const totalPurchased = tickets.reduce(
+    (sum, ticket) => sum + Math.max(1, Number(ticket.quantity || 1)),
+    0
+  );
+  const ticketCount = tickets.reduce(
+    (sum, ticket) => sum + (String(ticket.ticket_type || 'ticket').toLowerCase() === 'ticket' ? Math.max(1, Number(ticket.quantity || 1)) : 0),
+    0
+  );
+  const productCount = totalPurchased - ticketCount;
 
   const getSafePdfFileName = (ticket: TicketRow) => {
-    const rawName = `${ticket.order_number || ticket.id}-ticket.pdf`;
+    const receiptLabel = ticket.receipt_kind === 'product' ? 'product-receipt' : 'ticket';
+    const rawName = `${ticket.order_number || ticket.id}-${receiptLabel}-branded-scannable-v4.pdf`;
     return rawName.replace(/[^a-zA-Z0-9._-]/g, '_');
   };
 
@@ -177,16 +250,6 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
     const existing = await FileSystem.getInfoAsync(localUri);
     if (existing.exists && (((existing as any).size as number | undefined) ?? 0) > 0) {
       return localUri;
-    }
-
-    const remotePdfUrl = ticket.pdf_url?.trim();
-    if (remotePdfUrl) {
-      const result = await FileSystem.downloadAsync(remotePdfUrl, localUri);
-      if (result.status < 200 || result.status >= 300) {
-        throw new Error(`PDF_DOWNLOAD_FAILED_${result.status}`);
-      }
-
-      return result.uri;
     }
 
     await FileSystem.writeAsStringAsync(localUri, buildTicketPdfBase64(ticket), {
@@ -218,22 +281,11 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
   const handleDownloadPdf = async (ticket: TicketRow) => {
     try {
       if (Platform.OS === 'web') {
-        const remotePdfUrl = ticket.pdf_url?.trim();
-        if (!remotePdfUrl) {
-          const dataUri = `data:application/pdf;base64,${buildTicketPdfBase64(ticket)}`;
-          if (openDataUriInBrowser(dataUri, getSafePdfFileName(ticket), true)) {
-            return;
-          }
-          Alert.alert('Unable to Download', 'Could not create the ticket PDF.');
+        const dataUri = `data:application/pdf;base64,${buildTicketPdfBase64(ticket)}`;
+        if (openDataUriInBrowser(dataUri, getSafePdfFileName(ticket), true)) {
           return;
         }
-
-        const canOpen = await Linking.canOpenURL(remotePdfUrl);
-        if (canOpen) {
-          await Linking.openURL(remotePdfUrl);
-          return;
-        }
-        Alert.alert('Unable to Download', 'Could not open the PDF URL.');
+        Alert.alert('Unable to Download', 'Could not create the ticket PDF.');
         return;
       }
 
@@ -274,22 +326,11 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
         }
       }
 
-      const remotePdfUrl = ticket.pdf_url?.trim();
-      if (!remotePdfUrl) {
-        const dataUri = `data:application/pdf;base64,${buildTicketPdfBase64(ticket)}`;
-        if (openDataUriInBrowser(dataUri, getSafePdfFileName(ticket), false)) {
-          return;
-        }
-        Alert.alert('Unable to Open', 'Could not create this ticket PDF.');
+      const dataUri = `data:application/pdf;base64,${buildTicketPdfBase64(ticket)}`;
+      if (openDataUriInBrowser(dataUri, getSafePdfFileName(ticket), false)) {
         return;
       }
-
-      const canOpenRemote = await Linking.canOpenURL(remotePdfUrl);
-      if (canOpenRemote) {
-        await Linking.openURL(remotePdfUrl);
-      } else {
-        Alert.alert('Unable to Open', 'Could not open this ticket PDF.');
-      }
+      Alert.alert('Unable to Open', 'Could not create this ticket PDF.');
     } catch (e) {
       Alert.alert('Error', 'Could not open the ticket PDF.');
     }
@@ -362,7 +403,23 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
   };
 
   const renderTicket = (item: TicketRow) => {
-    const { dateLabel, timeLabel } = formatTicketDate(item.event_start_date || item.issued_at);
+    const resolvedReceiptKind = item.receipt_kind ||
+      (String(item.ticket_type || 'ticket').toLowerCase() === 'ticket' ? 'ticket' : 'product');
+    const isProductReceipt = resolvedReceiptKind === 'product';
+    const purchaseTimestamp = item.purchased_at || item.issued_at || item.created_at || '';
+    const { dateLabel, timeLabel } = formatTicketDate(purchaseTimestamp);
+    const purchaseDate = new Date(purchaseTimestamp);
+    const purchaseDateLabel = Number.isNaN(purchaseDate.getTime())
+      ? 'Purchase date unavailable'
+      : purchaseDate.toLocaleString(undefined, {
+          year: 'numeric',
+          month: 'short',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          timeZoneName: 'short',
+        });
 
     return (
       <View style={styles.ticketWrap}>
@@ -375,6 +432,7 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
           >
             <View style={styles.ticketFrame}>
               <Text style={styles.brandText}>60seconds</Text>
+              <Text style={styles.receiptKindText}>{isProductReceipt ? 'PRODUCT RECEIPT' : 'EVENT TICKET'}</Text>
 
               <View style={styles.qrPanel}>
                 <QRCode
@@ -386,8 +444,14 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
               </View>
 
               <View style={styles.dateRow}>
-                <Text style={styles.dateValue}>{dateLabel}</Text>
-                <Text style={styles.dateValue}>{timeLabel}</Text>
+                <View>
+                  <Text style={styles.sectionLabel}>PURCHASE DATE</Text>
+                  <Text style={styles.dateValue}>{dateLabel}</Text>
+                </View>
+                <View style={styles.purchaseTimeColumn}>
+                  <Text style={styles.sectionLabel}>PURCHASE TIME</Text>
+                  <Text style={styles.dateValue}>{timeLabel}</Text>
+                </View>
               </View>
 
               <View style={styles.ticketDivider} />
@@ -400,8 +464,14 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
 
               <View style={styles.bottomRow}>
                 <View style={styles.bottomCol}>
-                  <Text style={styles.sectionLabel}>TICKET</Text>
+                  <Text style={styles.sectionLabel}>{isProductReceipt ? 'PRODUCT' : 'TICKET'}</Text>
                   <Text style={styles.primaryBottomText}>{item.ticket_title}</Text>
+                  <Text style={styles.sectionLabel}>QUANTITY</Text>
+                  <Text style={styles.secondaryBottomText}>{Math.max(1, Number(item.quantity || 1))}</Text>
+                  <Text style={styles.sectionLabel}>TOTAL</Text>
+                  <Text style={styles.secondaryBottomText}>
+                    {item.currency || ''} {Number(item.total_price || 0).toFixed(2)}
+                  </Text>
                   <Text style={styles.sectionLabel}>ORDER NO.</Text>
                   <Text style={styles.secondaryBottomText}>{item.order_number}</Text>
                   <Text style={styles.sectionLabel}>SEAT</Text>
@@ -410,8 +480,15 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
 
                 <View style={styles.bottomColRight}>
                   <Text style={styles.sectionLabel}>STATUS</Text>
-                  <Text style={styles.performingText}>{item.is_active ? 'ACTIVE' : 'EXPIRED'}</Text>
+                  <Text style={styles.performingText}>
+                    {item.redeemed_at ? 'REDEEMED' : item.is_active ? 'OPEN' : 'INACTIVE'}
+                  </Text>
                 </View>
+              </View>
+
+              <View style={styles.purchaseDateSection}>
+                <Text style={styles.sectionLabel}>PURCHASED ON</Text>
+                <Text style={styles.purchaseDateText}>{purchaseDateLabel}</Text>
               </View>
 
               <Text style={styles.brandFooter}>60seconds</Text>
@@ -470,8 +547,8 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
     return (
       <View style={styles.emptyContainer}>
         <Text style={styles.emptyTicketIcon}>TICKET</Text>
-        <Text style={styles.emptyTitle}>No Tickets Yet</Text>
-        <Text style={styles.emptySubtitle}>Purchased ticket receipts will appear here in your profile</Text>
+        <Text style={styles.emptyTitle}>No Purchases Yet</Text>
+        <Text style={styles.emptySubtitle}>Purchased tickets and products will appear here in your profile</Text>
       </View>
     );
   }
@@ -479,9 +556,12 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>My Tickets</Text>
+        <Text style={styles.title}>My Purchases</Text>
         <Text style={styles.subtitle}>
-          {tickets.length} ticket{tickets.length !== 1 ? 's' : ''} available
+          {totalPurchased} item{totalPurchased !== 1 ? 's' : ''} purchased
+        </Text>
+        <Text style={styles.purchaseBreakdown}>
+          {ticketCount} ticket{ticketCount !== 1 ? 's' : ''} · {productCount} product{productCount !== 1 ? 's' : ''}
         </Text>
       </View>
 
@@ -514,6 +594,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.dark.subtext,
   },
+  purchaseBreakdown: {
+    fontSize: 13,
+    color: Colors.dark.primary,
+    marginTop: 6,
+    fontWeight: '600',
+  },
   listContainer: {
     padding: 16,
     paddingBottom: 24,
@@ -544,6 +630,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     includeFontPadding: false,
   },
+  receiptKindText: {
+    color: 'rgba(255,255,255,0.82)',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginTop: -8,
+    marginBottom: 12,
+  },
   qrPanel: {
     backgroundColor: '#ffffff',
     borderRadius: 12,
@@ -567,6 +661,21 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.28)',
     marginBottom: 10,
+  },
+  purchaseDateSection: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.2)',
+  },
+  purchaseDateText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  purchaseTimeColumn: {
+    alignItems: 'flex-end',
   },
   locationSection: {
     width: '100%',

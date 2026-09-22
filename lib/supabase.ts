@@ -156,7 +156,11 @@ export type Database = {
         Row: {
           id: string;
           user_id: string;
+          business_id?: string;
+          event_id?: string;
           video_url: string;
+          watermarked_video_url?: string;
+          watermark_status: 'pending' | 'processing' | 'ready' | 'failed';
           thumbnail_url?: string;
           title: string;
           description?: string;
@@ -182,6 +186,8 @@ export type Database = {
           id?: string;
           user_id: string;
           video_url: string;
+          watermarked_video_url?: string;
+          watermark_status?: 'pending' | 'processing' | 'ready' | 'failed';
           thumbnail_url?: string;
           title: string;
           description?: string;
@@ -207,6 +213,8 @@ export type Database = {
           id?: string;
           user_id?: string;
           video_url?: string;
+          watermarked_video_url?: string;
+          watermark_status?: 'pending' | 'processing' | 'ready' | 'failed';
           thumbnail_url?: string;
           title?: string;
           description?: string;
@@ -232,13 +240,24 @@ export type Database = {
       orders: {
         Row: {
           id: string;
+          order_number: string;
           user_id: string;
+          business_id?: string;
+          event_id?: string;
           video_id?: string;
-          status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+          status: 'pending' | 'confirmed' | 'open' | 'completed' | 'cancelled';
           total_amount: number;
           currency: string;
           payment_method?: string;
           payment_status: 'pending' | 'paid' | 'failed' | 'refunded';
+          payment_provider?: string;
+          payment_reference?: string;
+          payment_transaction_id?: string;
+          payment_metadata?: Record<string, any>;
+          subtotal?: number;
+          platform_fee?: number;
+          source?: string;
+          expires_at?: string;
           items: {
             product_id: string;
             quantity: number;
@@ -258,13 +277,24 @@ export type Database = {
         };
         Insert: {
           id?: string;
+          order_number?: string;
           user_id: string;
+          business_id?: string;
+          event_id?: string;
           video_id?: string;
-          status?: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+          status?: 'pending' | 'confirmed' | 'open' | 'completed' | 'cancelled';
           total_amount: number;
           currency?: string;
           payment_method?: string;
           payment_status?: 'pending' | 'paid' | 'failed' | 'refunded';
+          payment_provider?: string;
+          payment_reference?: string;
+          payment_transaction_id?: string;
+          payment_metadata?: Record<string, any>;
+          subtotal?: number;
+          platform_fee?: number;
+          source?: string;
+          expires_at?: string;
           items: {
             product_id: string;
             quantity: number;
@@ -284,13 +314,24 @@ export type Database = {
         };
         Update: {
           id?: string;
+          order_number?: string;
           user_id?: string;
+          business_id?: string;
+          event_id?: string;
           video_id?: string;
-          status?: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+          status?: 'pending' | 'confirmed' | 'open' | 'completed' | 'cancelled';
           total_amount?: number;
           currency?: string;
           payment_method?: string;
           payment_status?: 'pending' | 'paid' | 'failed' | 'refunded';
+          payment_provider?: string;
+          payment_reference?: string;
+          payment_transaction_id?: string;
+          payment_metadata?: Record<string, any>;
+          subtotal?: number;
+          platform_fee?: number;
+          source?: string;
+          expires_at?: string;
           items?: {
             product_id: string;
             quantity: number;
@@ -309,6 +350,11 @@ export type Database = {
           updated_at?: string;
         };
       };
+      payments: {
+        Row: { id: string; order_id: string; user_id: string; organizer_id?: string; payment_provider: string; provider_reference: string; amount: number; currency: string; status: string; provider_status?: string; transaction_id?: string; gateway_reference?: string; gateway_response?: Record<string, any>; authorization_code?: string; processing_fee: number; net_amount?: number; metadata: Record<string, any>; failure_reason?: string; completed_at?: string; paid_at?: string; settled_at?: string; created_at: string; updated_at: string };
+        Insert: { id?: string; order_id: string; user_id: string; organizer_id?: string; payment_provider: string; provider_reference: string; amount: number; currency: string; status?: string; provider_status?: string; transaction_id?: string; gateway_reference?: string; gateway_response?: Record<string, any>; authorization_code?: string; processing_fee?: number; net_amount?: number; metadata?: Record<string, any>; failure_reason?: string; completed_at?: string; paid_at?: string; settled_at?: string; created_at?: string; updated_at?: string };
+        Update: Partial<Database['public']['Tables']['payments']['Insert']>;
+      };
       ticket_receipts: {
         Row: {
           id: string;
@@ -320,6 +366,7 @@ export type Database = {
           event_id?: string;
           product_id?: string;
           ticket_type?: string;
+          receipt_kind: 'ticket' | 'product';
           ticket_title: string;
           quantity: number;
           unit_price: number;
@@ -334,6 +381,8 @@ export type Database = {
           event_end_date?: string;
           location_name?: string;
           is_active: boolean;
+          redeemed_at?: string;
+          redeemed_by?: string;
           issued_at: string;
           created_at: string;
           updated_at: string;
@@ -348,6 +397,7 @@ export type Database = {
           event_id?: string;
           product_id?: string;
           ticket_type?: string;
+          receipt_kind?: 'ticket' | 'product';
           ticket_title: string;
           quantity?: number;
           unit_price: number;
@@ -362,6 +412,8 @@ export type Database = {
           event_end_date?: string;
           location_name?: string;
           is_active?: boolean;
+          redeemed_at?: string;
+          redeemed_by?: string;
           issued_at?: string;
           created_at?: string;
           updated_at?: string;
@@ -376,6 +428,7 @@ export type Database = {
           event_id?: string;
           product_id?: string;
           ticket_type?: string;
+          receipt_kind?: 'ticket' | 'product';
           ticket_title?: string;
           quantity?: number;
           unit_price?: number;
@@ -390,6 +443,8 @@ export type Database = {
           event_end_date?: string;
           location_name?: string;
           is_active?: boolean;
+          redeemed_at?: string;
+          redeemed_by?: string;
           issued_at?: string;
           created_at?: string;
           updated_at?: string;

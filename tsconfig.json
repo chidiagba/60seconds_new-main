@@ -5,6 +5,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "native-video-watermark": [
+        "./modules/native-video-watermark/src/index.ts"
       ]
     }
   },

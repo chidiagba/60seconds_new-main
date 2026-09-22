@@ -1,3 +1,4 @@
+import { calculateOwnerWalletBalance } from '@/supabase/functions/_shared/owner-wallet-balance';
 import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -8,6 +9,7 @@ import {
   FlatList,
   ActivityIndicator,
   Modal,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -27,6 +29,7 @@ import Colors from "@/constants/colors";
 import { useWalletStore } from "@/store/wallet-store";
 import { useAuthStore } from "@/store/auth-store";
 import { supabase } from "@/lib/supabase";
+import { formatCurrency } from "@/constants/currencies";
 
 import WalletBalance from "@/components/WalletBalance";
 import TransactionItem from "@/components/TransactionItem";
@@ -44,19 +47,26 @@ export default function WalletScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
   const {
+    wallet,
     transactions,
     businessBankAccount,
     fetchWallet,
     fetchTransactions,
     fetchBusinessBankAccount,
+    manualReconcileBusinessWallet,
     isLoading,
+    isBackgroundSyncing,
+    isReconcilingBusinessWallet,
     selectedCurrency,
+    lastBusinessReconciledAt,
+    lastBusinessReconcileStatus,
     setCurrency,
   } =
     useWalletStore();
 
   const [showAddFundsModal, setShowAddFundsModal] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
   // ✅ Eligibility state for Add Funds (based on Supabase profile)
   const [isCheckingEligibility, setIsCheckingEligibility] = useState(true);
@@ -78,10 +88,98 @@ export default function WalletScreen() {
     loadWalletData();
   }, [fetchBusinessBankAccount, fetchTransactions, fetchWallet]);
 
+  useEffect(() => {
+    if (!user?.id || !wallet?.id) return;
+
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleTransactionRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        void fetchTransactions({ silent: true });
+      }, 250);
+    };
+
+    const channel = supabase
+      .channel(`business-wallet-${wallet.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "transactions",
+          filter: `wallet_id=eq.${wallet.id}`,
+        },
+        scheduleTransactionRefresh
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "wallets",
+          filter: `id=eq.${wallet.id}`,
+        },
+        () => {
+          scheduleTransactionRefresh();
+        }
+      )
+      .subscribe();
+
+    // Paystack does not emit webhook events for automatic bank settlements.
+    // Poll the idempotent settlement reconciler while the organizer is looking
+    // at the wallet so the balance sheet stays aligned with Paystack.
+    const settlementPoll = setInterval(() => {
+      void fetchTransactions({ silent: true });
+    }, 60_000);
+
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      clearInterval(settlementPoll);
+      void supabase.removeChannel(channel);
+    };
+  }, [fetchTransactions, fetchWallet, user?.id, wallet?.id]);
+
+  useEffect(() => {
+    const updateCooldown = () => {
+      if (!lastBusinessReconciledAt) {
+        setCooldownSeconds(0);
+        return;
+      }
+      const nextSyncAt = new Date(lastBusinessReconciledAt).getTime() + 60_000;
+      setCooldownSeconds(Math.max(0, Math.ceil((nextSyncAt - Date.now()) / 1000)));
+    };
+    updateCooldown();
+    const timer = setInterval(updateCooldown, 1000);
+    return () => clearInterval(timer);
+  }, [lastBusinessReconciledAt]);
+
   const handleRefreshWallet = async () => {
     await fetchBusinessBankAccount();
     await fetchWallet();
     await fetchTransactions();
+  };
+
+  const formatReconciledAt = (value: string | null) => {
+    if (!value) return "Never";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "Unknown";
+    return parsed.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+
+  const handleManualReconcile = async () => {
+    const success = await manualReconcileBusinessWallet();
+    Alert.alert(
+      success ? "Wallet Reconciled" : "Reconciliation Failed",
+      success
+        ? "Business wallet balance and transaction history have been refreshed from settlement records."
+        : "Unable to complete reconciliation now. Please try again."
+    );
   };
 
   useEffect(() => {
@@ -202,7 +300,7 @@ export default function WalletScreen() {
   };
 
   const handleScanQR = () => {
-    router.push("/scan-qr");
+    router.push({ pathname: "/scan-qr", params: { mode: "redeem" } });
   };
 
   const handleWithdraw = () => {
@@ -222,6 +320,10 @@ export default function WalletScreen() {
 
   const handleManageBankAccounts = () => {
     router.push("/bank-accounts");
+  };
+
+  const handleTraceOrderSupport = () => {
+    router.push("/trace-order-support");
   };
 
   const handleTestPayment = () => {
@@ -246,6 +348,26 @@ export default function WalletScreen() {
     // Keep legacy historical business records visible across app versions/devices.
     return transaction.type !== 'fee';
   });
+  const walletFlow = useMemo(() => {
+    const done = (status: unknown) => ['completed', 'success', 'successful', 'paid'].includes(String(status || '').toLowerCase());
+    const totals = businessTransactions.reduce((result, transaction: any) => {
+      const metadata = transaction?.metadata || {};
+      const entry = String(metadata.entry || '');
+      const amount = Math.abs(Number(transaction?.amount || 0));
+      if (entry === 'owner_credit' && done(transaction?.status)) result.sales += amount;
+      if (entry === 'paystack_bank_settlement') {
+        if (done(transaction?.status)) result.settled += amount;
+        else if (['pending', 'processing'].includes(String(transaction?.status || '').toLowerCase())) result.pendingSettlement += amount;
+      } else if ((entry === 'owner_withdrawal' || transaction?.type === 'withdrawal') && done(transaction?.status)) {
+        result.manualWithdrawals += amount;
+      }
+      return result;
+    }, { sales: 0, pendingSettlement: 0, settled: 0, manualWithdrawals: 0 });
+    const available = calculateOwnerWalletBalance(businessTransactions, true);
+    return { ...totals, settledToBank: totals.settled + totals.manualWithdrawals, inSubaccount: available, available };
+  }, [businessTransactions]);
+
+  const flowAmount = (amount: number) => formatCurrency(amount, selectedCurrency);
 
   return (
     <View style={styles.container}>
@@ -262,6 +384,46 @@ export default function WalletScreen() {
         onRefresh={handleRefreshWallet}
         onBalancePress={handleBalancePress}
       />
+
+      {isBusinessAccount && (
+        <View style={styles.reconcileContainer}>
+          <View style={styles.reconcileButtonsRow}>
+            <TouchableOpacity
+              style={[
+                styles.reconcileButton,
+                isReconcilingBusinessWallet ? styles.reconcileButtonDisabled : null,
+              ]}
+              onPress={handleManualReconcile}
+              disabled={isReconcilingBusinessWallet}
+            >
+              {isReconcilingBusinessWallet ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.reconcileButtonText}>Reconcile Wallet Now</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.traceOrderButton}
+              onPress={handleTraceOrderSupport}
+            >
+              <Text style={styles.traceOrderButtonText}>Trace Order</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.reconcileMetaText}>
+            Last reconciled: {formatReconciledAt(lastBusinessReconciledAt)}
+            {lastBusinessReconcileStatus === "failed" ? " (last attempt failed)" : ""}
+          </Text>
+          <Text style={styles.reconcileMetaText}>
+            {isBackgroundSyncing
+              ? "Checking Paystack statuses in background…"
+              : cooldownSeconds > 0
+                ? `Next Paystack status check in ${cooldownSeconds}s`
+                : "Paystack status check ready"}
+          </Text>
+        </View>
+      )}
 
       <View style={styles.actionsContainer}>
         {/* ✅ Add Funds (with eligibility check) */}
@@ -330,7 +492,7 @@ export default function WalletScreen() {
           <View style={styles.actionIconContainer}>
             <ScanLine size={20} color={Colors.dark.primary} />
           </View>
-          <Text style={styles.actionText}>Scan</Text>
+          <Text style={styles.actionText}>Verify purchase</Text>
         </TouchableOpacity>
 
         {/* <TouchableOpacity style={styles.actionButton} onPress={handleTestPayment}>
@@ -393,7 +555,7 @@ export default function WalletScreen() {
                     Paystack subaccount: {businessBankAccount.paystackSubaccountCode ? 'linked' : 'pending setup'}
                   </Text>
                 )}
-                {!!businessBankAccount.verificationReason && (
+                {!businessBankAccount.isVerified && !!businessBankAccount.verificationReason && (
                   <Text style={styles.linkedBankMeta}>Reason: {businessBankAccount.verificationReason}</Text>
                 )}
               </View>
@@ -403,6 +565,19 @@ export default function WalletScreen() {
               <Text style={styles.linkedBankEmptyText}>No linked bank account yet. Add one to receive withdrawals in your wallet.</Text>
             </View>
           )}
+        </View>
+      )}
+
+      {isBusinessAccount && (
+        <View style={styles.flowContainer}>
+          <Text style={styles.sectionTitle}>Paystack Money Flow</Text>
+          <View style={styles.flowCard}>
+            <View style={styles.flowRow}><Text style={styles.flowLabel}>Total sales received</Text><Text style={styles.flowCredit}>+{flowAmount(walletFlow.sales)}</Text></View>
+            <View style={styles.flowRow}><Text style={styles.flowLabel}>In Paystack subaccount</Text><Text style={styles.flowValue}>{flowAmount(walletFlow.inSubaccount)}</Text></View>
+            <View style={styles.flowRow}><Text style={styles.flowLabel}>Pending bank settlement</Text><Text style={styles.flowPending}>{flowAmount(walletFlow.pendingSettlement)}</Text></View>
+            <View style={styles.flowRow}><Text style={styles.flowLabel}>Settled to bank</Text><Text style={styles.flowValue}>{flowAmount(walletFlow.settledToBank)}</Text></View>
+            <View style={[styles.flowRow, styles.flowAvailableRow]}><Text style={styles.flowAvailableLabel}>Available balance</Text><Text style={styles.flowAvailableValue}>{flowAmount(walletFlow.available)}</Text></View>
+          </View>
         </View>
       )}
 
@@ -511,6 +686,50 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     marginTop: 40,
   },
+  reconcileContainer: {
+    marginBottom: 16,
+  },
+  reconcileButtonsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  reconcileButton: {
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: Colors.dark.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+  },
+  reconcileButtonDisabled: {
+    opacity: 0.75,
+  },
+  reconcileButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  reconcileMetaText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: Colors.dark.subtext,
+  },
+  traceOrderButton: {
+    marginLeft: 10,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.dark.primary,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  traceOrderButtonText: {
+    color: Colors.dark.primary,
+    fontSize: 13,
+    fontWeight: "700",
+  },
   actionsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -596,6 +815,32 @@ const styles = StyleSheet.create({
     color: Colors.dark.subtext,
     lineHeight: 18,
   },
+  flowContainer: {
+    marginBottom: 20,
+  },
+  flowCard: {
+    marginTop: 12,
+    backgroundColor: Colors.dark.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.dark.divider,
+    paddingHorizontal: 14,
+  },
+  flowRow: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.dark.divider,
+  },
+  flowLabel: { color: Colors.dark.subtext, fontSize: 13, flex: 1 },
+  flowValue: { color: Colors.dark.text, fontSize: 13, fontWeight: "700" },
+  flowCredit: { color: Colors.dark.success, fontSize: 13, fontWeight: "700" },
+  flowPending: { color: Colors.dark.warning, fontSize: 13, fontWeight: "700" },
+  flowAvailableRow: { borderBottomWidth: 0, minHeight: 50 },
+  flowAvailableLabel: { color: Colors.dark.text, fontSize: 14, fontWeight: "700" },
+  flowAvailableValue: { color: Colors.dark.success, fontSize: 16, fontWeight: "800" },
   transactionsContainer: {
     marginBottom: 8,
   },

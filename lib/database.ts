@@ -1236,6 +1236,52 @@ export const orderService = {
     return data;
   },
 
+  async getBusinessOrders(businessId: string) {
+    // Orders are authoritative so pending checkout attempts are visible before
+    // payment/receipt issuance. Receipts remain an optional paid-order join.
+    const { data: ownedOrders, error: ownedOrdersError } = await supabase
+      .from('orders').select('*').eq('business_id', businessId)
+      .order('created_at', { ascending: false });
+    if (ownedOrdersError) throw ownedOrdersError;
+    const { data: receipts, error: receiptError } = await supabase
+      .from('ticket_receipts')
+      .select('order_id,buyer_id,ticket_title,receipt_kind,quantity,total_price,currency,event_name,is_active,redeemed_at')
+      .eq('owner_id', businessId);
+
+    if (receiptError) throw receiptError;
+    const orderIds = Array.from(new Set([
+      ...(ownedOrders || []).map((row: any) => row.id),
+      ...(receipts || []).map((row) => row.order_id),
+    ].filter(Boolean)));
+    if (!orderIds.length) return [];
+
+    const missingIds = orderIds.filter((id) => !(ownedOrders || []).some((order: any) => order.id === id));
+    const { data: legacyOrders, error: orderError } = missingIds.length
+      ? await supabase.from('orders').select('*').in('id', missingIds)
+      : { data: [] as any[], error: null };
+    if (orderError) throw orderError;
+    const orders = [...(ownedOrders || []), ...(legacyOrders || [])]
+      .sort((a: any, b: any) => Date.parse(b.created_at) - Date.parse(a.created_at));
+
+    const buyerIds = Array.from(new Set((receipts || []).map((row) => row.buyer_id).filter(Boolean)));
+    const { data: profiles } = buyerIds.length
+      ? await supabase.from('profiles').select('id,username,full_name,avatar_url').in('id', buyerIds)
+      : { data: [] as any[] };
+    const profilesById = new Map((profiles || []).map((profile: any) => [profile.id, profile]));
+    const receiptsByOrder = new Map<string, any[]>();
+    for (const receipt of receipts || []) {
+      const group = receiptsByOrder.get(receipt.order_id) || [];
+      group.push(receipt);
+      receiptsByOrder.set(receipt.order_id, group);
+    }
+
+    return (orders || []).map((order: any) => {
+      const orderReceipts = receiptsByOrder.get(order.id) || [];
+      const buyerId = order.user_id || orderReceipts[0]?.buyer_id;
+      return { ...order, receipts: orderReceipts, buyer: profilesById.get(buyerId) || null };
+    });
+  },
+
   async getOrder(orderId: string) {
     const { data, error } = await supabase
       .from('orders')
@@ -1272,6 +1318,16 @@ export const orderService = {
       throw error;
     }
     return data;
+  },
+
+  async manageBusinessOrder(orderId: string, status: 'completed' | 'cancelled', reason?: string) {
+    const { data, error } = await supabase.rpc('manage_business_order', {
+      target_order_id: orderId,
+      next_status: status,
+      cancellation_reason: reason?.trim() || null,
+    });
+    if (error) throw new Error(error.message || 'Unable to update order.');
+    return Array.isArray(data) ? data[0] : data;
   },
 
   async getOrdersByVideo(videoId: string) {
@@ -1313,6 +1369,22 @@ const buildTicketImageUrl = (_params: {
 };
 
 export const ticketReceiptService = {
+  async redeemTicket(qrCodeData: string) {
+    const normalizedQrCode = qrCodeData.trim();
+    if (!normalizedQrCode) throw new Error('Invalid QR code.');
+
+    const { data, error } = await supabase.rpc('redeem_ticket', {
+      receipt_qr_code: normalizedQrCode,
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Ticket verification failed.');
+    }
+
+    const result = Array.isArray(data) ? data[0] : data;
+    if (!result) throw new Error('Ticket verification returned no result.');
+    return result;
+  },
   async createTicketReceiptsForOrder(input: {
     orderId: string;
     orderNumber: string;
@@ -1324,12 +1396,24 @@ export const ticketReceiptService = {
       return [] as TicketReceipt[];
     }
 
-    // Fail closed: tickets are issued only for successfully paid orders.
-    const { data: orderData, error: orderError } = await supabase
+    // Fail closed: tickets are issued only for successfully paid/completed orders.
+    // Older production schemas may not have payment_status; fall back to status.
+    let orderData: any = null;
+    let orderError: any = null;
+
+    ({ data: orderData, error: orderError } = await supabase
       .from('orders')
-      .select('id, payment_status')
+      .select('id, status, payment_status')
       .eq('id', input.orderId)
-      .single();
+      .single());
+
+    if (orderError && /payment_status|column/i.test(String(orderError.message || ''))) {
+      ({ data: orderData, error: orderError } = await supabase
+        .from('orders')
+        .select('id, status')
+        .eq('id', input.orderId)
+        .single());
+    }
 
     if (orderError) {
       console.warn('Skipping ticket receipt creation; unable to verify order payment status:', orderError);
@@ -1337,10 +1421,21 @@ export const ticketReceiptService = {
     }
 
     const normalizedPaymentStatus = String(orderData?.payment_status || '').toLowerCase();
-    if (normalizedPaymentStatus !== 'paid' && normalizedPaymentStatus !== 'completed' && normalizedPaymentStatus !== 'success') {
+    const normalizedOrderStatus = String(orderData?.status || '').toLowerCase();
+    const isPaidOrder =
+      normalizedPaymentStatus === 'paid' ||
+      normalizedPaymentStatus === 'completed' ||
+      normalizedPaymentStatus === 'success' ||
+      normalizedOrderStatus === 'completed' ||
+      normalizedOrderStatus === 'confirmed' ||
+      normalizedOrderStatus === 'paid' ||
+      normalizedOrderStatus === 'success';
+
+    if (!isPaidOrder) {
       console.warn('Skipping ticket receipt creation; order payment is not successful:', {
         orderId: input.orderId,
         paymentStatus: orderData?.payment_status,
+        orderStatus: orderData?.status,
       });
       return [] as TicketReceipt[];
     }
@@ -1407,10 +1502,15 @@ export const ticketReceiptService = {
       });
 
       const qty = Math.max(1, Number(item.quantity || 1));
+      const receiptType = String(item.type || product?.type || 'ticket').toLowerCase();
+      const isTicket = receiptType === 'ticket';
+      const receiptCount = isTicket ? qty : 1;
 
-      for (let i = 0; i < qty; i += 1) {
-        const seatNo = `A${serial.toString().padStart(2, '0')}`;
-        const qrCodeData = `TICKET:${input.orderNumber}:${item.productId}:${serial}:${Date.now()}`;
+      for (let i = 0; i < receiptCount; i += 1) {
+        const receiptQuantity = isTicket ? 1 : qty;
+        const unitPrice = Number(item.unitPrice || product?.price || 0);
+        const seatNo = isTicket ? `A${serial.toString().padStart(2, '0')}` : undefined;
+        const qrCodeData = `${isTicket ? 'TICKET' : 'PRODUCT'}:${input.orderNumber}:${item.productId}:${serial}:${Date.now()}`;
 
         rows.push({
           order_id: input.orderId,
@@ -1420,17 +1520,18 @@ export const ticketReceiptService = {
           video_id: event?.video_id || item.videoId || input.fallbackVideoId,
           event_id: product?.event_id || undefined,
           product_id: item.productId,
-          ticket_type: item.type || product?.type || 'ticket',
-          ticket_title: item.name || product?.name || 'Ticket',
-          quantity: 1,
-          unit_price: Number(item.unitPrice || product?.price || 0),
-          total_price: Number(item.unitPrice || product?.price || 0),
+          ticket_type: receiptType,
+          receipt_kind: isTicket ? 'ticket' : 'product',
+          ticket_title: item.name || product?.name || (isTicket ? 'Ticket' : 'Product'),
+          quantity: receiptQuantity,
+          unit_price: unitPrice,
+          total_price: unitPrice * receiptQuantity,
           currency: item.currency || product?.currency || 'USD',
           qr_code_data: qrCodeData,
           ticket_image_url: buildTicketImageUrl({
             eventName: event?.event_name || '60seconds Event',
             orderNumber: input.orderNumber,
-            seatNo,
+            seatNo: seatNo || '-',
             startDateLabel,
             startTimeLabel,
           }) || undefined,
@@ -1485,17 +1586,9 @@ export const ticketReceiptService = {
         const orderedQty = quantityByProduct.get(stockRow.id) || 0;
         if (orderedQty <= 0) continue;
 
-        const nextAvailable = Math.max(0, Number(stockRow.available_quantity || 0) - orderedQty);
-        const nextSold = Math.max(0, Number(stockRow.sold_quantity || 0) + orderedQty);
-
-        const { error: stockUpdateError } = await supabase
-          .from('products')
-          .update({
-            available_quantity: nextAvailable,
-            sold_quantity: nextSold,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', stockRow.id);
+        const { error: stockUpdateError } = await supabase.rpc('reconcile_product_inventory', {
+          target_product_id: stockRow.id,
+        });
 
         if (stockUpdateError) {
           console.error('Error decrementing product stock after ticket issuance:', stockUpdateError);
@@ -1519,7 +1612,25 @@ export const ticketReceiptService = {
       throw error;
     }
 
-    return (data || []) as TicketReceipt[];
+    const tickets = (data || []) as TicketReceipt[];
+    const orderIds = Array.from(new Set(tickets.map((ticket) => ticket.order_id).filter(Boolean)));
+    if (!orderIds.length) return tickets;
+
+    const { data: orderRows, error: orderError } = await supabase
+      .from('orders')
+      .select('id,created_at')
+      .in('id', orderIds);
+
+    if (orderError) {
+      console.warn('Unable to load original purchase dates; using receipt dates:', orderError.message);
+      return tickets;
+    }
+
+    const purchasedAtByOrder = new Map((orderRows || []).map((order) => [order.id, order.created_at]));
+    return tickets.map((ticket) => ({
+      ...ticket,
+      purchased_at: purchasedAtByOrder.get(ticket.order_id) || ticket.issued_at || ticket.created_at,
+    })) as Array<TicketReceipt & { purchased_at?: string }>;
   },
 };
 

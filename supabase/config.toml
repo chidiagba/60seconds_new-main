@@ -470,6 +470,21 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/paystack-webhook-settlement/index.ts"
 
+[functions.paystack-create-order-checkout]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/paystack-create-order-checkout/index.ts"
+
+[functions.paystack-reconcile-business-sales]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/paystack-reconcile-business-sales/index.ts"
+
+[functions.paystack-reconcile-subaccount-settlements]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/paystack-reconcile-subaccount-settlements/index.ts"
+
 [functions.backfill-external-settlements]
 enabled = true
 verify_jwt = true

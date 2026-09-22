@@ -388,7 +388,7 @@ export default function WebEventScreen() {
                     ₦{product.price.toFixed(2)}
                   </Text>
                   <Text style={styles.productAvailable}>
-                    {product.available - (product.sold || 0)} available
+                    {Math.max(0, Number(product.available || 0))} available
                   </Text>
                 </View>
                 <View style={styles.productActions}>

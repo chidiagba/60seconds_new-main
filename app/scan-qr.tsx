@@ -7,17 +7,33 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native";
-import { useRouter, useFocusEffect } from "expo-router";
-import { ArrowLeft, ScanLine, X } from "lucide-react-native";
+import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { ArrowLeft, CheckCircle, ScanLine, X } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import { CameraView, Camera } from "expo-camera";
 import * as Linking from "expo-linking";
+import { ticketReceiptService } from "@/lib/database";
+
+type RedemptionResult = {
+  order_number: string;
+  ticket_title: string;
+  event_name?: string | null;
+  order_status: string;
+  receipt_kind?: "ticket" | "product";
+  quantity?: number;
+  total_price?: number;
+  currency?: string;
+};
 
 export default function ScanQRScreen() {
   const router = useRouter();
+  const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const isRedemptionMode = mode === "redeem";
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [scanned, setScanned] = useState(false);
   const [scanning, setScanning] = useState(true);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [redemption, setRedemption] = useState<RedemptionResult | null>(null);
 
   const checkPermission = async () => {
     const { status } = await Camera.requestCameraPermissionsAsync();
@@ -36,7 +52,7 @@ export default function ScanQRScreen() {
     }, [])
   );
 
-  const handleBarCodeScanned = ({
+  const handleBarCodeScanned = async ({
     type,
     data,
   }: {
@@ -45,6 +61,22 @@ export default function ScanQRScreen() {
   }) => {
     setScanned(true);
     setScanning(false);
+
+    if (isRedemptionMode) {
+      setIsVerifying(true);
+      try {
+        const result = await ticketReceiptService.redeemTicket(data) as RedemptionResult;
+        setRedemption(result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Ticket verification failed.";
+        Alert.alert("Purchase Not Verified", message, [
+          { text: "Scan Again", onPress: handleScanAgain },
+        ]);
+      } finally {
+        setIsVerifying(false);
+      }
+      return;
+    }
 
     try {
       const qrData = JSON.parse(data);
@@ -92,6 +124,7 @@ export default function ScanQRScreen() {
   };
 
   const handleScanAgain = () => {
+    setRedemption(null);
     setScanned(false);
     setScanning(true);
   };
@@ -133,7 +166,7 @@ export default function ScanQRScreen() {
         <TouchableOpacity style={styles.backButton} onPress={handleCancel}>
           <ArrowLeft size={24} color={Colors.dark.text} />
         </TouchableOpacity>
-        <Text style={styles.title}>Scan to Pay</Text>
+        <Text style={styles.title}>{isRedemptionMode ? "Verify Purchase" : "Scan to Pay"}</Text>
         <View style={styles.placeholder} />
       </View>
 
@@ -153,7 +186,7 @@ export default function ScanQRScreen() {
             <View style={styles.cornerBR} />
           </View>
 
-          {scanning && (
+          {scanning && !isVerifying && (
             <View style={styles.scanLineContainer}>
               <ScanLine
                 size={24}
@@ -164,8 +197,35 @@ export default function ScanQRScreen() {
           )}
 
           <Text style={styles.instructions}>
-            Align the QR code within the frame to scan
+            {isRedemptionMode
+              ? "Scan a customer's ticket or product receipt QR code"
+              : "Align the QR code within the frame to scan"}
           </Text>
+
+          {isVerifying && (
+            <View style={styles.resultCard}>
+              <ActivityIndicator size="large" color={Colors.dark.primary} />
+              <Text style={styles.resultTitle}>Verifying purchase...</Text>
+            </View>
+          )}
+
+          {redemption && (
+            <View style={styles.resultCard}>
+              <CheckCircle size={52} color="#10B981" />
+              <Text style={styles.resultTitle}>
+                {redemption.receipt_kind === "product" ? "Product Verified" : "Ticket Redeemed"}
+              </Text>
+              <Text style={styles.resultText}>{redemption.ticket_title}</Text>
+              {redemption.receipt_kind === "product" && (
+                <Text style={styles.resultText}>
+                  Quantity {Math.max(1, Number(redemption.quantity || 1))} · {redemption.currency || ""} {Number(redemption.total_price || 0).toFixed(2)}
+                </Text>
+              )}
+              {!!redemption.event_name && <Text style={styles.resultText}>{redemption.event_name}</Text>}
+              <Text style={styles.resultOrder}>Order {redemption.order_number}</Text>
+              <Text style={styles.resultStatus}>{redemption.order_status.toUpperCase()}</Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -347,4 +407,18 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
+  resultCard: {
+    position: "absolute",
+    left: 24,
+    right: 24,
+    bottom: 32,
+    padding: 20,
+    borderRadius: 16,
+    alignItems: "center",
+    backgroundColor: Colors.dark.card,
+  },
+  resultTitle: { color: Colors.dark.text, fontSize: 20, fontWeight: "700", marginTop: 10 },
+  resultText: { color: Colors.dark.text, fontSize: 15, marginTop: 6, textAlign: "center" },
+  resultOrder: { color: Colors.dark.subtext, fontSize: 13, marginTop: 10 },
+  resultStatus: { color: "#10B981", fontSize: 13, fontWeight: "800", marginTop: 6 },
 });

@@ -7,6 +7,11 @@ expo-env.d.ts
 node_modules
 
 # Build caches and generated artifacts
+.DS_Store
+.expo-export-check/
+backup-repo.git/
+modules/**/android/.gradle/
+modules/**/android/build/
 .gradle-user-home/
 .expo/
 android/.gradle/

@@ -154,7 +154,7 @@ const reserveWalletFundsForWithdrawal = async (params: {
 
   const { data: wallet, error: walletError } = await supabaseAdmin
     .from('wallets')
-    .select('id,balance,currency')
+    .select('id,balance')
     .eq('user_id', userId)
     .maybeSingle();
 
@@ -185,9 +185,11 @@ const reserveWalletFundsForWithdrawal = async (params: {
     throw new Error('Insufficient withdrawable wallet balance');
   }
 
-  const nextBalance = Number((currentBalance - amount).toFixed(2));
   const nowIso = new Date().toISOString();
   const txStatus = mapTransferStatusToTxStatus(transferStatus);
+  const nextBalance = txStatus === 'completed'
+    ? Number((currentBalance - amount).toFixed(2))
+    : currentBalance;
 
   const { data: insertedTx, error: txError } = await supabaseAdmin
     .from('transactions')

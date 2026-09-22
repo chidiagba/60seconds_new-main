@@ -28,13 +28,41 @@ import { useWalletStore } from '@/store/wallet-store';
 import { useAuthStore } from '@/store/auth-store';
 import { Transaction } from '@/types/wallet';
 import { formatCurrency, normalizeCurrencyCode } from '@/constants/currencies';
+import { supabase } from '@/lib/supabase';
 
 export default function TransactionDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuthStore();
-  const { transactions, fetchWallet, fetchTransactions, isLoading, selectedCurrency } = useWalletStore();
+  const { transactions, fetchWallet, fetchTransactions, isLoading, selectedCurrency, businessBankAccount } = useWalletStore();
   const [transaction, setTransaction] = useState<Transaction | null>(null);
+  const [receiptQuantity, setReceiptQuantity] = useState<number | null>(null);
+
+  const isPaidOrganizerSettlement = (candidate: Transaction | null): boolean => {
+    if (!candidate || !user?.isBusinessAccount) return false;
+
+    const candidateMetadata = (candidate.metadata || {}) as Record<string, any>;
+    const entry = String(candidateMetadata.entry || '').trim().toLowerCase();
+    const source = String(candidateMetadata.source || '').trim().toLowerCase();
+    const provider = String(
+      candidateMetadata.paymentProvider || candidateMetadata.payment_provider || ''
+    ).trim().toLowerCase();
+    const status = String(candidate.status || '').trim().toLowerCase();
+    const isCompleted = ['completed', 'paid'].includes(status);
+    const isOrganizerCredit = entry === 'owner_credit';
+    const hasLinkedPaystackSubaccount =
+      String(businessBankAccount?.payoutProvider || '').trim().toLowerCase() === 'paystack' &&
+      Boolean(String(businessBankAccount?.paystackSubaccountCode || '').trim());
+    const isPaystackSettlement =
+      provider === 'paystack' ||
+      source.includes('paystack') ||
+      (source === 'business_wallet_reconciliation' && hasLinkedPaystackSubaccount) ||
+      Boolean(candidateMetadata.paystackReference || candidateMetadata.payment_reference);
+
+    // Historical settlements may not have provider metadata, but reconciled
+    // owner credits still mean the organizer payment was completed.
+    return isCompleted && isOrganizerCredit && isPaystackSettlement;
+  };
   
   useEffect(() => {
     const loadTransaction = async () => {
@@ -57,6 +85,31 @@ export default function TransactionDetailsScreen() {
       setTransaction(foundTransaction || null);
     }
   }, [transactions]);
+
+  useEffect(() => {
+    const loadReceiptQuantity = async () => {
+      const candidate = transactions.find(tx => String(tx.id) === String(id));
+      const candidateMetadata = (candidate?.metadata || {}) as Record<string, any>;
+      const orderId = candidateMetadata.order_id || candidateMetadata.orderId;
+      if (!orderId) {
+        setReceiptQuantity(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('ticket_receipts')
+        .select('quantity')
+        .eq('order_id', String(orderId));
+
+      if (!error && data?.length) {
+        setReceiptQuantity(data.reduce((sum, row: any) => sum + Math.max(1, Number(row.quantity || 1)), 0));
+      } else {
+        setReceiptQuantity(null);
+      }
+    };
+
+    void loadReceiptQuantity();
+  }, [id, transactions]);
   
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -123,6 +176,10 @@ export default function TransactionDetailsScreen() {
   
   const getStatusIcon = () => {
     if (!transaction) return null;
+
+    if (isPaidOrganizerSettlement(transaction)) {
+      return <CheckCircle size={20} color={Colors.dark.success} />;
+    }
     
     switch (transaction.status) {
       case 'completed':
@@ -140,6 +197,10 @@ export default function TransactionDetailsScreen() {
   
   const getStatusColor = () => {
     if (!transaction) return Colors.dark.subtext;
+
+    if (isPaidOrganizerSettlement(transaction)) {
+      return Colors.dark.success;
+    }
     
     switch (transaction.status) {
       case 'completed':
@@ -214,7 +275,29 @@ export default function TransactionDetailsScreen() {
   
   const isTwintTransaction = transaction.metadata?.paymentProvider === 'twint';
   const metadata = (transaction.metadata || {}) as Record<string, any>;
+  const normalizedDescription = String(transaction.description || '').toLowerCase();
+  const purchaseItems = Array.isArray(metadata.items)
+    ? metadata.items
+    : Array.isArray(metadata.cartItems)
+      ? metadata.cartItems
+      : [];
+  const metadataQuantity = purchaseItems.reduce(
+    (sum: number, item: any) => sum + Math.max(1, Number(item?.quantity || 1)),
+    0
+  );
+  const purchasedQuantity = receiptQuantity || metadataQuantity || Number(metadata.quantity || 0);
   const isOwnerCreditEntry = String(metadata.entry || '').trim() === 'owner_credit';
+  const isBuyerPurchase =
+    String(metadata.entry || '').toLowerCase() === 'buyer_debit' ||
+    (!isOwnerCreditEntry && Boolean(metadata.order_id || metadata.orderId || metadata.productId || metadata.product_id)) ||
+    normalizedDescription.includes('purchase') ||
+    normalizedDescription.includes('ticket') ||
+    normalizedDescription.includes('product');
+  const isCompletedPurchase = isBuyerPurchase && transaction.status === 'completed';
+  const showPaidOrganizerSettlement = isPaidOrganizerSettlement(transaction);
+  const displayedStatus = showPaidOrganizerSettlement || isCompletedPurchase
+    ? 'Paid'
+    : transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1);
   const detailCurrency = normalizeCurrencyCode(metadata.currency, selectedCurrency);
   const formattedAmount = formatCurrency(transaction.amount, detailCurrency);
   const signedFormattedAmount = `${transaction.amount > 0 ? '+' : ''}${formattedAmount}`;
@@ -258,9 +341,22 @@ export default function TransactionDetailsScreen() {
           <View style={[styles.statusContainer, { backgroundColor: `${getStatusColor()}20` }]}>
             {getStatusIcon()}
             <Text style={[styles.statusText, { color: getStatusColor() }]}>
-              {transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)}
+              {displayedStatus}
             </Text>
           </View>
+
+          {isBuyerPurchase && (
+            <TouchableOpacity
+              style={styles.purchaseButton}
+              onPress={() => router.push({
+                pathname: user?.isBusinessAccount ? '/(tabsbusiness)/profile' : '/(tabs)/profile',
+                params: { tab: 'orders' },
+              })}
+            >
+              <ShoppingBag size={17} color="#FFFFFF" />
+              <Text style={styles.purchaseButtonText}>View My Purchases</Text>
+            </TouchableOpacity>
+          )}
           
           {isTwintTransaction && (
             <TouchableOpacity 
@@ -295,6 +391,24 @@ export default function TransactionDetailsScreen() {
             <Text style={styles.detailLabel}>Wallet Impact</Text>
             <Text style={styles.detailValue}>{walletImpact}</Text>
           </View>
+
+          {isBuyerPurchase && (
+            <>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Payment Status</Text>
+                <Text style={[styles.detailValue, isCompletedPurchase && { color: Colors.dark.success }]}>
+                  {isCompletedPurchase ? 'Paid' : displayedStatus}
+                </Text>
+              </View>
+
+              {purchasedQuantity > 0 && (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Items Purchased</Text>
+                  <Text style={styles.detailValue}>{purchasedQuantity}</Text>
+                </View>
+              )}
+            </>
+          )}
           
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Type</Text>
@@ -302,6 +416,24 @@ export default function TransactionDetailsScreen() {
               {transaction.type.charAt(0).toUpperCase() + transaction.type.slice(1)}
             </Text>
           </View>
+
+          {showPaidOrganizerSettlement && (
+            <>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Payment Status</Text>
+                <Text style={[styles.detailValue, { color: Colors.dark.success }]}>Paid</Text>
+              </View>
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Settlement State</Text>
+                <Text style={styles.detailValue}>
+                  {String(metadata.lifecycle_stage || '').includes('paystack')
+                    ? 'Available until Paystack bank settlement'
+                    : 'Available in wallet'}
+                </Text>
+              </View>
+            </>
+          )}
           
           {transaction.transactionFee !== undefined && !isOwnerCreditEntry && (
             <View style={styles.detailRow}>
@@ -363,6 +495,29 @@ export default function TransactionDetailsScreen() {
                 <Text style={styles.detailValue}>{metadata.order_id}</Text>
               </View>
             )}
+
+            {isOwnerCreditEntry && metadata.gross_amount !== undefined && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Customer Paid</Text>
+                <Text style={styles.detailValue}>{metadataAmount('gross_amount')}</Text>
+              </View>
+            )}
+
+            {isOwnerCreditEntry && metadata.platform_fee_amount !== undefined && (
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Platform Fee</Text>
+                <Text style={styles.detailValue}>{metadataAmount('platform_fee_amount')}</Text>
+              </View>
+            )}
+
+            {purchaseItems.map((item: any, index: number) => (
+              <View style={styles.detailRow} key={`${item?.product_id || item?.productId || 'item'}-${index}`}>
+                <Text style={styles.detailLabel}>{index === 0 ? 'Purchased Items' : ''}</Text>
+                <Text style={styles.detailValue}>
+                  {`${Math.max(1, Number(item?.quantity || 1))}× ${item?.name || item?.product_name || item?.type || 'Item'}`}
+                </Text>
+              </View>
+            ))}
 
             {metadata.payment_reference && (
               <View style={styles.detailRow}>
@@ -522,6 +677,20 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '500',
     marginLeft: 8,
+  },
+  purchaseButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.dark.primary,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 22,
+    marginTop: 16,
+  },
+  purchaseButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   detailsSection: {
     padding: 16,

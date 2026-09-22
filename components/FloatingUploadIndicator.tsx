@@ -5,6 +5,7 @@ import { Check, RefreshCcw, X } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
 import { useUploadTaskStore } from "@/store/upload-task-store";
+import AppThemeDialog from "@/components/AppThemeDialog";
 
 const RING_SIZE = 42;
 const STROKE_WIDTH = 4;
@@ -23,14 +24,13 @@ export default function FloatingUploadIndicator() {
   const canRetry = useUploadTaskStore((state) => state.canRetry);
 
   useEffect(() => {
-    if (status !== "success" && status !== "error") {
+    if (status !== "success") {
       return;
     }
 
-    const delayMs = status === "success" ? 7000 : 9000;
     const timer = setTimeout(() => {
       useUploadTaskStore.getState().dismissTask();
-    }, delayMs);
+    }, 7000);
 
     return () => clearTimeout(timer);
   }, [status]);
@@ -47,6 +47,7 @@ export default function FloatingUploadIndicator() {
   const strokeColor = isError ? "#ff5a5f" : isSuccess ? "#36d399" : Colors.dark.primary;
 
   return (
+    <>
     <View pointerEvents="box-none" style={[styles.host, { top: insets.top + 12 }]}> 
       <View style={styles.card}>
         <View style={styles.ringWrap}>
@@ -109,6 +110,17 @@ export default function FloatingUploadIndicator() {
         ) : null}
       </View>
     </View>
+    <AppThemeDialog
+      visible={isError}
+      title="Event upload failed"
+      message={message}
+      primaryLabel={canRetry ? "Upload again" : "OK"}
+      onPrimaryPress={() => canRetry
+        ? void useUploadTaskStore.getState().retryCurrentTask()
+        : useUploadTaskStore.getState().dismissTask()}
+      onClose={() => useUploadTaskStore.getState().dismissTask()}
+    />
+    </>
   );
 }
 

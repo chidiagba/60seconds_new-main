@@ -20,7 +20,6 @@ import { WebView } from 'react-native-webview';
 import PaystackService from '@/lib/paystack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
-import { useAuthStore } from '@/store/auth-store';
 
 type PaystackChannel = 'card' | 'bank' | 'ussd' | 'qr' | 'mobile_money' | 'bank_transfer';
 type ChannelSelection = 'all' | PaystackChannel;
@@ -38,10 +37,24 @@ const CHANNEL_OPTIONS: { key: ChannelSelection; label: string }[] = [
   { key: 'mobile_money', label: 'Mobile Money' },
 ];
 
+const getEdgeFunctionErrorMessage = async (error: any, fallback: string) => {
+  const response = error?.context;
+  if (response && typeof response.clone === 'function') {
+    try {
+      const body = await response.clone().json();
+      const message = String(body?.error || body?.message || '').trim();
+      if (message) return message;
+    } catch {
+      // The response is not JSON; fall through to the SDK error message.
+    }
+  }
+  return String(error?.message || fallback).trim() || fallback;
+};
+
 interface PaystackWebViewProps {
   visible: boolean;
   onClose: () => void;
-  onSuccess: (reference: string) => void;
+  onSuccess: (reference: string, orderId?: string) => void;
   onCancel: () => void;
   amount: number;
   /** The currency the product/cart is priced in. If not NGN, the edge function converts to NGN automatically. */
@@ -88,8 +101,8 @@ export default function PaystackWebView({
   const [checkoutReference, setCheckoutReference] = useState<string | null>(null);
   const [checkoutWebViewReady, setCheckoutWebViewReady] = useState(false);
   const [externalCheckoutMode, setExternalCheckoutMode] = useState(false);
+  const [checkoutOrderId, setCheckoutOrderId] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
-  const authUser = useAuthStore((state) => state.user);
 
   // Ref to prevent stale-closure success fire after the user has cancelled/navigated away
   const isCancelledRef = useRef(false);
@@ -107,6 +120,7 @@ export default function PaystackWebView({
     setCheckoutReference(null);
     setCheckoutWebViewReady(false);
     setExternalCheckoutMode(false);
+    setCheckoutOrderId(null);
     const onBackPress = () => {
       // Treat hardware back as a cancellation — do NOT silently close
       if (paymentStatus === 'processing') {
@@ -188,7 +202,7 @@ export default function PaystackWebView({
         }
         setTimeout(() => {
           if (!isCancelledRef.current) {
-            onSuccess(reference);
+            onSuccess(reference, checkoutOrderId || String(metadata?.orderId || '') || undefined);
           }
         }, 250);
         return;
@@ -267,16 +281,11 @@ export default function PaystackWebView({
     }
 
     const ownerId = String(metadata?.ownerId || metadata?.recipientId || '').trim();
-    const currentUserId = String(authUser?.id || '').trim();
-    const canUpdateBankDetails = Boolean(ownerId && currentUserId && ownerId === currentUserId);
-
     if (!ownerId) {
-      const missingOwnerError: any = new Error(
-        'Organizer split routing is missing. Configure Paystack subaccount/split before checkout.'
-      );
-      missingOwnerError.routingErrorCode = 'SPLIT_ROUTING_MISSING';
-      missingOwnerError.canUpdateBankDetails = canUpdateBankDetails;
-      throw missingOwnerError;
+      // Split routing is optional for checkout. Without an organizer route the
+      // transaction is collected by the platform Paystack account and the
+      // webhook still credits the organizer's in-app ledger.
+      return {};
     }
 
     const { data, error } = await supabase.functions.invoke('paystack-resolve-routing', {
@@ -284,12 +293,9 @@ export default function PaystackWebView({
     });
 
     if (error) {
-      const resolveError: any = new Error(
-        `Unable to confirm organizer payout routing right now. ${error.message || 'Please try again.'}`
-      );
-      resolveError.routingErrorCode = 'ROUTING_LOOKUP_FAILED';
-      resolveError.canUpdateBankDetails = canUpdateBankDetails;
-      throw resolveError;
+      const edgeMessage = await getEdgeFunctionErrorMessage(error, 'Please try again.');
+      console.warn('Paystack routing lookup unavailable; using platform collection:', edgeMessage);
+      return {};
     }
 
     if (data?.success) {
@@ -304,20 +310,13 @@ export default function PaystackWebView({
       }
     }
 
-    const routingErrorMessage = String(
-      data?.error ||
-        data?.verificationReason ||
-        'Organizer split routing is missing. Configure Paystack subaccount/split before checkout.'
-    );
-
-    const routingError: any = new Error(routingErrorMessage);
-    routingError.routingErrorCode = String(data?.code || 'SPLIT_ROUTING_MISSING').trim() || 'SPLIT_ROUTING_MISSING';
-    routingError.canUpdateBankDetails = canUpdateBankDetails;
-    throw routingError;
+    // A missing/unverified organizer route must not prevent a buyer from paying.
+    // The server initializes an unsplit platform transaction in this case.
+    console.info('Paystack organizer routing not available; using platform collection.', data?.code || 'NO_ROUTE');
+    return {};
   };
 
   const openHostedCheckoutFlow = async (channels: PaystackChannel[]) => {
-    const reference = buildReference();
     const resolvedRouting = await resolveRoutingBeforeCheckout({
       subaccount: paystackSubaccount,
       splitCode: paystackSplitCode,
@@ -325,6 +324,46 @@ export default function PaystackWebView({
     const effectiveSubaccount = resolvedRouting.subaccount;
     const effectiveSplitCode = resolvedRouting.splitCode;
     const effectiveBearer = resolvedRouting.bearer;
+
+    // Product purchases are initialized by the backend so price, owner, order,
+    // payment attempt and Paystack metadata exist before the browser opens.
+    const purchaseItems = Array.isArray(metadata?.cartItems) && metadata.cartItems.length
+      ? metadata.cartItems.map((item: any) => ({ productId: item.productId, quantity: item.quantity || item.qty || 1 }))
+      : metadata?.productId
+        ? [{ productId: metadata.productId, quantity: metadata.quantity || 1 }]
+        : [];
+    if (String(metadata?.paymentType || 'order_payment') === 'order_payment' && purchaseItems.length) {
+      const { data, error } = await supabase.functions.invoke('paystack-create-order-checkout', {
+        body: {
+          items: purchaseItems,
+          voucherId: metadata?.voucherId || null,
+          videoId: metadata?.videoId || null,
+          platform: Platform.OS,
+          subaccount: effectiveSubaccount,
+          splitCode: effectiveSplitCode,
+          channels,
+        },
+      });
+      if (error || !data?.success || !data?.authorizationUrl) {
+        const edgeMessage = error
+          ? await getEdgeFunctionErrorMessage(error, 'Unable to create the pending order.')
+          : '';
+        throw new Error(data?.error || edgeMessage || 'Unable to create the pending order.');
+      }
+      const reference = String(data.payment.reference);
+      setCheckoutOrderId(String(data.order.id));
+      setCheckoutReference(reference);
+      setCheckoutUrl(String(data.authorizationUrl));
+      setCheckoutWebViewReady(false);
+      setExternalCheckoutMode(true);
+      setIsLoading(false);
+      setPaymentStatus('idle');
+      await trackPaymentEvent('started', { reference, source: 'hosted', message: `Pending order ${data.order.order_number || data.order.id} created` });
+      await WebBrowser.openBrowserAsync(String(data.authorizationUrl), { showTitle: true, enableBarCollapsing: true });
+      return;
+    }
+
+    const reference = buildReference();
 
     await trackPaymentEvent('started', {
       reference,
@@ -416,7 +455,9 @@ export default function PaystackWebView({
       });
       await openHostedCheckoutFlow(channels);
     } catch (error: any) {
-      console.error('Paystack payment error:', error);
+      // Keep expected checkout failures inside the payment UI. console.error
+      // triggers the React Native development error overlay and hides the alert.
+      console.warn('Paystack payment could not start:', error?.message || error);
 
       const message = error?.message || 'There was an error starting the Paystack payment.';
       const canShowRoutingFixButton =
@@ -645,7 +686,7 @@ export default function PaystackWebView({
                       <Text style={styles.externalCheckoutTitle}>Secure Browser Checkout</Text>
                       <Text style={styles.externalCheckoutText}>
                         Paystack checkout is opened in your browser for secure verification. Complete payment there,
-                        then return to this app and tap "I've completed the payment".
+                        then return to this app. The server will confirm it automatically; you can also recheck below.
                       </Text>
                       <TouchableOpacity
                         style={styles.reopenCheckoutButton}
@@ -714,7 +755,7 @@ export default function PaystackWebView({
                   {isLoading ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Text style={styles.completePaymentButtonText}>I've completed the payment</Text>
+                    <Text style={styles.completePaymentButtonText}>Check payment status</Text>
                   )}
                 </TouchableOpacity>
 

@@ -119,6 +119,7 @@ export default function CartScreen() {
     paymentMethods,
     fetchPaymentMethods,
     fetchWallet,
+    fetchTransactions,
   } = useWalletStore();
 
   const { activeVoucher, clearActiveVoucher, incrementUsageCount, applyVoucher } =
@@ -141,6 +142,7 @@ export default function CartScreen() {
   const [twintCheckoutUrl, setTwintCheckoutUrl] = useState<string | null>(null);
   const [twintPaymentId, setTwintPaymentId] = useState<string | null>(null);
   const [twintOrderId, setTwintOrderId] = useState<string | null>(null);
+  const [paystackOrderId, setPaystackOrderId] = useState<string | null>(null);
 
   // payment method is a simple string; specific values are controlled by UI
   const [paymentMethod, setPaymentMethod] = useState<string>("bankTransfer");
@@ -231,6 +233,8 @@ export default function CartScreen() {
         quantity: item.quantity,
         price: getMarkedUnitPrice(item.product.price), // ✅ save marked price
         name: item.product.name,
+        type: item.product.type,
+        description: item.product.description,
       }));
 
       const firstVideoId =
@@ -328,6 +332,11 @@ export default function CartScreen() {
 
   const getBusinessNetAmount = (grossAmount: number) => {
     return Number((grossAmount / (1 + PRICE_MARKUP_RATE)).toFixed(2));
+  };
+
+  const refreshWalletAfterPurchase = async () => {
+    await fetchWallet();
+    await fetchTransactions({ silent: true });
   };
 
   // Check available payment methods
@@ -439,6 +448,8 @@ export default function CartScreen() {
       if (!settlement.success) {
         throw new Error(settlement.error || 'Twint settlement failed.');
       }
+
+      await refreshWalletAfterPurchase();
 
       await issueTicketsForOrder(orderData);
 
@@ -667,7 +678,18 @@ export default function CartScreen() {
     }
 
     if (paymentMethod === "paystack") {
-      setShowPaystackModal(true);
+      try {
+        setProcessingPayment(true);
+        setShowPaystackModal(true);
+      } catch (error) {
+        console.error("Paystack order initialization error:", error);
+        Alert.alert(
+          "Paystack Initialization Failed",
+          error instanceof Error ? error.message : "Unable to initialize Paystack checkout."
+        );
+      } finally {
+        setProcessingPayment(false);
+      }
       return;
     }
 
@@ -773,6 +795,8 @@ export default function CartScreen() {
         if (!settlement.success) {
           throw new Error(settlement.error || 'Stripe settlement failed.');
         }
+
+        await refreshWalletAfterPurchase();
 
         await issueTicketsForOrder(order);
       } catch (recordErr) {
@@ -1072,18 +1096,34 @@ export default function CartScreen() {
 
       <PaystackWebView
         visible={showPaystackModal}
-        onClose={() => setShowPaystackModal(false)}
-        onSuccess={async (reference: string) => {
+        onClose={() => {
+          setShowPaystackModal(false);
+          setPaystackOrderId(null);
+        }}
+        onSuccess={async (reference: string, verifiedOrderId?: string) => {
           setShowPaystackModal(false);
           try {
             if (!ensureSingleOwnerCart("Paystack")) {
               return;
             }
             setProcessingPayment(true);
-            const order = await createOrder('paystack', 'pending');
+            const effectiveOrderId = verifiedOrderId || paystackOrderId;
+            if (!effectiveOrderId) {
+              throw new Error('Missing Paystack order ID for settlement. Please retry checkout.');
+            }
+
+            const { data: order, error: orderFetchError } = await supabase
+              .from('orders')
+              .select('id')
+              .eq('id', effectiveOrderId)
+              .single();
+
+            if (orderFetchError || !order) {
+              throw new Error('Order not found for verified Paystack payment.');
+            }
 
             const settlement = await settleExternalOrderPayment({
-              orderId: order.id,
+              orderId: effectiveOrderId,
               provider: 'paystack',
               paymentReference: reference,
               paymentTransactionId: reference,
@@ -1114,13 +1154,15 @@ export default function CartScreen() {
               throw new Error(settlement.error || 'Paystack settlement failed.');
             }
 
-            await issueTicketsForOrder(order);
+            await refreshWalletAfterPurchase();
+
             if (activeVoucher && discountAmount > 0) {
               incrementUsageCount(activeVoucher.id);
             }
             clearCart();
             clearActiveVoucher();
             setDiscountAmount(0);
+            setPaystackOrderId(null);
             Alert.alert(
               'Payment Successful',
               `Payment has been completed via Paystack.\nReference: ${reference}`,
@@ -1136,33 +1178,71 @@ export default function CartScreen() {
             setProcessingPayment(false);
           }
         }}
-        onCancel={() => setShowPaystackModal(false)}
+        onCancel={() => {
+          setShowPaystackModal(false);
+          setPaystackOrderId(null);
+        }}
         amount={finalTotal}
         currency={cartCurrency}
         email={currentUser?.email || ''}
         description={`Cart purchase (${cart.length} item${cart.length !== 1 ? 's' : ''})`}
         metadata={{
           ownerId: cartOwnerId,
-          cartItems: cart.map((i) => ({ productId: i.product.id, qty: i.quantity })),
+          recipientId: cartOwnerId,
+          userId: currentUser?.id,
+          orderId: paystackOrderId,
+          paymentType: 'order_payment',
+          grossAmount: finalTotal,
+          netAmount: getBusinessNetAmount(finalTotal),
+          platformFeeAmount: Number((finalTotal - getBusinessNetAmount(finalTotal)).toFixed(2)),
+          currency: cartCurrency,
+          cartItems: cart.map((i) => ({ productId: i.product.id, quantity: i.quantity })),
+          voucherId: activeVoucher?.id,
+          videoId: cart[0]?.product?.videoId,
         }}
         paystackSubaccount={
-          String((cart[0]?.product as any)?.paystackSubaccountCode || '').trim() ||
+          String(
+            (cart[0]?.product as any)?.paystackSubaccountCode ||
+            (cart[0]?.product as any)?.paystack_subaccount_code ||
+            (cart[0]?.product as any)?.subaccount ||
+            ''
+          ).trim() ||
           getPaystackRoutingForOwner(resolveProductOwnerId(cart[0]?.product)).subaccount
         }
         paystackSplitCode={
-          String((cart[0]?.product as any)?.paystackSplitCode || '').trim() ||
+          String(
+            (cart[0]?.product as any)?.paystackSplitCode ||
+            (cart[0]?.product as any)?.paystack_split_code ||
+            (cart[0]?.product as any)?.split_code ||
+            ''
+          ).trim() ||
           getPaystackRoutingForOwner(resolveProductOwnerId(cart[0]?.product)).splitCode
         }
         paystackTransactionCharge={
-          Number.isFinite(Number((cart[0]?.product as any)?.paystackTransactionCharge))
-            ? Number((cart[0]?.product as any)?.paystackTransactionCharge)
+          Number.isFinite(
+            Number(
+              (cart[0]?.product as any)?.paystackTransactionCharge ||
+              (cart[0]?.product as any)?.paystack_transaction_charge ||
+              (cart[0]?.product as any)?.transaction_charge
+            )
+          )
+            ? Number(
+                (cart[0]?.product as any)?.paystackTransactionCharge ||
+                (cart[0]?.product as any)?.paystack_transaction_charge ||
+                (cart[0]?.product as any)?.transaction_charge
+              )
             : (
                 getPaystackRoutingForOwner(resolveProductOwnerId(cart[0]?.product)).transactionCharge ??
                 Number((finalTotal - getBusinessNetAmount(finalTotal)).toFixed(2))
               )
         }
         paystackBearer={
-          String((cart[0]?.product as any)?.paystackBearer || '').trim().toLowerCase() === 'subaccount'
+          String(
+            (cart[0]?.product as any)?.paystackBearer ||
+            (cart[0]?.product as any)?.paystack_bearer ||
+            (cart[0]?.product as any)?.bearer ||
+            ''
+          ).trim().toLowerCase() === 'subaccount'
             ? 'subaccount'
             : getPaystackRoutingForOwner(resolveProductOwnerId(cart[0]?.product)).bearer
         }

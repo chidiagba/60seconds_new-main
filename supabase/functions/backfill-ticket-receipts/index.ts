@@ -55,11 +55,11 @@ const toSourceItems = (order: any) => {
       if (!productId) return null;
       return {
         productId,
-        name: String(item?.name || item?.product_name || "Ticket").trim() || "Ticket",
+        name: String(item?.name || item?.product_name || "").trim() || undefined,
         quantity: Math.max(1, Number(item?.quantity || 1)),
         unitPrice: Number(item?.price || item?.unit_price || 0),
         currency: item?.currency ? String(item.currency).toUpperCase() : undefined,
-        type: String(item?.type || "ticket").toLowerCase(),
+        type: item?.type ? String(item.type).toLowerCase() : undefined,
         videoId: order?.video_id || undefined,
       };
     })
@@ -156,9 +156,16 @@ Deno.serve(async (req) => {
         const ownerId = product?.business_id || event?.user_id || null;
         if (!ownerId) continue;
 
-        for (let i = 0; i < item.quantity; i += 1) {
-          const seatNo = `A${serial.toString().padStart(2, "0")}`;
-          const qrCodeData = `TICKET:${orderNumber}:${item.productId}:${serial}:${Date.now()}`;
+        const quantity = Math.max(1, Number(item.quantity || 1));
+        const receiptType = String(item.type || product?.type || "ticket").toLowerCase();
+        const isTicket = receiptType === "ticket";
+        const receiptCount = isTicket ? quantity : 1;
+        const unitPrice = Number(item.unitPrice || product?.price || 0);
+
+        for (let i = 0; i < receiptCount; i += 1) {
+          const receiptQuantity = isTicket ? 1 : quantity;
+          const seatNo = isTicket ? `A${serial.toString().padStart(2, "0")}` : null;
+          const qrCodeData = `${isTicket ? "TICKET" : "PRODUCT"}:${orderNumber}:${item.productId}:${serial}:${Date.now()}`;
 
           rows.push({
             order_id: order.id,
@@ -168,11 +175,12 @@ Deno.serve(async (req) => {
             video_id: event?.video_id || item.videoId || order.video_id || null,
             event_id: product?.event_id || order.event_id || null,
             product_id: item.productId,
-            ticket_type: item.type || product?.type || "ticket",
-            ticket_title: item.name || product?.name || "Ticket",
-            quantity: 1,
-            unit_price: Number(item.unitPrice || product?.price || 0),
-            total_price: Number(item.unitPrice || product?.price || 0),
+            ticket_type: receiptType,
+            receipt_kind: isTicket ? "ticket" : "product",
+            ticket_title: item.name || product?.name || (isTicket ? "Ticket" : "Product"),
+            quantity: receiptQuantity,
+            unit_price: unitPrice,
+            total_price: unitPrice * receiptQuantity,
             currency: item.currency || product?.currency || "USD",
             qr_code_data: qrCodeData,
             seat_no: seatNo,

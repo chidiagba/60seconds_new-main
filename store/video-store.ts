@@ -275,13 +275,15 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       const videosWithProducts = videosData.map((videoData) => {
         let resolvedVideoUrl = (typeof videoData.video_url === 'string' && videoData.video_url.trim().length > 0 ? videoData.video_url.trim() : typeof (videoData as any).url === 'string' && (videoData as any).url.trim().length > 0 ? (videoData as any).url.trim() : '');
         if (resolvedVideoUrl && !/^https?:\/\//i.test(resolvedVideoUrl) && !/^file:\/\//i.test(resolvedVideoUrl)) { resolvedVideoUrl = supabase.storage.from('videos').getPublicUrl(resolvedVideoUrl).data.publicUrl; }
+        let resolvedWatermarkedUrl = typeof (videoData as any).watermarked_video_url === 'string' ? (videoData as any).watermarked_video_url.trim() : '';
+        if (resolvedWatermarkedUrl && !/^https?:\/\//i.test(resolvedWatermarkedUrl) && !/^file:\/\//i.test(resolvedWatermarkedUrl)) { resolvedWatermarkedUrl = supabase.storage.from('videos').getPublicUrl(resolvedWatermarkedUrl).data.publicUrl; }
         let resolvedThumbnailUrl = (typeof videoData.thumbnail_url === 'string' && videoData.thumbnail_url.trim().length > 0 ? videoData.thumbnail_url.trim() : '');
         if (resolvedThumbnailUrl && !/^https?:\/\//i.test(resolvedThumbnailUrl) && !/^file:\/\//i.test(resolvedThumbnailUrl)) { resolvedThumbnailUrl = supabase.storage.from('images').getPublicUrl(resolvedThumbnailUrl).data.publicUrl; }
         const eventId = eventIdByVideoId.get(videoData.id) || undefined;
         let products = eventId ? (productsByEventId.get(eventId) || []) : [];
         products = products.map(p => ({ ...p, videoId: videoData.id }));
         return enrichVideoEventStatus({
-          id: videoData.id, url: resolvedVideoUrl,
+          id: videoData.id, url: resolvedVideoUrl, watermarkedVideoUrl: resolvedWatermarkedUrl || undefined, watermarkStatus: (videoData as any).watermark_status,
           thumbnail: resolvedThumbnailUrl || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=300&q=80',
           description: videoData.description || undefined, likes: videoData.likes_count || 0, comments: videoData.comments_count || 0, shares: videoData.shares_count || 0, rating: videoData.rating || 0, ratingCount: videoData.rating_count || 0, userId: videoData.user_id,
           user: { id: videoData.profiles?.id || videoData.user_id, username: videoData.profiles?.username || 'Unknown', name: videoData.profiles?.full_name || 'Unknown User', avatar: resolveProfileAvatar(videoData.profiles), isBusinessAccount: videoData.profiles?.user_type === 'business', followers: videoData.profiles?.followers_count || 0, following: videoData.profiles?.following_count || 0, bio: videoData.profiles?.bio || undefined, businessName: videoData.profiles?.business_name || undefined, businessType: videoData.profiles?.business_type || undefined },
@@ -374,13 +376,15 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       const newVideos = videosData.map((videoData) => {
         let resolvedVideoUrl = (typeof videoData.video_url === 'string' && videoData.video_url.trim().length > 0 ? videoData.video_url.trim() : '');
         if (resolvedVideoUrl && !/^https?:\/\//i.test(resolvedVideoUrl) && !/^file:\/\//i.test(resolvedVideoUrl)) { resolvedVideoUrl = supabase.storage.from('videos').getPublicUrl(resolvedVideoUrl).data.publicUrl; }
+        let resolvedWatermarkedUrl = typeof (videoData as any).watermarked_video_url === 'string' ? (videoData as any).watermarked_video_url.trim() : '';
+        if (resolvedWatermarkedUrl && !/^https?:\/\//i.test(resolvedWatermarkedUrl) && !/^file:\/\//i.test(resolvedWatermarkedUrl)) { resolvedWatermarkedUrl = supabase.storage.from('videos').getPublicUrl(resolvedWatermarkedUrl).data.publicUrl; }
         let resolvedThumbnailUrl = (typeof videoData.thumbnail_url === 'string' && videoData.thumbnail_url.trim().length > 0 ? videoData.thumbnail_url.trim() : '');
         if (resolvedThumbnailUrl && !/^https?:\/\//i.test(resolvedThumbnailUrl) && !/^file:\/\//i.test(resolvedThumbnailUrl)) { resolvedThumbnailUrl = supabase.storage.from('images').getPublicUrl(resolvedThumbnailUrl).data.publicUrl; }
         const eventId = eventIdByVideoId.get(videoData.id) || undefined;
         let products = eventId ? (productsByEventId.get(eventId) || []) : [];
         products = products.map(p => ({ ...p, videoId: videoData.id }));
         return enrichVideoEventStatus({
-          id: videoData.id, url: resolvedVideoUrl,
+          id: videoData.id, url: resolvedVideoUrl, watermarkedVideoUrl: resolvedWatermarkedUrl || undefined, watermarkStatus: (videoData as any).watermark_status,
           thumbnail: resolvedThumbnailUrl || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=300&q=80',
           description: videoData.description || undefined, likes: videoData.likes_count || 0, comments: videoData.comments_count || 0, shares: videoData.shares_count || 0, rating: videoData.rating || 0, ratingCount: videoData.rating_count || 0, userId: videoData.user_id,
           user: { id: videoData.profiles?.id || videoData.user_id, username: videoData.profiles?.username || 'Unknown', name: videoData.profiles?.full_name || 'Unknown User', avatar: resolveProfileAvatar(videoData.profiles), isBusinessAccount: videoData.profiles?.user_type === 'business', followers: videoData.profiles?.followers_count || 0, following: videoData.profiles?.following_count || 0, bio: videoData.profiles?.bio || undefined, businessName: videoData.profiles?.business_name || undefined, businessType: videoData.profiles?.business_type || undefined },
@@ -468,6 +472,13 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         resolvedVideoUrl = supabase.storage.from('videos').getPublicUrl(resolvedVideoUrl).data.publicUrl;
       }
 
+      let resolvedWatermarkedUrl = typeof (videoData as any).watermarked_video_url === 'string'
+        ? (videoData as any).watermarked_video_url.trim()
+        : '';
+      if (resolvedWatermarkedUrl && !/^https?:\/\//i.test(resolvedWatermarkedUrl) && !/^file:\/\//i.test(resolvedWatermarkedUrl)) {
+        resolvedWatermarkedUrl = supabase.storage.from('videos').getPublicUrl(resolvedWatermarkedUrl).data.publicUrl;
+      }
+
       let resolvedThumbnailUrl =
         (typeof videoData.thumbnail_url === 'string' && videoData.thumbnail_url.trim().length > 0
           ? videoData.thumbnail_url.trim()
@@ -523,6 +534,8 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       const formattedVideo: Video = enrichVideoEventStatus({
         id: videoData.id,
         url: resolvedVideoUrl,
+        watermarkedVideoUrl: resolvedWatermarkedUrl || undefined,
+        watermarkStatus: (videoData as any).watermark_status,
         thumbnail: resolvedThumbnailUrl || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=300&q=80',
         description: videoData.description || undefined,
         likes: videoData.likes_count || 0,

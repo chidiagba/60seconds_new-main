@@ -106,7 +106,7 @@ const reserveWalletFundsForWithdrawal = async (params: {
 
   const { data: wallet, error: walletError } = await supabaseAdmin
     .from('wallets')
-    .select('id,balance,currency')
+    .select('id,balance')
     .eq('user_id', userId)
     .maybeSingle();
 

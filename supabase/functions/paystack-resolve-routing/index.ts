@@ -29,6 +29,38 @@ const respond = (body: unknown) =>
 
 const normalizeLower = (value: unknown) => String(value || '').trim().toLowerCase();
 const normalizeUpper = (value: unknown) => String(value || '').trim().toUpperCase();
+const asObject = (value: unknown): Record<string, any> =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : {};
+const pickString = (...values: unknown[]) => {
+  for (const value of values) {
+    const next = String(value || '').trim();
+    if (next) return next;
+  }
+  return '';
+};
+
+const extractBankRoutingMetadata = (input: unknown) => {
+  const root = asObject(input);
+  const embedded = asObject(root.business_bank_account);
+  const source = Object.keys(embedded).length > 0 ? embedded : root;
+
+  return {
+    payoutProvider: pickString(source.payout_provider, source.payoutProvider) || null,
+    countryCode: pickString(source.country_code, source.countryCode) || null,
+    isVerified:
+      source.is_verified === true || source.isVerified === true
+        ? true
+        : source.is_verified === false || source.isVerified === false
+          ? false
+          : null,
+    verificationStatus: pickString(source.verification_status, source.verificationStatus) || null,
+    verificationReason: pickString(source.verification_reason, source.verificationReason) || null,
+    paystackSubaccountCode:
+      pickString(source.paystack_subaccount_code, source.paystackSubaccountCode, source.subaccount) || null,
+    paystackSplitCode: pickString(source.paystack_split_code, source.paystackSplitCode, source.split_code) || null,
+    paystackRecipientCode: pickString(source.paystack_recipient_code, source.paystackRecipientCode) || null,
+  };
+};
 
 const mapRoutingResponse = (input: {
   ownerId: string;
@@ -132,28 +164,42 @@ Deno.serve(async (req) => {
     let bankRow: any = null;
     let bankError: any = null;
 
-    ({ data: bankRow, error: bankError } = await supabaseAdmin
-      .from('business_bank_accounts')
-      .select(
-        'user_id,is_active,payout_provider,country_code,is_verified,verification_status,verification_reason,paystack_subaccount_code,paystack_recipient_code,paystack_split_code'
-      )
-      .eq('user_id', ownerId)
-      .eq('is_active', true)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle());
+    const selectCandidates = [
+      'user_id,is_active,payout_provider,country_code,is_verified,verification_status,verification_reason,paystack_subaccount_code,paystack_recipient_code,paystack_split_code,metadata',
+      'user_id,is_active,payout_provider,country_code,is_verified,verification_status,verification_reason,paystack_subaccount_code,paystack_recipient_code,metadata',
+      'user_id,is_active,payout_provider,country_code,is_verified,verification_status,verification_reason,paystack_recipient_code,metadata',
+      'user_id,is_active,payout_provider,country_code,is_verified,verification_status,verification_reason,paystack_recipient_code',
+      'user_id,is_active,payout_provider,country_code,is_verified,verification_status,verification_reason',
+    ];
 
-    if (bankError && /column|paystack_split_code|schema cache/i.test(String(bankError.message || ''))) {
-      ({ data: bankRow, error: bankError } = await supabaseAdmin
+    for (const selectClause of selectCandidates) {
+      const { data, error } = await supabaseAdmin
         .from('business_bank_accounts')
-        .select(
-          'user_id,is_active,payout_provider,country_code,is_verified,verification_status,verification_reason,paystack_subaccount_code,paystack_recipient_code'
-        )
+        .select(selectClause)
         .eq('user_id', ownerId)
         .eq('is_active', true)
         .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle());
+        .limit(20);
+
+      if (!error) {
+        const rows = Array.isArray(data) ? data : [];
+        // Prefer a Paystack-ready account over a newer active account for another
+        // payout provider. This also recovers routes stored in the metadata fallback.
+        bankRow = rows.find((row: any) => {
+          const metadata = extractBankRoutingMetadata(asObject(row?.metadata));
+          return Boolean(
+            pickString(row?.paystack_subaccount_code, metadata.paystackSubaccountCode) ||
+            pickString(row?.paystack_split_code, metadata.paystackSplitCode)
+          );
+        }) || rows[0] || null;
+        bankError = null;
+        break;
+      }
+
+      bankError = error;
+      if (!/column|schema cache|does not exist/i.test(String(error.message || ''))) {
+        break;
+      }
     }
 
     if (bankError) {
@@ -165,23 +211,35 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (!bankRow && ownerId === requesterId) {
-      const metadata = (userData.user.user_metadata || {}) as Record<string, any>;
-      const bankMeta = (metadata.business_bank_account || {}) as Record<string, any>;
+    const requesterMeta = extractBankRoutingMetadata((userData.user.user_metadata || {}) as Record<string, any>);
+    const getOwnerMeta = async () => {
+      if (ownerId === requesterId) {
+        return requesterMeta;
+      }
 
-      if (Object.keys(bankMeta).length > 0) {
+      const { data: ownerAuthData, error: ownerAuthError } = await supabaseAdmin.auth.admin.getUserById(ownerId);
+      if (ownerAuthError || !ownerAuthData?.user) {
+        return null;
+      }
+
+      return extractBankRoutingMetadata((ownerAuthData.user.user_metadata || {}) as Record<string, any>);
+    };
+
+    if (!bankRow) {
+      const ownerMeta = await getOwnerMeta();
+      if (ownerMeta && (ownerMeta.paystackSubaccountCode || ownerMeta.paystackSplitCode || ownerMeta.paystackRecipientCode)) {
         return respond(
           mapRoutingResponse({
             ownerId,
             requesterId,
-            payoutProvider: bankMeta.payout_provider,
-            countryCode: bankMeta.country_code,
-            isVerified: bankMeta.is_verified === true,
-            verificationStatus: bankMeta.verification_status,
-            verificationReason: bankMeta.verification_reason,
-            paystackSubaccountCode: bankMeta.paystack_subaccount_code || bankMeta.paystackSubaccountCode,
-            paystackSplitCode: bankMeta.paystack_split_code || bankMeta.paystackSplitCode,
-            paystackRecipientCode: bankMeta.paystack_recipient_code || bankMeta.paystackRecipientCode,
+            payoutProvider: ownerMeta.payoutProvider,
+            countryCode: ownerMeta.countryCode,
+            isVerified: ownerMeta.isVerified,
+            verificationStatus: ownerMeta.verificationStatus,
+            verificationReason: ownerMeta.verificationReason,
+            paystackSubaccountCode: ownerMeta.paystackSubaccountCode,
+            paystackSplitCode: ownerMeta.paystackSplitCode,
+            paystackRecipientCode: ownerMeta.paystackRecipientCode,
           })
         );
       }
@@ -196,18 +254,38 @@ Deno.serve(async (req) => {
       });
     }
 
+    const rowMeta = extractBankRoutingMetadata(asObject(bankRow?.metadata));
+    const ownerMeta = await getOwnerMeta();
+
     return respond(
       mapRoutingResponse({
         ownerId,
         requesterId,
-        payoutProvider: bankRow.payout_provider,
-        countryCode: bankRow.country_code,
-        isVerified: bankRow.is_verified === true,
-        verificationStatus: bankRow.verification_status,
-        verificationReason: bankRow.verification_reason,
-        paystackSubaccountCode: bankRow.paystack_subaccount_code,
-        paystackSplitCode: bankRow.paystack_split_code,
-        paystackRecipientCode: bankRow.paystack_recipient_code,
+        payoutProvider: pickString(bankRow.payout_provider, rowMeta.payoutProvider, ownerMeta?.payoutProvider) || null,
+        countryCode: pickString(bankRow.country_code, rowMeta.countryCode, ownerMeta?.countryCode) || null,
+        isVerified:
+          bankRow.is_verified === true || bankRow.is_verified === false
+            ? bankRow.is_verified === true
+            : rowMeta.isVerified ?? ownerMeta?.isVerified ?? null,
+        verificationStatus:
+          pickString(bankRow.verification_status, rowMeta.verificationStatus, ownerMeta?.verificationStatus) || null,
+        verificationReason:
+          pickString(bankRow.verification_reason, rowMeta.verificationReason, ownerMeta?.verificationReason) || null,
+        paystackSubaccountCode: pickString(
+          bankRow.paystack_subaccount_code,
+          rowMeta.paystackSubaccountCode,
+          ownerMeta?.paystackSubaccountCode
+        ) || null,
+        paystackSplitCode: pickString(
+          bankRow.paystack_split_code,
+          rowMeta.paystackSplitCode,
+          ownerMeta?.paystackSplitCode
+        ) || null,
+        paystackRecipientCode: pickString(
+          bankRow.paystack_recipient_code,
+          rowMeta.paystackRecipientCode,
+          ownerMeta?.paystackRecipientCode
+        ) || null,
       })
     );
   } catch (error: any) {

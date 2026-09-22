@@ -28,6 +28,20 @@ const isBackgroundAudioFocusError = (error: unknown) => {
   return /AudioFocusNotAcquiredException|currently in the background|audio focus could not be acquired/i.test(message);
 };
 
+const hasEmbeddedWatermark = (uri: string) => {
+  let normalizedUri = uri.toLowerCase();
+
+  try {
+    normalizedUri = decodeURIComponent(normalizedUri);
+  } catch {
+    // Keep the original URI when it contains malformed escape sequences.
+  }
+
+  return normalizedUri.includes('_wm_')
+    || normalizedUri.includes('/wm_')
+    || normalizedUri.includes('watermarked');
+};
+
 export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWithSound = true, onPress, taggedUsers, showWatermark = true, onLoadError }: VideoPlayerProps) {
   const router = useRouter();
   const isFocused = useIsFocused();
@@ -46,6 +60,10 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
   const canPlay = !paused && appState === 'active' && isFocused;
   const canPlayWithSound = autoplayWithSound && canPlay;
   const androidVideoProps = Platform.OS === 'android' ? ({ androidImplementation } as any) : {};
+  // Uploaded videos whose storage name contains `wm_` already have the logo
+  // burned into their frames. Drawing the UI watermark as well would show two
+  // logos after the feed refreshes (for example, when the share count updates).
+  const shouldShowOverlayWatermark = showWatermark && !hasEmbeddedWatermark(uri);
 
   const tryAndroidCodecFallback = (errorMessage: string, source: 'status' | 'onError') => {
     if (Platform.OS !== 'android') {
@@ -289,7 +307,7 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
 
         {/* Watermark */}
         <VideoWatermark
-          visible={showWatermark}
+          visible={shouldShowOverlayWatermark}
           position="bottom-right"
           opacity={0.8}
           size={{ width: 160, height: 80 }}

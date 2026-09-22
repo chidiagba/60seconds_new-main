@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, History } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useWalletStore } from '@/store/wallet-store';
@@ -14,14 +14,27 @@ export default function TransactionsScreen() {
   const { user } = useAuthStore();
   const { transactions, fetchWallet, fetchTransactions, isLoading } = useWalletStore();
   
-  useEffect(() => {
-    const loadTransactions = async () => {
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const loadTransactions = async () => {
+        if (!active) return;
+        await fetchWallet();
+        if (!active) return;
+        await fetchTransactions();
+      };
+
+      void loadTransactions();
+      return () => {
+        active = false;
+      };
+    }, [fetchTransactions, fetchWallet])
+  );
+
+  const handleRefresh = async () => {
       await fetchWallet();
       await fetchTransactions();
-    };
-
-    loadTransactions();
-  }, [fetchTransactions, fetchWallet]);
+  };
   
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -80,6 +93,13 @@ export default function TransactionsScreen() {
           renderItem={renderTransactionItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.transactionsList}
+          refreshControl={(
+            <RefreshControl
+              refreshing={isLoading}
+              onRefresh={handleRefresh}
+              tintColor={Colors.dark.primary}
+            />
+          )}
         />
       )}
     </View>

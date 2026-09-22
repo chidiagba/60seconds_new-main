@@ -31,7 +31,7 @@ import { supabase } from "@/lib/supabase";
 import UserSearchModal from "@/components/UserSearchModal";
 import { getCurrentLocation } from "@/utils/location";
 import { readUriAsArrayBuffer } from "@/utils/media-upload";
-import { videoWatermarkService } from "@/utils/video-watermark";
+import { startVideoWatermarkAfterUpload } from "@/utils/video-watermark-processing";
 import { videoEditService, type FrameStyle, type EffectStyle } from "@/utils/video-editing";
 import { assessUploadNetwork, getUploadNetworkTaskMessage, type UploadNetworkHint } from "@/utils/upload-network";
 import VideoWatermark from "@/components/VideoWatermark";
@@ -41,6 +41,7 @@ import { useProductStore } from "@/store/product-store";
 import { useUploadTaskStore } from "@/store/upload-task-store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { resolveCurrencyFromCountry } from "@/utils/country-currency";
+import { generateEventThumbnail } from "@/utils/event-thumbnail";
 
 const MIN_EVENT_VIDEO_SECONDS = 5;
 const MAX_EVENT_VIDEO_SECONDS = 60;
@@ -210,9 +211,8 @@ export default function UploadScreen() {
   const commitRecordedVideo = (recordedUri: string, durationMs: number | null) => {
     setVideoUri(recordedUri);
     setVideoDurationMs(durationMs);
-    setThumbnailUri(
-      "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=300&q=80"
-    );
+    setThumbnailUri(null);
+    void generateEventThumbnail(recordedUri).then(setThumbnailUri);
     setPendingVideoUri(null);
     setShowFullScreenCamera(false);
     setIsRecording(false);
@@ -620,9 +620,7 @@ export default function UploadScreen() {
 
         setVideoUri(selected.uri);
         setVideoDurationMs(selectedDuration);
-        setThumbnailUri(
-          "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=300&q=80"
-        );
+        setThumbnailUri(await generateEventThumbnail(selected.uri));
       };
 
       await pickAndValidate(false);
@@ -1393,6 +1391,19 @@ export default function UploadScreen() {
               const uploadResult = await storageService.uploadVideo(arrayBuffer, fileName, contentType);
               const videoUrl = await storageService.getVideoUrl(uploadResult.path);
 
+              const effectiveThumbnailUri =
+                uploadSnapshot.thumbnailUri || (await generateEventThumbnail(uploadSourceUri));
+              let thumbnailUrl: string | undefined;
+              if (effectiveThumbnailUri) {
+                const { arrayBuffer: thumbnailBuffer, extension: thumbnailExtension } = await readUriAsArrayBuffer(
+                  effectiveThumbnailUri,
+                  { allowedExtensions: IMAGE_FILE_EXTENSIONS, fallbackExtension: "jpg" }
+                );
+                const thumbnailPath = `thumbnails/${uploadSnapshot.currentUserId}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${thumbnailExtension}`;
+                const thumbnailUpload = await storageService.uploadImage(thumbnailBuffer, thumbnailPath, "image/jpeg", "images");
+                thumbnailUrl = await storageService.getImageUrl(thumbnailUpload.path, "images");
+              }
+
               useUploadTaskStore.getState().updateTask(taskId, {
                 status: "processing",
                 progress: 58,
@@ -1402,7 +1413,7 @@ export default function UploadScreen() {
               const videoData = {
                 user_id: uploadSnapshot.currentUserId,
                 video_url: videoUrl,
-                thumbnail_url: uploadSnapshot.thumbnailUri || undefined,
+                thumbnail_url: thumbnailUrl,
                 title: uploadSnapshot.resolvedTitle,
                 description: uploadSnapshot.description,
                 location_name: uploadSnapshot.location.name,
@@ -1423,36 +1434,11 @@ export default function UploadScreen() {
                 throw new Error("Failed to create video: No video ID returned");
               }
 
-              void (async () => {
-                try {
-                  await videoWatermarkService.preloadWatermark();
-                  const wmUri = await videoWatermarkService.addWatermarkToVideo(uploadSourceUri, {
-                    position: "bottom-right",
-                    opacity: 0.8,
-                    scale: 0.18,
-                    strict: false,
-                    allowFallback: true,
-                  });
-
-                  if (!wmUri || wmUri === uploadSourceUri) {
-                    console.warn("[Upload] Background watermark skipped/failed for video:", newVideo.id);
-                    return;
-                  }
-
-                  const { arrayBuffer: wmArrayBuffer, extension: wmExt } = await readUriAsArrayBuffer(wmUri, {
-                    allowedExtensions: VIDEO_FILE_EXTENSIONS,
-                    fallbackExtension: "mp4",
-                  });
-                  const wmFileName = `${uploadSnapshot.currentUserId}/wm_${newVideo.id}_${Date.now()}.${wmExt}`;
-                  const wmContentType = videoMimeMap[wmExt] || "video/mp4";
-
-                  const wmUpload = await storageService.uploadVideo(wmArrayBuffer, wmFileName, wmContentType);
-                  const wmVideoUrl = await storageService.getVideoUrl(wmUpload.path);
-                  await videoService.updateVideo(newVideo.id, { video_url: wmVideoUrl });
-                } catch (wmErr) {
-                  console.warn("[Upload] Background watermark pipeline failed:", wmErr);
-                }
-              })();
+              startVideoWatermarkAfterUpload({
+                videoId: newVideo.id,
+                userId: uploadSnapshot.currentUserId,
+                localSourceUri: uploadSourceUri,
+              });
 
               const eventData = {
                 user_id: uploadSnapshot.currentUserId,
@@ -1468,7 +1454,7 @@ export default function UploadScreen() {
                 current_attendees: 0,
                 ticket_price: 0,
                 currency: businessDefaultCurrency,
-                image_url: uploadSnapshot.thumbnailUri || undefined,
+                image_url: thumbnailUrl,
                 category: "General",
                 hashtags: uploadSnapshot.tags.filter((tag) => !tag.startsWith("@")) || [],
                 is_public: true,
@@ -1568,8 +1554,7 @@ export default function UploadScreen() {
                 },
                 url: videoUrl,
                 thumbnail:
-                  uploadSnapshot.thumbnailUri ||
-                  "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&w=300&q=80",
+                  thumbnailUrl || effectiveThumbnailUri || "",
                 eventName: uploadSnapshot.resolvedTitle,
                 description: uploadSnapshot.description,
                 location: uploadSnapshot.location,

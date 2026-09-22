@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -8,6 +8,39 @@ import Colors from '@/constants/colors';
 import { EventQueries, EventWithProducts } from '@/lib/event-queries';
 import { useAuth } from '@/lib/auth';
 import { isEventClosed } from '@/utils/event-status';
+import { generateEventThumbnail, isLegacyEventThumbnail } from '@/utils/event-thumbnail';
+
+function EventThumbnail({ event }: { event: EventWithProducts }) {
+  const storedThumbnail = event.image_url || event.video?.thumbnail_url;
+  const [thumbnail, setThumbnail] = useState<string | null>(
+    isLegacyEventThumbnail(storedThumbnail) ? null : storedThumbnail
+  );
+
+  useEffect(() => {
+    let active = true;
+    const nextStoredThumbnail = event.image_url || event.video?.thumbnail_url;
+    if (!isLegacyEventThumbnail(nextStoredThumbnail)) {
+      setThumbnail(nextStoredThumbnail);
+      return () => { active = false; };
+    }
+
+    setThumbnail(null);
+    if (event.video?.video_url) {
+      void generateEventThumbnail(event.video.video_url).then((uri) => {
+        if (active) setThumbnail(uri);
+      });
+    }
+    return () => { active = false; };
+  }, [event.image_url, event.video?.thumbnail_url, event.video?.video_url]);
+
+  return thumbnail ? (
+    <Image source={{ uri: thumbnail }} style={styles.thumbnail} contentFit="cover" transition={250} />
+  ) : (
+    <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
+      <CalendarDays size={28} color={Colors.dark.primary} />
+    </View>
+  );
+}
 
 export default function MyEventsScreen() {
   const router = useRouter();
@@ -130,11 +163,9 @@ export default function MyEventsScreen() {
         events.map((event) => {
           const closed = isEventClosed({ status: event.status, startDate: event.start_date, endDate: event.end_date, eventDate: (event as any).event_date });
           const statusLabel = event.status === 'draft' ? 'Draft' : closed ? 'Closed' : 'Open';
-          const thumbnail = event.video?.thumbnail_url || event.image_url || 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=80';
-
           return (
             <TouchableOpacity key={event.id} style={styles.eventCard} onPress={() => openEvent(event)} activeOpacity={0.85}>
-              <Image source={{ uri: thumbnail }} style={styles.thumbnail} contentFit="cover" transition={250} />
+              <EventThumbnail event={event} />
 
               <View style={styles.eventBody}>
                 <View style={styles.rowTop}>
@@ -306,6 +337,10 @@ const styles = StyleSheet.create({
     height: 76,
     borderRadius: 16,
     backgroundColor: '#1F2937',
+  },
+  thumbnailPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   eventBody: {
     flex: 1,

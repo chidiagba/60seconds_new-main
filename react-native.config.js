@@ -7,11 +7,8 @@ module.exports = {
 				android: null,
 			},
 		},
-		// Enable ffmpeg-kit-react-native for iOS.
-		'ffmpeg-kit-react-native': {
-			platforms: {
-				android: null,
-			},
-		},
+		// Keep FFmpeg linked on both platforms. It is the compatibility fallback
+		// when Media3/AVFoundation cannot decode a device-specific source video.
+		'ffmpeg-kit-react-native': {},
 	},
 };

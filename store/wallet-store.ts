@@ -1,3 +1,4 @@
+import { calculateOwnerWalletBalance } from '../supabase/functions/_shared/owner-wallet-balance';
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { persist, createJSONStorage } from 'zustand/middleware';
@@ -110,6 +111,8 @@ type BusinessProductSettlementRow = {
 };
 
 const BUSINESS_PLATFORM_FEE_RATE = 0.04;
+const BUSINESS_RECONCILIATION_COOLDOWN_MS = 60 * 1000;
+const businessReconciliationLastRunAt = new Map<string, number>();
 
 const roundMoney = (value: number): number => Number(Number(value || 0).toFixed(2));
 
@@ -143,62 +146,15 @@ const isOwnerCreditTransaction = (tx: Transaction): boolean => {
   return String(metadata.entry || '').trim() === 'owner_credit';
 };
 
-const isWithdrawalTransaction = (tx: Transaction): boolean => {
-  return tx.type === 'withdrawal' || String((tx.metadata as any)?.entry || '').trim() === 'owner_withdrawal';
-};
-
 const isPaidSettlementStatus = (row?: { payment_status?: string | null; status?: string | null }): boolean => {
   const paymentStatus = String(row?.payment_status || '').trim().toLowerCase();
   const status = String(row?.status || '').trim().toLowerCase();
-  return ['paid', 'completed', 'success', 'successful'].includes(paymentStatus) || ['paid', 'completed', 'success', 'successful'].includes(status);
+  const paidStatuses = ['paid', 'completed', 'success', 'successful', 'succeeded', 'captured', 'approved'];
+  return paidStatuses.includes(paymentStatus) || paidStatuses.includes(status);
 };
 
-const calculateBusinessClaimableBalance = (transactions: Transaction[]): number => {
-  const isCompletedLike = (status?: string) => {
-    const normalized = String(status || '').trim().toLowerCase();
-    return normalized === 'completed' || normalized === 'success' || normalized === 'successful' || normalized === 'paid';
-  };
-
-  return roundMoney(
-    transactions
-      .filter((tx) => isCompletedLike(tx.status))
-      .reduce((sum, tx) => {
-        const amount = Number(tx.amount || 0);
-        const metadata = (tx.metadata || {}) as Record<string, any>;
-        const entry = String(metadata.entry || '').trim();
-        const provider = String(metadata.paymentProvider || metadata.payment_provider || '').trim().toLowerCase();
-        const description = String(tx.description || '').trim().toLowerCase();
-
-        if (isOwnerCreditTransaction(tx)) {
-          return sum + Math.max(0, amount);
-        }
-
-        if (isWithdrawalTransaction(tx)) {
-          return sum - Math.abs(amount);
-        }
-
-        if (
-          amount < 0 &&
-          (
-            entry === 'buyer_debit' ||
-            description.includes('paystack purchase') ||
-            description.includes('purchase (backfill)') ||
-            provider === 'paystack'
-          )
-        ) {
-          return sum;
-        }
-
-        // Legacy business transactions may miss owner_credit metadata.
-        // Include completed non-fee rows so available balance matches transaction history.
-        if (tx.type !== 'fee') {
-          return sum + amount;
-        }
-
-        return sum;
-      }, 0)
-  );
-};
+const calculateBusinessClaimableBalance = (transactions: Transaction[]): number =>
+  calculateOwnerWalletBalance(transactions, true);
 
 const normalizeTransactionStatus = (status: any): Transaction['status'] => {
   const normalized = String(status || '').trim().toLowerCase();
@@ -319,7 +275,7 @@ const mapBusinessBankAccountRow = (row: BusinessBankAccountRow): BusinessBankAcc
   currency: row.currency || undefined,
   isVerified: row.is_verified,
   verificationStatus: (row.verification_status as any) || (row.is_verified ? 'verified' : 'pending'),
-  verificationReason: row.verification_reason || undefined,
+  verificationReason: row.is_verified ? undefined : (row.verification_reason || undefined),
   paystackRecipientCode: row.paystack_recipient_code || undefined,
   paystackRecipientId: row.paystack_recipient_id || undefined,
   paystackSubaccountCode: row.paystack_subaccount_code || undefined,
@@ -352,7 +308,7 @@ const mapBusinessBankAccountMetadata = (userId: string, payload: BusinessBankAcc
     currency: payload.currency || undefined,
     isVerified: payload.is_verified === true,
     verificationStatus: payload.verification_status || (payload.is_verified ? 'verified' : 'pending'),
-    verificationReason: payload.verification_reason || undefined,
+    verificationReason: payload.is_verified ? undefined : (payload.verification_reason || undefined),
     paystackRecipientCode: payload.paystack_recipient_code || undefined,
     paystackRecipientId: payload.paystack_recipient_id || undefined,
     paystackSubaccountCode: payload.paystack_subaccount_code || undefined,
@@ -617,13 +573,18 @@ interface WalletState {
   businessBankAccount: BusinessBankAccount | null;
   withdrawalRequests: WithdrawalRequest[];
   isLoading: boolean;
+  isBackgroundSyncing: boolean;
+  isReconcilingBusinessWallet: boolean;
   error: string | null;
   selectedCurrency: CurrencyCode;
+  lastBusinessReconciledAt: string | null;
+  lastBusinessReconcileStatus: 'idle' | 'success' | 'failed';
   
   // Actions
   fetchWallet: () => Promise<void>;
-  fetchTransactions: () => Promise<void>;
+  fetchTransactions: (options?: { silent?: boolean }) => Promise<void>;
   reconcileBusinessWalletBalance: () => Promise<void>;
+  manualReconcileBusinessWallet: () => Promise<boolean>;
   fetchPaymentMethods: () => Promise<void>;
   fetchBusinessBankAccount: () => Promise<void>;
   fetchWithdrawalRequests: () => Promise<void>;
@@ -665,8 +626,12 @@ export const useWalletStore = create<WalletState>()(
       businessBankAccount: null,
       withdrawalRequests: [],
       isLoading: false,
+      isBackgroundSyncing: false,
+      isReconcilingBusinessWallet: false,
       error: null,
       selectedCurrency: DEFAULT_CURRENCY,
+      lastBusinessReconciledAt: null,
+      lastBusinessReconcileStatus: 'idle',
       
       fetchWallet: async () => {
         set({ isLoading: true, error: null });
@@ -813,8 +778,9 @@ export const useWalletStore = create<WalletState>()(
         }
       },
       
-      fetchTransactions: async () => {
-        set({ isLoading: true, error: null });
+      fetchTransactions: async (options = {}) => {
+        const silent = options.silent === true;
+        set(silent ? { isBackgroundSyncing: true, error: null } : { isLoading: true, error: null });
         try {
           let { wallet } = get();
           if (!wallet) {
@@ -824,7 +790,7 @@ export const useWalletStore = create<WalletState>()(
 
             if (!wallet) {
               console.log('⚠️ No wallet found - skipping transactions fetch');
-              set({ transactions: [], isLoading: false });
+              set(silent ? { transactions: [], isBackgroundSyncing: false } : { transactions: [], isLoading: false });
               return;
             }
           }
@@ -833,15 +799,66 @@ export const useWalletStore = create<WalletState>()(
 
           const { user } = useAuthStore.getState();
           const isBusinessUser = !!user?.isBusinessAccount;
+          const shouldAttemptBusinessReconciliation = isBusinessUser || !!get().businessBankAccount;
 
           // Auto-reconcile pending Paystack withdrawals before reading local ledger.
           if (isBusinessUser) {
             try {
-              await supabase.functions.invoke('paystack-reconcile-withdrawals', {
+              const { data: withdrawalReconcileData, error: withdrawalReconcileError } = await supabase.functions.invoke('paystack-reconcile-withdrawals', {
                 body: { limit: 20 },
               });
+              if (withdrawalReconcileError) {
+                throw withdrawalReconcileError;
+              }
+              console.log('✅ Withdrawal reconciliation completed:', withdrawalReconcileData);
             } catch (reconcileError: any) {
               console.warn('⚠️ Withdrawal reconciliation unavailable:', reconcileError?.message || reconcileError);
+            }
+
+            try {
+              const { data: settlementData, error: settlementError } = await supabase.functions.invoke(
+                'paystack-reconcile-subaccount-settlements',
+                { body: { days: 90 } }
+              );
+              if (settlementError) throw settlementError;
+              console.log('✅ Paystack bank settlement reconciliation completed:', settlementData);
+            } catch (settlementError: any) {
+              console.warn('⚠️ Paystack settlement reconciliation unavailable:', settlementError?.message || settlementError);
+            }
+          }
+
+          if (shouldAttemptBusinessReconciliation && user?.id) {
+            const now = Date.now();
+            const lastRunAt = businessReconciliationLastRunAt.get(user.id) || 0;
+
+            if (now - lastRunAt >= BUSINESS_RECONCILIATION_COOLDOWN_MS) {
+              set({ isReconcilingBusinessWallet: true });
+              try {
+                if (isBusinessUser) {
+                  const { data: gatewayReconcileData, error: gatewayReconcileError } = await supabase.functions.invoke(
+                    'paystack-reconcile-business-sales',
+                    { body: { days: 45 } }
+                  );
+                  if (gatewayReconcileError) {
+                    console.warn('⚠️ Paystack sales reconciliation unavailable:', gatewayReconcileError.message);
+                  } else {
+                    console.log('✅ Paystack sales reconciliation completed:', gatewayReconcileData);
+                  }
+                }
+                await get().reconcileBusinessWalletBalance();
+                businessReconciliationLastRunAt.set(user.id, now);
+                set({
+                  lastBusinessReconciledAt: new Date(now).toISOString(),
+                  lastBusinessReconcileStatus: 'success',
+                });
+              } catch (reconcileError: any) {
+                console.warn('⚠️ Business settlement reconciliation unavailable:', reconcileError?.message || reconcileError);
+                set({
+                  lastBusinessReconcileStatus: 'failed',
+                });
+              } finally {
+                set({ isReconcilingBusinessWallet: false });
+              }
             }
           }
 
@@ -985,13 +1002,16 @@ export const useWalletStore = create<WalletState>()(
           }
           set({
             transactions: transactionsForState,
-            isLoading: false,
+            ...(silent ? { isBackgroundSyncing: false } : { isLoading: false }),
             selectedCurrency: resolvedWalletCurrency,
           });
           console.log('✅ Transactions fetched successfully:', transactionsData);
         } catch (error: any) {
           console.warn('Transactions fetch unavailable:', error);
-          set({ error: error?.message || 'Transactions are temporarily unavailable', isLoading: false });
+          set({
+            error: error?.message || 'Transactions are temporarily unavailable',
+            ...(silent ? { isBackgroundSyncing: false } : { isLoading: false }),
+          });
         }
       },
 
@@ -1038,10 +1058,9 @@ export const useWalletStore = create<WalletState>()(
 
           const { data: orderRows, error: orderError } = await supabase
             .from('orders')
-            .select('id,total_amount,currency,video_id,created_at,payment_method,payment_status,status,items')
+            .select('id,total_amount,video_id,created_at,payment_method,status,items')
             .eq('business_id', user.id)
-            .order('created_at', { ascending: false })
-            .limit(500);
+            .order('created_at', { ascending: false });
 
           if (orderError) {
             console.warn('⚠️ Business order reconciliation skipped:', orderError.message);
@@ -1057,7 +1076,7 @@ export const useWalletStore = create<WalletState>()(
               quantity: 1,
               unit_price: Number(order.total_amount || 0),
               total_price: Number(order.total_amount || 0),
-              currency: order.currency || null,
+              currency: null,
               created_at: order.created_at || null,
             }));
 
@@ -1070,9 +1089,8 @@ export const useWalletStore = create<WalletState>()(
           if (productIds.size) {
             const { data: paidOrderRows, error: paidOrderError } = await supabase
               .from('orders')
-              .select('id,total_amount,currency,video_id,created_at,payment_method,payment_status,status,items,business_id')
-              .order('created_at', { ascending: false })
-              .limit(500);
+              .select('id,total_amount,video_id,created_at,payment_method,status,items,business_id')
+              .order('created_at', { ascending: false });
 
             if (paidOrderError) {
               console.warn('⚠️ Product order reconciliation skipped:', paidOrderError.message);
@@ -1110,7 +1128,7 @@ export const useWalletStore = create<WalletState>()(
                     unit_price: grossAmount > 0 ? roundMoney(grossAmount / quantity) : Number(product.price || 0),
                     total_price: grossAmount > 0 ? grossAmount : roundMoney(netAmount * (1 + BUSINESS_PLATFORM_FEE_RATE)),
                     net_price: netAmount > 0 ? netAmount : null,
-                    currency: order.currency || product.currency || null,
+                    currency: product.currency || null,
                     created_at: order.created_at || null,
                   });
                 }
@@ -1128,8 +1146,7 @@ export const useWalletStore = create<WalletState>()(
             .from('transactions')
             .select('id,amount,type,status,description,metadata,created_at')
             .eq('wallet_id', wallet.id)
-            .order('created_at', { ascending: false })
-            .limit(500);
+            .order('created_at', { ascending: false });
 
           if (buyerDebitError) {
             console.warn('⚠️ Business buyer-debit reconciliation skipped:', buyerDebitError.message);
@@ -1298,6 +1315,43 @@ export const useWalletStore = create<WalletState>()(
           });
         } catch (error: any) {
           console.warn('⚠️ Business wallet reconciliation failed:', error?.message || error);
+          throw new Error(error?.message || 'Business wallet reconciliation failed');
+        }
+      },
+
+      manualReconcileBusinessWallet: async () => {
+        const { user } = useAuthStore.getState();
+        if (!user?.id) {
+          set({ error: 'User not authenticated' });
+          return false;
+        }
+
+        set({
+          isReconcilingBusinessWallet: true,
+          lastBusinessReconcileStatus: 'idle',
+          error: null,
+        });
+
+        try {
+          await get().reconcileBusinessWalletBalance();
+
+          const reconciledAt = new Date().toISOString();
+          businessReconciliationLastRunAt.set(user.id, Date.now());
+          set({
+            lastBusinessReconciledAt: reconciledAt,
+            lastBusinessReconcileStatus: 'success',
+          });
+
+          await get().fetchTransactions();
+          return true;
+        } catch (error: any) {
+          set({
+            lastBusinessReconcileStatus: 'failed',
+            error: error?.message || 'Business wallet reconciliation failed',
+          });
+          return false;
+        } finally {
+          set({ isReconcilingBusinessWallet: false });
         }
       },
       
@@ -1455,6 +1509,15 @@ export const useWalletStore = create<WalletState>()(
               paystack_recipient_id: verification.paystackRecipientId || mappedFromTable.paystackRecipientId || null,
               paystack_subaccount_code: verification.paystackSubaccountCode || mappedFromTable.paystackSubaccountCode || null,
               paystack_subaccount_id: verification.paystackSubaccountId || mappedFromTable.paystackSubaccountId || null,
+              metadata: {
+                paystack_recipient_code: verification.paystackRecipientCode || mappedFromTable.paystackRecipientCode || null,
+                paystack_recipient_id: verification.paystackRecipientId || mappedFromTable.paystackRecipientId || null,
+                paystack_subaccount_code: verification.paystackSubaccountCode || mappedFromTable.paystackSubaccountCode || null,
+                paystack_subaccount_id: verification.paystackSubaccountId || mappedFromTable.paystackSubaccountId || null,
+                verification_status: verification.verificationStatus,
+                verification_reason: verification.verificationReason || null,
+                payout_provider: 'paystack',
+              },
               verified_at: verification.verified ? new Date().toISOString() : null,
             };
 
@@ -2379,6 +2442,16 @@ export const useWalletStore = create<WalletState>()(
               verification_status: verification.verificationStatus,
               verification_reason: verification.verificationReason || null,
               stripe_external_account_id: null,
+              metadata: {
+                payout_provider: 'paystack',
+                bank_code: verification.bankCode || bankAccount.bankCode || null,
+                paystack_recipient_code: verification.paystackRecipientCode || null,
+                paystack_recipient_id: verification.paystackRecipientId || null,
+                paystack_subaccount_code: verification.paystackSubaccountCode || null,
+                paystack_subaccount_id: verification.paystackSubaccountId || null,
+                verification_status: verification.verificationStatus,
+                verification_reason: verification.verificationReason || null,
+              },
               verified_at: verification.verified ? now : null,
               is_active: true,
             };
@@ -2695,6 +2768,16 @@ export const useWalletStore = create<WalletState>()(
               verification_status: verification.verificationStatus,
               verification_reason: verification.verificationReason || null,
               stripe_external_account_id: null,
+              metadata: {
+                payout_provider: 'paystack',
+                bank_code: verification.bankCode || bankAccount.bankCode || businessBankAccount.bankCode || null,
+                paystack_recipient_code: verification.paystackRecipientCode || businessBankAccount.paystackRecipientCode || null,
+                paystack_recipient_id: verification.paystackRecipientId || businessBankAccount.paystackRecipientId || null,
+                paystack_subaccount_code: verification.paystackSubaccountCode || businessBankAccount.paystackSubaccountCode || null,
+                paystack_subaccount_id: verification.paystackSubaccountId || businessBankAccount.paystackSubaccountId || null,
+                verification_status: verification.verificationStatus,
+                verification_reason: verification.verificationReason || null,
+              },
               verified_at: verification.verified ? nowIso : null,
             };
 

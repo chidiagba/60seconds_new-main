@@ -1,5 +1,5 @@
 import * as Location from 'expo-location';
-import { Platform } from 'react-native';
+import { Alert, Platform } from 'react-native';
 
 interface GetCurrentLocationOptions {
   requestPermission?: boolean;
@@ -22,6 +22,57 @@ let liveLocationStartPromise: Promise<boolean> | null = null;
 let lastLiveBroadcastAt = 0;
 let lastLiveBroadcastLocation: Location.LocationObject | null = null;
 const liveLocationListeners = new Set<LocationListener>();
+let foregroundPermissionRequest: Promise<Location.LocationPermissionResponse> | null = null;
+
+/**
+ * Shows the Google Play prominent disclosure immediately before Android's
+ * location permission dialog. All location entry points use this function so
+ * users receive the same explanation and can decline without losing app access.
+ */
+export const requestForegroundLocationPermission = async (
+): Promise<Location.LocationPermissionResponse> => {
+  const currentPermission = await Location.getForegroundPermissionsAsync();
+  if (currentPermission.status === 'granted' || !currentPermission.canAskAgain) {
+    return currentPermission;
+  }
+
+  if (Platform.OS !== 'android') {
+    return Location.requestForegroundPermissionsAsync();
+  }
+
+  if (foregroundPermissionRequest) {
+    return foregroundPermissionRequest;
+  }
+
+  foregroundPermissionRequest = new Promise<Location.LocationPermissionResponse>((resolve) => {
+    Alert.alert(
+      'Allow location while using 60Seconds?',
+      '60Seconds uses your precise location only while the app is in use to show your distance from nearby videos and events, and to let you select your current location for an event. Your location is not accessed in the background. You can use the app without sharing it.',
+      [
+        {
+          text: 'Not now',
+          style: 'cancel',
+          onPress: () => resolve(currentPermission),
+        },
+        {
+          text: 'Continue',
+          onPress: async () => {
+            const permission = await Location.requestForegroundPermissionsAsync();
+            resolve(permission);
+          },
+        },
+      ],
+      {
+        cancelable: true,
+        onDismiss: () => resolve(currentPermission),
+      }
+    );
+  }).finally(() => {
+    foregroundPermissionRequest = null;
+  });
+
+  return foregroundPermissionRequest;
+};
 
 const calculateDistanceKm = (
   lat1: number,
@@ -105,7 +156,7 @@ const ensureLiveLocationUpdates = async (
   liveLocationStartPromise = (async () => {
     try {
       const permission = requestPermission
-        ? await Location.requestForegroundPermissionsAsync()
+        ? await requestForegroundLocationPermission()
         : await Location.getForegroundPermissionsAsync();
 
       if (permission.status !== 'granted') {
@@ -166,7 +217,7 @@ export const getCurrentLocation = async (
   inFlightLocationRequest = (async () => {
   try {
     const permission = requestPermission
-      ? await Location.requestForegroundPermissionsAsync()
+      ? await requestForegroundLocationPermission()
       : await Location.getForegroundPermissionsAsync();
     const { status } = permission;
     

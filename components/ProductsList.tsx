@@ -136,6 +136,7 @@ const ProductsList = ({
   const [isPaying, setIsPaying] = React.useState(false);
   const [displayProducts, setDisplayProducts] = React.useState<Product[]>(products);
   const [liveProducts, setLiveProducts] = React.useState<Product[]>([]);
+  const [receiptSoldByProduct, setReceiptSoldByProduct] = React.useState<Record<string, number>>({});
   const [paymentMethod, setPaymentMethod] = React.useState<string | null>(null);
   const [showPaymentOptions, setShowPaymentOptions] = React.useState(false);
   const [selectedProduct, setSelectedProduct] = React.useState<Product | null>(null);
@@ -170,8 +171,10 @@ const ProductsList = ({
     country: (profile as any)?.country || (authUser as any)?.user_metadata?.country || (user as any)?.country,
     fallbackCurrency: (wallet as any)?.currency || DEFAULT_CURRENCY,
   });
-  const resolveProductCurrency = (currency?: string | null) =>
-    normalizeCurrencyCode(currency, buyerFallbackCurrency);
+  const resolveProductCurrency = React.useCallback(
+    (currency?: string | null) => normalizeCurrencyCode(currency, buyerFallbackCurrency),
+    [buyerFallbackCurrency]
+  );
 
   const mapRowToProduct = React.useCallback(
     (row: any): Product => ({
@@ -205,10 +208,7 @@ const ProductsList = ({
 
   const flatListRef = React.useRef<FlatList>(null);
 
-  React.useEffect(() => {
-    let isMounted = true;
-
-    const hydrateLiveProducts = async () => {
+  const hydrateLiveProducts = React.useCallback(async () => {
       try {
         const { data: eventRows, error: eventError } = await supabase
           .from("events")
@@ -221,9 +221,7 @@ const ProductsList = ({
 
         const eventIds = (eventRows || []).map((row) => row.id).filter(Boolean);
         if (!eventIds.length) {
-          if (isMounted) {
-            setLiveProducts([]);
-          }
+          setLiveProducts([]);
           return;
         }
 
@@ -238,20 +236,53 @@ const ProductsList = ({
           throw productsError;
         }
 
-        if (isMounted) {
-          setLiveProducts((productRows || []).map(mapRowToProduct));
+        const productIds = (productRows || []).map((row) => String(row.id)).filter(Boolean);
+        if (productIds.length) {
+          const { data: receiptRows, error: receiptError } = await supabase
+            .from('ticket_receipts')
+            .select('product_id,quantity')
+            .in('product_id', productIds);
+
+          if (!receiptError) {
+            const receiptCounts: Record<string, number> = {};
+            for (const receipt of receiptRows || []) {
+              const productId = String(receipt.product_id || '');
+              if (!productId) continue;
+              receiptCounts[productId] = (receiptCounts[productId] || 0) + Math.max(1, Number(receipt.quantity || 1));
+            }
+            setReceiptSoldByProduct(receiptCounts);
+          }
         }
+
+        setLiveProducts((productRows || []).map(mapRowToProduct));
+
       } catch (error) {
         console.warn("ProductsList: failed to hydrate live products:", error);
       }
+  }, [videoId, mapRowToProduct]);
+
+  React.useEffect(() => {
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleHydration = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => void hydrateLiveProducts(), 150);
     };
 
-    hydrateLiveProducts();
+    void hydrateLiveProducts();
+
+    // Keep buyer and organizer inventory in sync while either product sheet is open.
+    // Settlement updates products and inserts receipts, so listen for both events.
+    const inventoryChannel = supabase
+      .channel(`product-inventory-${videoId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, scheduleHydration)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ticket_receipts' }, scheduleHydration)
+      .subscribe();
 
     return () => {
-      isMounted = false;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      void supabase.removeChannel(inventoryChannel);
     };
-  }, [videoId, mapRowToProduct]);
+  }, [videoId, hydrateLiveProducts]);
 
   React.useEffect(() => {
     const merged = new Map<string, Product>();
@@ -536,6 +567,8 @@ const ProductsList = ({
                 quantity: 1,
                 price: total,
                 name: productForPayment.name,
+                type: productForPayment.type,
+                description: productForPayment.description,
               },
             ],
             notes: activeVoucher ? `Generated from direct product checkout. Voucher applied: ${activeVoucher.code}` : 'Generated from direct product checkout',
@@ -577,7 +610,7 @@ const ProductsList = ({
             .from('orders')
             .update({
               payment_status: 'paid',
-              status: 'completed',
+              status: 'open',
               updated_at: new Date().toISOString(),
             })
             .eq('id', order.id);
@@ -690,7 +723,7 @@ const ProductsList = ({
         .update({
           payment_status: "paid",
           payment_method: "twint",
-          status: "completed",
+          status: "open",
           updated_at: new Date().toISOString(),
           notes: `Twint payment verified: ${verification.data.paymentId}`,
         })
@@ -850,7 +883,7 @@ const ProductsList = ({
         currency,
         payment_method: "twint",
         payment_status: "pending",
-        items: [{ product_id: product.id, quantity: 1, price: total, name: product.name }],
+        items: [{ product_id: product.id, quantity: 1, price: total, name: product.name, type: product.type, description: product.description }],
         notes: activeVoucher
           ? `Twint reference: ${reference}. Voucher applied: ${activeVoucher.code}`
           : `Twint reference: ${reference}`,
@@ -1019,6 +1052,13 @@ const ProductsList = ({
     const { fee, total } = getTotalPayableAmount(item.price);
     const itemCurrency = resolveProductCurrency(item.currency);
     const isOwnerView = canEditProduct(item);
+    const databaseAvailable = Math.max(0, Number(item.available || 0));
+    const databaseSold = Math.max(0, Number(item.sold || 0));
+    const receiptSold = Math.max(0, Number(receiptSoldByProduct[item.id] || 0));
+    const soldQuantity = Math.max(databaseSold, receiptSold);
+    const missingInventoryDecrements = Math.max(0, receiptSold - databaseSold);
+    const availableQuantity = Math.max(0, databaseAvailable - missingInventoryDecrements);
+    const totalQuantity = availableQuantity + soldQuantity;
 
     return (
       <View style={styles.productCard}>
@@ -1056,8 +1096,25 @@ const ProductsList = ({
               </Text>
             </View>
 
-            <Text style={styles.productAvailability}>{item.available} available</Text>
+            <Text style={styles.productAvailability}>{availableQuantity} available</Text>
           </View>
+
+          {isOwnerView && (
+            <View style={styles.inventorySummary}>
+              <View style={styles.inventoryMetric}>
+                <Text style={styles.inventoryValue}>{totalQuantity}</Text>
+                <Text style={styles.inventoryLabel}>Total</Text>
+              </View>
+              <View style={styles.inventoryMetric}>
+                <Text style={styles.inventoryValue}>{soldQuantity}</Text>
+                <Text style={styles.inventoryLabel}>Sold</Text>
+              </View>
+              <View style={styles.inventoryMetric}>
+                <Text style={[styles.inventoryValue, styles.availableInventoryValue]}>{availableQuantity}</Text>
+                <Text style={styles.inventoryLabel}>Available</Text>
+              </View>
+            </View>
+          )}
 
           <View style={styles.productActions}>
             <View style={styles.priceContainer}>
@@ -1176,7 +1233,7 @@ const ProductsList = ({
       </View>
     ) : null;
 
-  const handlePaystackSuccess = async (reference: string) => {
+  const handlePaystackSuccess = async (reference: string, orderId?: string) => {
     // If the user cancelled or navigated away before verification finished, ignore.
     if (paystackCancelledRef.current) return;
 
@@ -1195,19 +1252,10 @@ const ProductsList = ({
         throw new Error('Please sign in before completing a Paystack purchase.');
       }
 
-      const order = await orderService.createOrder({
-        user_id: currentAuthId,
-        video_id: product.videoId,
-        total_amount: total,
-        currency: resolveProductCurrency(product.currency),
-        payment_method: 'paystack',
-        payment_status: 'paid',
-        items: [{ product_id: product.id, quantity: 1, price: total, name: product.name }],
-        notes: `Paystack reference: ${reference}`,
-      });
+      if (!orderId) throw new Error('Missing server-created Paystack order.');
 
       const settlement = await settleExternalOrderPayment({
-        orderId: order.id,
+        orderId,
         provider: 'paystack',
         paymentReference: reference,
         paymentTransactionId: reference,
@@ -1239,25 +1287,6 @@ const ProductsList = ({
         throw new Error(settlement.error || 'Paystack settlement failed.');
       }
 
-      const orderNumber =
-        (order as any)?.order_number ||
-        (order as any)?.orderNumber ||
-        `ORD-${Date.now()}-${String(order?.id || '').slice(0, 6)}`;
-      await ticketReceiptService.createTicketReceiptsForOrder({
-        orderId: order.id,
-        orderNumber,
-        buyerId: currentAuthId,
-        fallbackVideoId: product.videoId,
-        sourceItems: [{
-          productId: product.id,
-          name: product.name,
-          quantity: 1,
-          unitPrice: total,
-          currency: resolveProductCurrency(product.currency),
-          type: product.type,
-          videoId: product.videoId,
-        }],
-      });
       purchaseRecorded = true;
     } catch (recordErr) {
       console.warn('Paystack payment succeeded but recording failed:', { reference, error: recordErr });
@@ -1308,10 +1337,29 @@ const ProductsList = ({
           const ownerId = resolveProductOwnerId(paystackProduct);
           const canCurrentUserFixRouting = Boolean(user?.id && ownerId && user.id === ownerId);
           const routing = getPaystackRoutingForOwner(ownerId);
-          const productSubaccount = String((paystackProduct as any)?.paystackSubaccountCode || '').trim();
-          const productSplitCode = String((paystackProduct as any)?.paystackSplitCode || '').trim();
-          const productBearer = String((paystackProduct as any)?.paystackBearer || '').trim().toLowerCase();
-          const productCharge = Number((paystackProduct as any)?.paystackTransactionCharge);
+          const productSubaccount = String(
+            (paystackProduct as any)?.paystackSubaccountCode ||
+            (paystackProduct as any)?.paystack_subaccount_code ||
+            (paystackProduct as any)?.subaccount ||
+            ''
+          ).trim();
+          const productSplitCode = String(
+            (paystackProduct as any)?.paystackSplitCode ||
+            (paystackProduct as any)?.paystack_split_code ||
+            (paystackProduct as any)?.split_code ||
+            ''
+          ).trim();
+          const productBearer = String(
+            (paystackProduct as any)?.paystackBearer ||
+            (paystackProduct as any)?.paystack_bearer ||
+            (paystackProduct as any)?.bearer ||
+            ''
+          ).trim().toLowerCase();
+          const productCharge = Number(
+            (paystackProduct as any)?.paystackTransactionCharge ||
+            (paystackProduct as any)?.paystack_transaction_charge ||
+            (paystackProduct as any)?.transaction_charge
+          );
 
           return (
         <PaystackWebView
@@ -1458,6 +1506,30 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.dark.divider,
+  },
+  inventorySummary: {
+    flexDirection: 'row',
+    marginTop: 10,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  inventoryMetric: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  inventoryValue: {
+    color: Colors.dark.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  availableInventoryValue: {
+    color: Colors.dark.success,
+  },
+  inventoryLabel: {
+    color: Colors.dark.subtext,
+    fontSize: 11,
+    marginTop: 2,
   },
   paymentOptionsTitle: {
     fontSize: 16,

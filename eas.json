@@ -18,7 +18,7 @@
         "enterpriseProvisioning": "adhoc"
       },
       "android": {
-        "buildType": "release",
+        "buildType": "app-bundle",
         "gradleCommand": ":app:bundleRelease"
       }
     }
@@ -28,8 +28,7 @@
       "ios": {
         "ascAppId": "60seconds-app-id",
         "appleTeamId": "apple-team-id",
-        "appleId": "apple-developer@example.com",
-        "itcTeamId": "itc-team-id"
+        "appleId": "apple-developer@example.com"
       },
       "android": {
         "track": "internal",

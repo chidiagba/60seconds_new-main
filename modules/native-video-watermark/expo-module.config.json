@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "android": {
+    "modules": ["app.sixtyseconds.watermark.NativeVideoWatermarkModule"]
+  },
+  "apple": {
+    "modules": ["NativeVideoWatermarkModule"]
+  }
+}

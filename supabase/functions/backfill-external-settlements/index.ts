@@ -51,14 +51,13 @@ const ensureWalletForUser = async (userId: string, currency: string, isVerified 
     .upsert(
       {
         user_id: userId,
-        currency,
         is_verified: isVerified,
         is_active: true,
         updated_at: nowIso,
       },
       { onConflict: "user_id" }
     )
-    .select("id, user_id, balance, currency")
+    .select("id, user_id, balance")
     .single();
 
   if (error || !wallet) {
