@@ -1,3 +1,4 @@
+import { ensureStripeInitialized } from "@/lib/stripe-initialization";
 import React from "react";
 import {
   View,
@@ -121,7 +122,10 @@ const ProductsList = ({
         typeof stripeModule?.presentPaymentSheet === "function"
       ) {
         stripeApiRef.current = {
-          initPaymentSheet: stripeModule.initPaymentSheet,
+          initPaymentSheet: async (options: any) => {
+            await ensureStripeInitialized();
+            return stripeModule.initPaymentSheet(options);
+          },
           presentPaymentSheet: stripeModule.presentPaymentSheet,
         };
       }
@@ -342,11 +346,12 @@ const ProductsList = ({
 
   const isVoucherUsableForProduct = React.useCallback((voucher: any, product?: Product | null) => {
     if (!voucher || !voucher.isActive) return false;
-    if (voucher.usageCount >= voucher.usageLimit) return false;
+    if (voucher.usageLimit != null && voucher.usageCount >= voucher.usageLimit) return false;
+    if (product && resolveProductOwnerId(product) !== voucher.businessId) return false;
     if (voucher.productId && product?.id && voucher.productId !== product.id) return false;
     if (voucher.productId && !product?.id) return false;
     const expiryDate = new Date(voucher.expiryDate);
-    return !Number.isNaN(expiryDate.getTime()) && expiryDate.getTime() > Date.now();
+    return !voucher.expiryDate || (!Number.isNaN(expiryDate.getTime()) && expiryDate.getTime() > Date.now());
   }, []);
 
   const availableVouchers = React.useMemo(
@@ -359,7 +364,7 @@ const ProductsList = ({
   const getDiscountedCheckoutTotal = React.useCallback(
     (product: Product) => {
       const { fee, total } = getTotalPayableAmount(product.price);
-      const cappedDiscount = Math.min(discountAmount, total);
+      const cappedDiscount = activeVoucher && isVoucherUsableForProduct(activeVoucher, product) ? Math.min(discountAmount, total) : 0;
       const discountedTotal = Math.max(0, total - cappedDiscount);
 
       return {
@@ -369,7 +374,7 @@ const ProductsList = ({
         total: discountedTotal,
       };
     },
-    [discountAmount]
+    [discountAmount, activeVoucher, isVoucherUsableForProduct]
   );
 
   const canEditProduct = (product: any) => {

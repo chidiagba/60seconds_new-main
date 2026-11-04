@@ -1,3 +1,4 @@
+import EventTableManager from '@/features/event-tables/EventTableManager';
 import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -9,6 +10,7 @@ import {
   Dimensions,
   Platform,
   Alert,
+  ActivityIndicator,
   Modal,
   Linking,
 } from "react-native";
@@ -33,7 +35,7 @@ import {
 } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import { useVideoStore } from "@/store/video-store";
-import { mockVideos } from "@/mocks/videos";
+
 import VideoPlayer from "@/components/VideoPlayer";
 import ProductsList from "@/components/ProductsList";
 import ShareModal from "@/components/ShareModal";
@@ -75,8 +77,22 @@ export default function EventScreen() {
   const { addToCart } = useProductStore();
 
   const [video, setVideo] = useState(
-    videos.find((v) => v.id === id) || mockVideos.find((v) => v.id === id)
+    videos.find((v) => v.id === id)
   );
+  const [isLoadingVideo, setIsLoadingVideo] = useState(true);
+  const [isVideoPaused, setIsVideoPaused] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setIsLoadingVideo(true);
+    setIsVideoPaused(false);
+    setVideo(useVideoStore.getState().videos.find(v => v.id === id));
+    if (id) useVideoStore.getState().fetchVideoById(id).then(result => {
+      if (active) setVideo(result || undefined);
+    }).catch(() => { if (active) setVideo(undefined); })
+      .finally(() => { if (active) setIsLoadingVideo(false); });
+    else setIsLoadingVideo(false);
+    return () => { active = false; };
+  }, [id]);
   const [liked, setLiked] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [userDistance, setUserDistance] = useState<string | null>(null);
@@ -131,7 +147,7 @@ export default function EventScreen() {
 
   useEffect(() => {
     if (id) {
-      const foundVideo = videos.find((v) => v.id === id) || mockVideos.find((v) => v.id === id);
+      const foundVideo = videos.find((v) => v.id === id);
       setVideo(foundVideo);
 
       if (foundVideo) {
@@ -468,6 +484,9 @@ export default function EventScreen() {
     ? video!.taggedUsers!.length - maxTagsToShow
     : 0;
 
+  if (!video && isLoadingVideo) {
+    return <SafeAreaView style={styles.container}><ActivityIndicator accessibilityLabel="Loading video" /></SafeAreaView>;
+  }
   if (!video) {
     return (
       <SafeAreaView style={styles.container}>
@@ -484,10 +503,10 @@ export default function EventScreen() {
             <View style={styles.endedStateIcon}>
               <Clock size={32} color={Colors.dark.text} />
             </View>
-            <Text style={styles.endedStateKicker}>Event closed</Text>
-            <Text style={styles.endedStateTitle}>This event has ended</Text>
+            <Text style={styles.endedStateKicker}>Video unavailable</Text>
+            <Text style={styles.endedStateTitle}>Unable to load this video</Text>
             <Text style={styles.endedStateMessage}>
-              The live event page is no longer available. Closed events remain visible in organizer history.
+              Check your connection and try again. The video may have been removed by its owner.
             </Text>
             <TouchableOpacity style={styles.endedStateButton} onPress={() => router.back()}>
               <Text style={styles.endedStateButtonText}>Go Back</Text>
@@ -641,13 +660,15 @@ export default function EventScreen() {
           <View style={styles.videoContainer}>
             <VideoPlayer
               uri={video.url}
-              paused={true}
-              autoplay={false}
+              paused={isVideoPaused}
+              autoplay={true}
+              onPress={() => setIsVideoPaused(value => !value)}
               taggedUsers={video.taggedUsers}
             />
           </View>
 
           <View style={styles.eventInfo}>
+            {!!video.eventImageUrl && <Image source={{ uri: video.eventImageUrl }} style={{ width: '100%', height: 280, marginBottom: 16 }} contentFit="contain" accessibilityLabel="Event flyer" />}
             <Text style={styles.eventName}>{video.eventName}</Text>
 
             <TouchableOpacity
@@ -817,6 +838,12 @@ export default function EventScreen() {
               </View>
             </View>
 
+            {video.eventId && <View style={{padding:16}}>
+              <TouchableOpacity style={{backgroundColor:'#ed365b',padding:16,borderRadius:10}} onPress={() => router.push({pathname:'/web-event/[id]',params:{id:video.eventId!}})}>
+                <Text style={{color:'#fff',fontWeight:'bold'}}>Tickets, products & table reservations</Text>
+              </TouchableOpacity>
+              {isBusinessOwner && <EventTableManager eventId={video.eventId} />}
+            </View>}
             <BusinessVouchersSection businessId={video.userId} />
 
             <View style={styles.productsSection}>
@@ -1429,7 +1456,7 @@ const styles = StyleSheet.create({
 // } from "lucide-react-native";
 // import Colors from "@/constants/colors";
 // import { useVideoStore } from "@/store/video-store";
-// import { mockVideos } from "@/mocks/videos";
+//
 // import VideoPlayer from "@/components/VideoPlayer";
 // import ProductsList from "@/components/ProductsList";
 // import ShareModal from "@/components/ShareModal";

@@ -5,6 +5,7 @@ import NativeVideoWatermark from 'native-video-watermark';
 
 let FFmpegKit: any = null;
 let ReturnCode: any = null;
+let FFprobeKit: any = null;
 let ffmpegLoadAttempted = false;
 
 function loadFFmpeg(): boolean {
@@ -21,6 +22,7 @@ function loadFFmpeg(): boolean {
     const module = require('ffmpeg-kit-react-native');
     FFmpegKit = module?.FFmpegKit;
     ReturnCode = module?.ReturnCode;
+    FFprobeKit = module?.FFprobeKit;
     return !!FFmpegKit && !!ReturnCode;
   } catch (error) {
     console.warn('[Watermark] FFmpeg fallback is unavailable in this build:', error);
@@ -144,10 +146,14 @@ export class VideoWatermarkService {
     const localLogoUri = await this.ensureLocalFile(this.watermarkUri, 'wm_logo');
     const inputPath = this.filePath(localVideoUri);
     const logoPath = this.filePath(localLogoUri);
+    const probe = await FFprobeKit.getMediaInformation(inputPath);
+    const duration = Number(probe.getMediaInformation()?.getDuration());
+    if (!Number.isFinite(duration) || duration <= 0) throw new Error('Invalid video duration');
+    const logoStart = Math.max(0, duration - 1);
     const logoWidth = Math.max(80, Math.min(320, Math.round(1080 * options.scale)));
     const filter = [
       `[1:v]scale=${logoWidth}:-2,format=rgba,colorchannelmixer=aa=${options.opacity}[wm]`,
-      `[0:v:0][wm]overlay=${this.overlayExpression(options.position)}:format=auto[v]`,
+      `[0:v:0][wm]overlay=${this.overlayExpression(options.position)}:format=auto:enable='gte(t,${logoStart})'[v]`,
     ].join(';');
 
     // Device FFmpeg builds expose different encoders. Try the preferred H.264

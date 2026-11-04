@@ -245,7 +245,7 @@ export type Database = {
           business_id?: string;
           event_id?: string;
           video_id?: string;
-          status: 'pending' | 'confirmed' | 'open' | 'completed' | 'cancelled';
+          status: 'pending' | 'confirmed' | 'open' | 'partially_completed' | 'completed' | 'cancelled';
           total_amount: number;
           currency: string;
           payment_method?: string;
@@ -282,7 +282,7 @@ export type Database = {
           business_id?: string;
           event_id?: string;
           video_id?: string;
-          status?: 'pending' | 'confirmed' | 'open' | 'completed' | 'cancelled';
+          status?: 'pending' | 'confirmed' | 'open' | 'partially_completed' | 'completed' | 'cancelled';
           total_amount: number;
           currency?: string;
           payment_method?: string;
@@ -319,7 +319,7 @@ export type Database = {
           business_id?: string;
           event_id?: string;
           video_id?: string;
-          status?: 'pending' | 'confirmed' | 'open' | 'completed' | 'cancelled';
+          status?: 'pending' | 'confirmed' | 'open' | 'partially_completed' | 'completed' | 'cancelled';
           total_amount?: number;
           currency?: string;
           payment_method?: string;

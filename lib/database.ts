@@ -1,8 +1,12 @@
 import Constants from 'expo-constants';
+import { createVideoFeedLoader } from './video-feed';
 import { Platform } from 'react-native';
 import { supabase, Database } from './supabase';
 import { mockVideos } from '@/mocks/videos';
 import { resolveCurrencyFromCountry } from '@/utils/country-currency';
+import { isLegacyVoucherSchemaError, legacyVoucherFields } from '@/utils/voucher-fields';
+
+const loadVideoFeed = createVideoFeedLoader(supabase);
 
 type Tables = Database['public']['Tables'];
 type Profile = Tables['profiles']['Row'];
@@ -831,7 +835,7 @@ export const videoService = {
     }
 
     const normalizedVideos = await Promise.all(
-      videosData.map((video) => this.normalizeVideoRecord(video))
+      videosData.map((video: any) => this.normalizeVideoRecord(video))
     );
 
     // Combine videos with profile
@@ -875,13 +879,8 @@ export const videoService = {
     return videoWithProfile;
   },
 
-  async getVideos(limit = 20, offset = 0) {
-    // First, let's try a simpler approach without joins to see if the basic query works
-    const { data: videosData, error: videosError } = await supabase
-      .from('videos')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+  async getVideos(limit = 20, offset = 0, seed?: string) {
+    const { data: videosData, error: videosError } = await loadVideoFeed(limit, offset, seed);
 
     if (videosError) {
       console.warn('Unable to fetch videos:', videosError.message || videosError);
@@ -893,7 +892,7 @@ export const videoService = {
     }
 
     // Get unique user IDs from videos
-    const userIds = [...new Set(videosData.map(video => video.user_id))];
+    const userIds: string[] = [...new Set<string>(videosData.map((video: any) => video.user_id))];
 
     // Fetch profiles for these users
     const { data: profilesData, error: profilesError } = await fetchProfilesForVideoByIds(userIds);
@@ -912,7 +911,7 @@ export const videoService = {
     }
 
     const normalizedVideos = await Promise.all(
-      videosData.map((video) => this.normalizeVideoRecord(video))
+      videosData.map((video: any) => this.normalizeVideoRecord(video))
     );
 
     // Combine videos with their profiles
@@ -1124,7 +1123,7 @@ export const videoService = {
     }
 
     // Get unique user IDs from videos
-    const userIds = [...new Set(videosData.map(video => video.user_id))];
+    const userIds: string[] = [...new Set<string>(videosData.map((video: any) => video.user_id))];
 
     // Fetch profiles for these users
     const { data: profilesData, error: profilesError } = await fetchProfilesForVideoByIds(userIds);
@@ -1143,7 +1142,7 @@ export const videoService = {
     }
 
     const normalizedVideos = await Promise.all(
-      videosData.map((video) => this.normalizeVideoRecord(video))
+      videosData.map((video: any) => this.normalizeVideoRecord(video))
     );
 
     // Combine videos with their profiles
@@ -1474,7 +1473,7 @@ export const ticketReceiptService = {
     const { data: eventsData } = uniqueEventIds.length
       ? await supabase
         .from('events')
-        .select('id, user_id, event_name, start_date, end_date, location_name, video_id')
+        .select('id, user_id, event_name, start_date, end_date, location_name, video_id, image_url')
         .in('id', uniqueEventIds)
       : { data: [] as any[] };
 
@@ -1528,7 +1527,7 @@ export const ticketReceiptService = {
           total_price: unitPrice * receiptQuantity,
           currency: item.currency || product?.currency || 'USD',
           qr_code_data: qrCodeData,
-          ticket_image_url: buildTicketImageUrl({
+          ticket_image_url: event?.image_url || buildTicketImageUrl({
             eventName: event?.event_name || '60seconds Event',
             orderNumber: input.orderNumber,
             seatNo: seatNo || '-',
@@ -2046,7 +2045,7 @@ export const voucherService = {
       throw new Error('Only business users can create vouchers');
     }
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('vouchers')
       .insert({
         ...voucher,
@@ -2055,6 +2054,12 @@ export const voucherService = {
       })
       .select()
       .single();
+
+    if (isLegacyVoucherSchemaError(error)) {
+      const legacy = await supabase.from('vouchers').insert(legacyVoucherFields({ ...voucher, usage_count: 0, is_active: voucher.is_active ?? true })).select().single();
+      data = legacy.data;
+      error = legacy.error;
+    }
 
     if (error) {
       console.error('Error creating voucher:', error);
@@ -2101,43 +2106,8 @@ export const voucherService = {
   },
 
   async redeemVoucher(voucherId: string) {
-    const { data: voucher, error: fetchError } = await supabase
-      .from('vouchers')
-      .select('*')
-      .eq('id', voucherId)
-      .single();
-
-    if (fetchError) {
-      console.error('Error fetching voucher for redemption:', fetchError);
-      throw fetchError;
-    }
-
-    if (!voucher.is_active) {
-      throw new Error('Voucher is not active');
-    }
-
-    if (voucher.usage_limit && voucher.usage_count >= voucher.usage_limit) {
-      throw new Error('Voucher usage limit exceeded');
-    }
-
-    if (voucher.expiry_date && new Date(voucher.expiry_date) < new Date()) {
-      throw new Error('Voucher has expired');
-    }
-
-    const { data, error } = await supabase
-      .from('vouchers')
-      .update({
-        usage_count: voucher.usage_count + 1,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', voucherId)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error redeeming voucher:', error);
-      throw error;
-    }
+    const { data, error } = await supabase.rpc('redeem_paid_voucher', { voucher_key: voucherId });
+    if (error) throw error;
     return data;
   },
 

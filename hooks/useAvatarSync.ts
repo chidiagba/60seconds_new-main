@@ -12,16 +12,16 @@ export function useAvatarSync(
   callback: () => void | Promise<void>,
   enabled: boolean = true
 ) {
-  const previousAvatarVersionRef = useRef(0);
   const avatarVersion = useAuthStore((state) => state.avatarVersion);
+  const previousAvatarVersionRef = useRef(avatarVersion);
 
   useEffect(() => {
     if (!enabled) return;
 
     // Check if avatar version has changed
-    if (avatarVersion !== previousAvatarVersionRef.current && previousAvatarVersionRef.current > 0) {
+    if (avatarVersion !== previousAvatarVersionRef.current) {
       console.log('🎭 Avatar changed detected, triggering callback');
-      callback().catch((error) => {
+      Promise.resolve().then(callback).catch((error) => {
         console.error('Error in useAvatarSync callback:', error);
       });
     }

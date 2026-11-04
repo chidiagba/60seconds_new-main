@@ -1,3 +1,4 @@
+import { ProfileTableActions } from '@/features/tables/ProfileTableActions';
 import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Platform, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
@@ -77,6 +78,8 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: Math.max(40, insets.bottom + 20) }}>
       <Text style={styles.headerTitle}>Settings</Text>
+
+      <ProfileTableActions />
 
       {/* Account Section */}
       <SettingsSection title="Account">

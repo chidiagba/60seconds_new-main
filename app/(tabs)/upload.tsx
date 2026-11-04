@@ -34,13 +34,12 @@ import { readUriAsArrayBuffer } from "@/utils/media-upload";
 import { startVideoWatermarkAfterUpload } from "@/utils/video-watermark-processing";
 import { videoEditService, type FrameStyle, type EffectStyle } from "@/utils/video-editing";
 import { assessUploadNetwork, getUploadNetworkTaskMessage, type UploadNetworkHint } from "@/utils/upload-network";
-import VideoWatermark from "@/components/VideoWatermark";
 import { ProductCreationModal } from "@/components/ProductCreationModal";
 import { User, Video, Product } from "@/types";
 import { useProductStore } from "@/store/product-store";
 import { useUploadTaskStore } from "@/store/upload-task-store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { resolveCurrencyFromCountry } from "@/utils/country-currency";
+import { resolveCurrencyFromCountry, resolveEventCurrency } from "@/utils/country-currency";
 import { generateEventThumbnail } from "@/utils/event-thumbnail";
 
 const MIN_EVENT_VIDEO_SECONDS = 5;
@@ -207,6 +206,8 @@ export default function UploadScreen() {
   const recordingReachedLimitRef = useRef(false);
   const trimDragStartRatioRef = useRef(1);
   const uploadLaunchLockRef = useRef(false);
+  const preparingUploadRef = useRef(false);
+  const [isPreparingUpload, setIsPreparingUpload] = useState(false);
 
   const commitRecordedVideo = (recordedUri: string, durationMs: number | null) => {
     setVideoUri(recordedUri);
@@ -1158,7 +1159,7 @@ export default function UploadScreen() {
     }
   };
 
-  const handleUpload = async () => {
+  const performUpload = async () => {
     if (uploadLaunchLockRef.current) {
       return;
     }
@@ -1285,7 +1286,9 @@ export default function UploadScreen() {
       return;
     }
 
+    const eventCurrency = resolveEventCurrency(eventProducts, businessDefaultCurrency);
     const uploadSnapshot = {
+      currency: eventCurrency,
       currentUserId: currentUser.id,
       videoUri,
       durationMs: videoDurationMs,
@@ -1296,7 +1299,7 @@ export default function UploadScreen() {
       description: eventDescription.trim(),
       location: { ...eventLocation },
       tags: [...eventTags],
-      products: eventProducts.map((product) => ({ ...product })),
+      products: eventProducts.map((product) => ({ ...product, currency: product.currency?.trim().toUpperCase() || eventCurrency })),
       profile: {
         id: user.id,
         username: user.username,
@@ -1453,7 +1456,7 @@ export default function UploadScreen() {
                 max_attendees: 100,
                 current_attendees: 0,
                 ticket_price: 0,
-                currency: businessDefaultCurrency,
+                currency: uploadSnapshot.currency,
                 image_url: thumbnailUrl,
                 category: "General",
                 hashtags: uploadSnapshot.tags.filter((tag) => !tag.startsWith("@")) || [],
@@ -1515,7 +1518,7 @@ export default function UploadScreen() {
                       name: product.name,
                       description: product.description,
                       price: product.price,
-                      currency: product.currency || businessDefaultCurrency,
+                      currency: product.currency || uploadSnapshot.currency,
                       type: product.type,
                       available_quantity: product.available,
                       image_url: imageUrl,
@@ -1537,6 +1540,7 @@ export default function UploadScreen() {
 
               const localVideo: Video = {
                 id: newVideo.id,
+                eventId: newEvent.id !== "temp-event-id" ? newEvent.id : undefined,
                 userId: uploadSnapshot.currentUserId,
                 user: {
                   id: uploadSnapshot.profile.id,
@@ -1623,6 +1627,9 @@ export default function UploadScreen() {
         const failureMessage = getUploadFailureMessage(error);
         Alert.alert("Upload Failed", failureMessage);
         useUploadTaskStore.getState().dismissTask();
+      }).finally(() => {
+        uploadLaunchLockRef.current = false;
+        setIsUploading(false);
       });
     };
 
@@ -1674,6 +1681,22 @@ export default function UploadScreen() {
       </View>
     );
   }
+
+  const handleUpload = async () => {
+    if (preparingUploadRef.current || uploadLaunchLockRef.current || isUploading) return;
+    preparingUploadRef.current = true;
+    setIsPreparingUpload(true);
+    try {
+      await performUpload();
+    } catch (error) {
+      uploadLaunchLockRef.current = false;
+      setIsUploading(false);
+      Alert.alert("Upload Failed", getUploadFailureMessage(error));
+    } finally {
+      preparingUploadRef.current = false;
+      setIsPreparingUpload(false);
+    }
+  };
 
   if (isLoadingEditPayload) {
     return (
@@ -1770,9 +1793,6 @@ export default function UploadScreen() {
               </View>
             ) : null}
 
-            <View style={styles.watermarkPreviewContainer}>
-              <VideoWatermark visible={true} position="center" opacity={0.4} size={{ width: 34, height: 34 }} />
-            </View>
 
             <TouchableOpacity style={[styles.resetButton, { top: Math.max(insets.top + 52, 68) }]} onPress={resetCamera}>
               <X size={20} color="#fff" />
@@ -2107,13 +2127,15 @@ export default function UploadScreen() {
           <TouchableOpacity
             style={[
               styles.uploadButton,
-              (!videoUri || !eventLocation.name || isUploading) && styles.uploadButtonDisabled,
+              (isUploading || isPreparingUpload) && styles.uploadButtonDisabled,
             ]}
             onPress={handleUpload}
-            disabled={!videoUri || !eventLocation.name || isUploading}
+            disabled={isUploading || isPreparingUpload}
+            accessibilityRole="button"
+            accessibilityState={{ busy: isUploading || isPreparingUpload }}
           >
             <Upload size={20} color="#fff" style={styles.uploadIcon} />
-            <Text style={styles.uploadButtonText}>{isEditMode ? "Save Changes" : "Upload Event"}</Text>
+            <Text style={styles.uploadButtonText}>{isPreparingUpload ? "Preparing…" : isUploading ? "Uploading…" : isEditMode ? "Save Changes" : "Upload Event"}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

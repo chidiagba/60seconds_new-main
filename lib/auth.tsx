@@ -1,11 +1,13 @@
+import { unregisterCurrentPushDevice } from '@/utils/push-device';
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import * as Linking from 'expo-linking';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { profileService, Profile } from './database';
 import { useAuthStore } from '@/store/auth-store';
+import { useVideoStore } from '@/store/video-store';
 import type { User as AppUser } from '@/types';
-import { resolveAvatarUrl } from '@/utils/avatar';
+import { resolveAvatarUrl, mergeProfileAvatarFields } from '@/utils/avatar';
 import { resolveCurrencyFromCountry } from '@/utils/country-currency';
 
 interface AuthContextType {
@@ -47,29 +49,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const authRequestIdRef = useRef(0);
   const latestProfileRef = useRef<Profile | null>(null);
 
-  const mergeStableAvatarFields = (nextProfile: Profile, previousProfile: Profile | null): Profile => {
-    if (!previousProfile || previousProfile.id !== nextProfile.id) {
-      return nextProfile;
-    }
-
-    const nextAvatarUrl = String((nextProfile as any)?.avatar_url || '').trim();
-    const previousAvatarUrl = String((previousProfile as any)?.avatar_url || '').trim();
-    const nextAvatarGender = (nextProfile as any)?.avatar_gender;
-    const previousAvatarGender = (previousProfile as any)?.avatar_gender;
-
-    return {
-      ...(nextProfile as any),
-      avatar_url: nextAvatarUrl || previousAvatarUrl || null,
-      avatar_gender:
-        nextAvatarGender === 'male' || nextAvatarGender === 'female'
-          ? nextAvatarGender
-          : previousAvatarGender ?? null,
-    } as Profile;
-  };
-
   const resolveProfileAvatar = (currentProfile: Profile | null, currentUser: User): string => {
     return resolveAvatarUrl({
-      avatarUrl: currentProfile?.avatar_url || currentUser.user_metadata?.avatar_url,
+      avatarUrl: currentProfile ? currentProfile.avatar_url : currentUser.user_metadata?.avatar_url,
       avatarGender: (currentProfile as any)?.avatar_gender,
       fallbackUrl: '',
     });
@@ -102,6 +84,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     syncUser(storeUser);
+    // Keep cached feed authors in sync for every profile update entry point.
+    useVideoStore.getState().syncUserProfile(currentUser.id, {
+      avatar: storeUser.avatar,
+      username: storeUser.username,
+      name: storeUser.name,
+    });
   };
 
   const buildFallbackProfile = (currentUser: User, previousProfile: Profile | null): Profile => {
@@ -226,7 +214,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const previousProfile = latestProfileRef.current;
         const userProfile = await resolveUserProfile(nextSession.user, previousProfile);
-        const mergedProfile = mergeStableAvatarFields(userProfile, previousProfile);
+        const newerProfile = latestProfileRef.current;
+        const mergedProfile = newerProfile !== previousProfile && newerProfile?.id === userProfile.id
+          ? newerProfile
+          : mergeProfileAvatarFields(userProfile, previousProfile);
 
         if (!isActive || requestId !== authRequestIdRef.current) {
           return;
@@ -238,7 +229,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         const previousProfile = latestProfileRef.current;
         const fallbackProfile = buildFallbackProfile(nextSession.user, previousProfile);
-        const mergedFallbackProfile = mergeStableAvatarFields(fallbackProfile, previousProfile);
+        const newerProfile = latestProfileRef.current;
+        const mergedFallbackProfile = newerProfile !== previousProfile && newerProfile?.id === fallbackProfile.id
+          ? newerProfile
+          : mergeProfileAvatarFields(fallbackProfile, previousProfile);
 
         if (!isActive || requestId !== authRequestIdRef.current) {
           return;
@@ -431,6 +425,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    try { await unregisterCurrentPushDevice(); } catch (error) { return { error }; }
     const { error } = await supabase.auth.signOut();
     if (!error) {
       useAuthStore.getState().syncUser(null);

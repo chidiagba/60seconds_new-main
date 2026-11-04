@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import { ensureStripeInitialized } from "@/lib/stripe-initialization";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -97,9 +98,11 @@ export default function CartScreen() {
   const presentPaymentSheet =
     stripe?.presentPaymentSheet ||
     (async () => ({ error: { message: 'Stripe is unavailable in this build.' } }));
-  const initPaymentSheet =
-    stripe?.initPaymentSheet ||
-    (async () => ({ error: { message: 'Stripe is unavailable in this build.' } }));
+  const initPaymentSheet = async (options: any) => {
+    if (!stripe?.initPaymentSheet) return { error: { message: 'Stripe is unavailable in this build.' } };
+    await ensureStripeInitialized();
+    return stripe.initPaymentSheet(options);
+  };
 
   const insets = useSafeAreaInsets();
   const { cart, removeFromCart, updateCartItemQuantity, clearCart } =
@@ -176,6 +179,11 @@ export default function CartScreen() {
     const markedUnit = getMarkedUnitPrice(item.product.price);
     return sum + markedUnit * item.quantity;
   }, 0);
+
+  useEffect(() => {
+    clearActiveVoucher();
+    setDiscountAmount(0);
+  }, [cartSubtotal, cart.map(item => `${item.product.id}:${item.quantity}`).join('|')]);
 
   const discountedSubtotal = Math.max(0, cartSubtotal - discountAmount);
   const finalTotal = discountedSubtotal; // ✅ no separate platform fee anymore
@@ -672,6 +680,15 @@ export default function CartScreen() {
       return;
     }
 
+    if (activeVoucher) {
+      const check = await useVoucherStore.getState().validateVoucher(activeVoucher.code, cartSubtotal, cart.length === 1 ? cart[0].product.id : undefined, cartOwnerId || undefined);
+      if (!check.valid || Math.abs((check.discountAmount || 0) - discountAmount) > 0.01) {
+        clearActiveVoucher(); setDiscountAmount(0);
+        Alert.alert('Voucher unavailable', check.errorMessage || 'Please apply the voucher again.');
+        return;
+      }
+    }
+
     if (paymentMethod === "twint") {
       handleTwintPayment();
       return;
@@ -1091,6 +1108,7 @@ export default function CartScreen() {
         onClose={() => setShowVoucherModal(false)}
         onApply={handleApplyVoucher}
         totalAmount={cartSubtotal} // ✅ voucher applies on marked subtotal
+        businessId={cartOwnerId || undefined}
         productId={cart.length === 1 ? cart[0].product.id : undefined}
       />
 

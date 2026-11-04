@@ -144,6 +144,8 @@ export default function CreateVoucherModal({ visible, onClose }: CreateVoucherMo
         'Voucher created successfully',
         [{ text: 'OK', onPress: handleClose }]
       );
+    } else {
+      Alert.alert('Unable to create voucher', useVoucherStore.getState().error || 'Please try again.');
     }
   };
   

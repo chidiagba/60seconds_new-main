@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, Alert, FlatList } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, Alert, FlatList, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { X, Camera, Image as ImageIcon } from 'lucide-react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -53,6 +54,7 @@ export function ProductCreationModal({
   const [resolvedCurrency, setResolvedCurrency] = useState(
     (initialProduct?.currency || defaultCurrency || 'USD').toUpperCase()
   );
+  const currencySelectedRef = React.useRef(false);
   const [isCurrencyModalVisible, setIsCurrencyModalVisible] = useState(false);
   const [eventOwnerId, setEventOwnerId] = useState<string | null>(null); // Store logged-in user's UUID
 
@@ -61,13 +63,14 @@ export function ProductCreationModal({
       return;
     }
 
+    currencySelectedRef.current = false;
     setName(initialProduct?.name || '');
     setPrice(initialProduct?.price != null ? String(initialProduct.price) : '');
     setQuantity(initialProduct?.available_quantity != null ? String(initialProduct.available_quantity) : '');
     setImageUri(initialProduct?.image || null);
     setErrors([]);
     setResolvedCurrency((initialProduct?.currency || defaultCurrency || 'USD').toUpperCase());
-  }, [defaultCurrency, initialProduct, visible]);
+  }, [initialProduct, visible]);
 
   // Fetch the logged-in user's data to get the eventOwnerId (UUID)
   useEffect(() => {
@@ -86,10 +89,11 @@ export function ProductCreationModal({
         return;
       }
     
+      if (cancelled) return;
       setEventOwnerId(authUser.id);
 
       if (initialProduct?.currency) {
-        setResolvedCurrency(initialProduct.currency.toUpperCase());
+        if (!currencySelectedRef.current) setResolvedCurrency(initialProduct.currency.toUpperCase());
         return;
       }
 
@@ -105,7 +109,7 @@ export function ProductCreationModal({
         fallbackCurrency: defaultCurrency || 'USD',
       });
 
-      if (!cancelled) {
+      if (!cancelled && !currencySelectedRef.current) {
         setResolvedCurrency(currency);
       }
     };
@@ -217,18 +221,20 @@ export function ProductCreationModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
-      <View style={styles.container}>
+      <SafeAreaProvider>
+      <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+          <TouchableOpacity onPress={handleClose} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Cancel offering">
             <X size={24} color={Colors.dark.text} />
           </TouchableOpacity>
-          <Text style={styles.title}>{resolvedTitle}</Text>
-          <TouchableOpacity onPress={handleSave} style={styles.saveButton}>
+          <Text style={styles.title} numberOfLines={1}>{resolvedTitle}</Text>
+          <TouchableOpacity onPress={handleSave} style={styles.saveButton} accessibilityRole="button" accessibilityLabel={submitLabel || 'Save offering'}>
             <Text style={styles.saveButtonText}>{submitLabel || 'Save'}</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.content}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {errors.length > 0 && (
             <View style={styles.errorContainer}>
               {errors.map((error, index) => (
@@ -297,15 +303,18 @@ export function ProductCreationModal({
               </TouchableOpacity>
             )}
           </View>
-        </View>
-      </View>
+        </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+      </SafeAreaProvider>
 
       <Modal
         visible={isCurrencyModalVisible}
         animationType="slide"
         onRequestClose={() => setIsCurrencyModalVisible(false)}
       >
-        <View style={styles.currencyModal}>
+        <SafeAreaProvider>
+        <SafeAreaView style={styles.currencyModal}>
           <View style={styles.header}>
             <TouchableOpacity onPress={() => setIsCurrencyModalVisible(false)} style={styles.closeButton}>
               <X size={24} color={Colors.dark.text} />
@@ -323,6 +332,7 @@ export function ProductCreationModal({
                 <TouchableOpacity
                   style={styles.currencyItem}
                   onPress={() => {
+                    currencySelectedRef.current = true;
                     setResolvedCurrency(item.code);
                     setIsCurrencyModalVisible(false);
                   }}
@@ -340,7 +350,8 @@ export function ProductCreationModal({
               );
             }}
           />
-        </View>
+        </SafeAreaView>
+        </SafeAreaProvider>
       </Modal>
     </Modal>
   );
@@ -362,14 +373,23 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.dark.divider,
   },
   title: {
+    flex: 1,
+    textAlign: 'center',
+    marginHorizontal: 8,
     fontSize: 18,
     fontWeight: '600',
     color: Colors.dark.text,
   },
   closeButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 8,
   },
   saveButton: {
+    minHeight: 44,
+    justifyContent: 'center',
     backgroundColor: Colors.dark.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -381,7 +401,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
     padding: 20,
   },
   errorContainer: {

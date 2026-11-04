@@ -1,3 +1,4 @@
+import AvatarImage from '@/components/AvatarImage';
 import React from "react";
 import {
   View,
@@ -407,8 +408,8 @@ export default function VideoInfo({ video }: VideoInfoProps) {
       <View style={styles.userContainer}>
         <TouchableOpacity onPress={handleProfilePress} style={styles.userInfo}>
           <View style={styles.avatarContainer}>
-            <Image
-              source={{ uri: video.user.avatar }}
+            <AvatarImage
+              uri={isOwnVideo ? (currentUser?.avatar || video.user.avatar) : video.user.avatar}
               style={styles.avatar}
               contentFit="cover"
               transition={300}

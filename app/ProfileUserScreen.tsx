@@ -1,3 +1,4 @@
+import AvatarImage from '@/components/AvatarImage';
 
 // import React, { useEffect, useMemo, useState } from "react";
 // import {
@@ -866,8 +867,8 @@ export default function ProfileUserScreen() {
       <View style={styles.profileSection}>
         <View style={styles.avatarContainer}>
           {displayProfile.avatar_url ? (
-            <Image
-              source={{ uri: displayProfile.avatar_url }}
+            <AvatarImage
+              uri={displayProfile.avatar_url}
               style={styles.profileImage}
               contentFit="cover"
               transition={300}
@@ -887,7 +888,7 @@ export default function ProfileUserScreen() {
             </View>
           ) : (
             <Image
-              source={{ uri: "https://via.placeholder.com/150" }}
+              source={require("@/assets/images/avatar-placeholder.png")}
               style={styles.profileImage}
               contentFit="cover"
               transition={300}
@@ -991,6 +992,8 @@ export default function ProfileUserScreen() {
           )}
         </View>
 
+
+        {isBusiness && <TouchableOpacity accessibilityRole="button" style={[styles.messageButton, {marginVertical:12}]} onPress={() => router.push({pathname:'/tables/venue',params:{venueId:displayProfile.id,venueName:displayProfile.full_name || displayProfile.username || ''}})}><Text style={styles.messageButtonText}>Book a table</Text></TouchableOpacity>}
         {isBusiness && (
           <View style={styles.businessBadge}>
             <Text style={styles.businessBadgeText}>
@@ -1070,8 +1073,8 @@ export default function ProfileUserScreen() {
                 style={styles.videoThumbnail}
                 onPress={() =>
                   router.push({
-                    pathname: homeRoute as any,
-                    params: { selectedVideoId: String(video.id) },
+                    pathname: '/event/[id]',
+                    params: { id: String(video.id) },
                   })
                 }
               >

@@ -125,3 +125,12 @@ export function resolveCurrencyFromCountry(input: {
 
   return fallbackCurrency;
 }
+
+/** A guest checkout uses one currency, chosen with the event's offers. */
+export function resolveEventCurrency(products: readonly { currency?: string | null }[], fallback: string): string {
+  const selected = new Set(products.map(product => product.currency?.trim().toUpperCase()).filter(Boolean));
+  if (selected.size > 1) throw new Error('Choose the same currency for all tickets, drinks and other offers in this event.');
+  const currency = selected.values().next().value || fallback.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) throw new Error('Choose a valid event currency.');
+  return currency;
+}

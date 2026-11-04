@@ -29,10 +29,6 @@ export const getEventLifecycleStatus = (
     return 'closed';
   }
 
-  if (['open', 'active', 'live'].includes(status)) {
-    return 'open';
-  }
-
   const closeAt = resolveCloseAt(source);
   if (!closeAt) {
     return 'open';

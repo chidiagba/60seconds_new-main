@@ -1,79 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="%LANG_ISO_CODE%">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>60Seconds - Redirecting...</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #000;
-            color: #fff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-        }
-        .container {
-            text-align: center;
-            padding: 20px;
-        }
-        .spinner {
-            border: 4px solid #333;
-            border-top: 4px solid #007AFF;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>%WEB_TITLE%</title>
+  <meta name="description" content="Discover events, buy tickets and products, and reserve table seats with 60seconds." />
+  <meta name="theme-color" content="#111111" />
+  <style>html,body,#root{width:100%;min-height:100%;margin:0}html,body{height:100%;background:#111}#root{display:flex;flex:1}body{overflow:hidden}</style>
 </head>
 <body>
-    <div class="container">
-        <h1>60Seconds</h1>
-        <div class="spinner"></div>
-        <p>Redirecting...</p>
-    </div>
-
-    <script>
-        // Check if we have password reset tokens in the URL
-        const hash = window.location.hash;
-        const urlParams = new URLSearchParams(hash.substring(1));
-        const accessToken = urlParams.get('access_token');
-        const refreshToken = urlParams.get('refresh_token');
-        const type = urlParams.get('type');
-        
-        console.log('Hash:', hash);
-        console.log('Access token:', !!accessToken);
-        console.log('Refresh token:', !!refreshToken);
-        console.log('Type:', type);
-        
-        // If this is a password reset (type=recovery), redirect to our static page
-        if (type === 'recovery' && accessToken && refreshToken) {
-            console.log('Password reset detected, redirecting to reset-password.html');
-            // Redirect to our static HTML page with the tokens
-            window.location.href = `/reset-password.html${hash}`;
-        } else if (type === 'signup' && accessToken && refreshToken) {
-            console.log('Email verification detected, redirecting to verify-email.html');
-            // Redirect to our static email verification page with the tokens
-            window.location.href = `/verify-email.html${hash}`;
-        } else {
-            // For normal app access, redirect to the main app
-            console.log('Normal app access, redirecting to main app');
-            // You can redirect to your main app here
-            // For now, just show a message
-            document.querySelector('.container').innerHTML = `
-                <h1>60Seconds</h1>
-                <p>Welcome to 60Seconds!</p>
-                <p>This is the main app page.</p>
-            `;
-        }
-    </script>
+  <noscript>Please enable JavaScript to view this event and book tickets or tables.</noscript>
+  <div id="root"></div>
+  <script>
+    // Preserve existing email links without redirecting ordinary event URLs.
+    var params = new URLSearchParams(window.location.hash.slice(1));
+    if (params.get('access_token') && params.get('refresh_token')) {
+      if (params.get('type') === 'recovery') window.location.replace('/reset-password.html' + window.location.hash);
+      if (params.get('type') === 'signup') window.location.replace('/verify-email.html' + window.location.hash);
+    }
+  </script>
 </body>
 </html>

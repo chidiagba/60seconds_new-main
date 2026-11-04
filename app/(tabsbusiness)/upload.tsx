@@ -1,3 +1,5 @@
+import { EventCreationService } from '@/lib/event-creation-service';
+import { uploadImageToSupabase } from '@/utils/image-upload';
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   View,
@@ -34,14 +36,13 @@ import { readUriAsArrayBuffer } from "@/utils/media-upload";
 import { startVideoWatermarkAfterUpload } from "@/utils/video-watermark-processing";
 import { videoEditService, type FrameStyle, type EffectStyle } from "@/utils/video-editing";
 import { assessUploadNetwork, getUploadNetworkTaskMessage, type UploadNetworkHint } from "@/utils/upload-network";
-import VideoWatermark from "@/components/VideoWatermark";
 import { ProductCreationModal } from "@/components/ProductCreationModal";
 import { User, Video, Product } from "@/types";
 import { useProductStore } from "@/store/product-store";
 import { useUploadTaskStore } from "@/store/upload-task-store";
 import { useWalletStore } from "@/store/wallet-store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { resolveCurrencyFromCountry } from "@/utils/country-currency";
+import { resolveCurrencyFromCountry, resolveEventCurrency } from "@/utils/country-currency";
 import { generateEventThumbnail } from "@/utils/event-thumbnail";
 
 const MIN_EVENT_VIDEO_SECONDS = 5;
@@ -77,7 +78,7 @@ type DraftProduct = {
   available_quantity: number;
   image?: string;
   currency?: string;
-  type?: 'ticket' | 'drink' | 'reservation';
+  type?: 'ticket' | 'drink' | 'reservation' | 'merchandise';
 };
 
 const normalizeDurationMs = (rawDuration: number | null | undefined) => {
@@ -215,6 +216,8 @@ export default function UploadScreen() {
   const recordingReachedLimitRef = useRef(false);
   const trimDragStartRatioRef = useRef(1);
   const uploadLaunchLockRef = useRef(false);
+  const preparingUploadRef = useRef(false);
+  const [isPreparingUpload, setIsPreparingUpload] = useState(false);
 
   const commitRecordedVideo = (recordedUri: string, durationMs: number | null) => {
     setVideoUri(recordedUri);
@@ -1059,6 +1062,7 @@ export default function UploadScreen() {
     setActiveEditPanel(null);
     setVideoUri(null);
     setThumbnailUri(null);
+    setFlyerUri(null);
     setPendingVideoUri(null);
     setRecordingDuration(0);
     setIsRecording(false);
@@ -1075,6 +1079,7 @@ export default function UploadScreen() {
   const handleOpenFullScreenCamera = () => setShowFullScreenCamera(true);
 
   const clearUploadDraft = () => {
+    setFlyerUri(null);
     resetCamera();
     setEventName("");
     setEventDescription("");
@@ -1191,12 +1196,22 @@ export default function UploadScreen() {
     }
   };
 
-  const handleUpload = async () => {
+  const [flyerUri, setFlyerUri] = useState<string | null>(null);
+  const chooseFlyer = async () => {
+    if (user?.user_type !== 'business') return;
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
+    if (!result.canceled && result.assets[0]) {
+      setFlyerUri(result.assets[0].uri);
+      setThumbnailUri(result.assets[0].uri);
+    }
+  };
+
+  const performUpload = async () => {
     if (uploadLaunchLockRef.current) {
       return;
     }
 
-    if (!videoUri) {
+    if (!videoUri && !(flyerUri && user?.user_type === 'business')) {
       Alert.alert("Missing Video", "Please record or select a video first");
       return;
     }
@@ -1216,27 +1231,15 @@ export default function UploadScreen() {
       return;
     }
 
+    // Use picker Date values directly; the initial start can age while filling the form.
     const minimumStart = getCurrentMinimumStartDate();
-    const resolvedStartDate = parseEventDate(startDateText) || eventDate;
-    let resolvedEndDate = parseEventDate(endDateText) || eventEndDate;
+    const resolvedStartDate = eventDate.getTime() < minimumStart.getTime() ? minimumStart : eventDate;
+    const resolvedEndDate = eventEndDate && eventEndDate.getTime() > resolvedStartDate.getTime()
+      ? eventEndDate
+      : getDefaultEndDate(resolvedStartDate);
 
-    if (resolvedStartDate.getTime() < minimumStart.getTime()) {
-      Alert.alert("Invalid Start Time", "Start date and time must be now or in the future.");
-      applyStartDate(resolvedStartDate);
-      return;
-    }
-
-    if (!resolvedEndDate) {
-      const defaultEndDate = getDefaultEndDate(resolvedStartDate);
-      applyEndDate(defaultEndDate);
-      resolvedEndDate = defaultEndDate;
-    }
-
-    if (resolvedEndDate.getTime() <= resolvedStartDate.getTime()) {
-      Alert.alert("Invalid End Time", "End date and time must be after the start date and time.");
-      applyEndDate(resolvedEndDate);
-      return;
-    }
+    if (resolvedStartDate.getTime() !== eventDate.getTime()) applyStartDate(resolvedStartDate);
+    if (!eventEndDate || resolvedEndDate.getTime() !== eventEndDate.getTime()) applyEndDate(resolvedEndDate);
 
     if (!authUser || !user) {
       Alert.alert("Authentication Error", "You must be logged in to upload videos");
@@ -1271,15 +1274,51 @@ export default function UploadScreen() {
       return;
     }
 
+    if (!videoUri && flyerUri && user.user_type === 'business') {
+      uploadLaunchLockRef.current = true;
+      setIsUploading(true);
+      try {
+        const eventCurrency = resolveEventCurrency(eventProducts, businessDefaultCurrency);
+        const imageUrl = await uploadImageToSupabase(flyerUri, currentUser.id, 'event-flyers');
+        const products = await Promise.all(eventProducts.map(async product => ({
+          name: product.name, price: product.price, available_quantity: product.available,
+          type: product.type || 'ticket' as const, currency: product.currency?.trim().toUpperCase() || eventCurrency,
+          image_url: product.image ? await uploadImageToSupabase(product.image, currentUser.id, 'products') : undefined,
+        })));
+        const result = await EventCreationService.createEventWithRelations({ event: {
+          event_name: eventName.trim(), description: eventDescription.trim(),
+          start_date: resolvedStartDate.toISOString(), end_date: resolvedEndDate.toISOString(),
+          location_name: eventLocation.name, location_city: eventLocation.city,
+          currency: eventCurrency, image_url: imageUrl, is_public: true, status: 'published',
+        }, products });
+        if (!result.success) throw new Error(result.error || 'Event creation failed');
+        clearUploadDraft();
+        router.replace('/(tabsbusiness)/discover');
+      } catch (error: any) { Alert.alert('Upload failed', error.message); }
+      finally { uploadLaunchLockRef.current = false; setIsUploading(false); }
+      return;
+    }
+
     if (isEditMode && editVideoId) {
       setIsUploading(true);
       setUploadProgress(50);
       setUploadStatus("processing");
 
       try {
+        const flyerUrl = flyerUri ? await uploadImageToSupabase(flyerUri, currentUser.id, 'event-flyers') : undefined;
+        let replacementVideoUrl: string | undefined;
+        if (videoUri && !/^https?:\/\//i.test(videoUri)) {
+          const { arrayBuffer, extension } = await readUriAsArrayBuffer(videoUri, {
+            allowedExtensions: ['mp4', 'mov', 'm4v'], fallbackExtension: 'mp4',
+          });
+          const upload = await storageService.uploadVideo(arrayBuffer, `${currentUser.id}/${Date.now()}_edited.${extension}`, extension === 'mov' ? 'video/quicktime' : 'video/mp4');
+          replacementVideoUrl = await storageService.getVideoUrl(upload.path);
+        }
         const hashtags = eventTags.filter((tag) => !tag.startsWith("@"));
 
         await videoService.updateVideo(editVideoId, {
+          ...(replacementVideoUrl ? { video_url: replacementVideoUrl, watermarked_video_url: null } : {}),
+          ...(flyerUrl ? { thumbnail_url: flyerUrl } : {}),
           title: eventName.trim(),
           description: eventDescription.trim(),
           location_name: eventLocation.name || "Location not specified",
@@ -1297,6 +1336,7 @@ export default function UploadScreen() {
         const { error: eventUpdateError } = await supabase
           .from("events")
           .update({
+            ...(flyerUrl ? { image_url: flyerUrl } : {}),
             event_name: eventName.trim(),
             description: eventDescription.trim() || "Event created with video",
             start_date: resolvedStartDate.toISOString(),
@@ -1342,18 +1382,20 @@ export default function UploadScreen() {
       return;
     }
 
+    const eventCurrency = resolveEventCurrency(eventProducts, businessDefaultCurrency);
     const uploadSnapshot = {
+      currency: eventCurrency,
       currentUserId: currentUser.id,
       videoUri,
       durationMs: videoDurationMs,
-      thumbnailUri,
+      thumbnailUri: flyerUri || thumbnailUri,
       eventName: eventName.trim(),
       resolvedStartDate: new Date(resolvedStartDate),
       resolvedEndDate: new Date(resolvedEndDate),
       description: eventDescription.trim(),
       location: { ...eventLocation },
       tags: [...eventTags],
-      products: eventProducts.map((product) => ({ ...product })),
+      products: eventProducts.map((product) => ({ ...product, currency: product.currency?.trim().toUpperCase() || eventCurrency })),
       profile: {
         id: user.id,
         username: user.username,
@@ -1413,7 +1455,7 @@ export default function UploadScreen() {
                 message: "Optimizing your video for faster upload...",
               });
 
-              const preparedUpload = await videoEditService.compressForUpload(uploadSnapshot.videoUri, {
+              const preparedUpload = await videoEditService.compressForUpload(uploadSnapshot.videoUri!, {
                 durationMs: uploadSnapshot.durationMs,
                 maxDimension: 720,
               });
@@ -1458,7 +1500,7 @@ export default function UploadScreen() {
                   { allowedExtensions: IMAGE_FILE_EXTENSIONS, fallbackExtension: "jpg" }
                 );
                 const thumbnailPath = `thumbnails/${uploadSnapshot.currentUserId}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${thumbnailExtension}`;
-                const thumbnailUpload = await storageService.uploadImage(thumbnailBuffer, thumbnailPath, "image/jpeg", "images");
+                const thumbnailUpload = await storageService.uploadImage(thumbnailBuffer, thumbnailPath, thumbnailExtension === "png" ? "image/png" : thumbnailExtension === "webp" ? "image/webp" : "image/jpeg", "images");
                 thumbnailUrl = await storageService.getImageUrl(thumbnailUpload.path, "images");
               }
 
@@ -1511,7 +1553,7 @@ export default function UploadScreen() {
                 max_attendees: 100,
                 current_attendees: 0,
                 ticket_price: 0,
-                currency: businessDefaultCurrency,
+                currency: uploadSnapshot.currency,
                 image_url: thumbnailUrl,
                 category: "General",
                 hashtags: uploadSnapshot.tags.filter((tag) => !tag.startsWith("@")) || [],
@@ -1573,7 +1615,7 @@ export default function UploadScreen() {
                       name: product.name,
                       description: product.description,
                       price: product.price,
-                      currency: product.currency || businessDefaultCurrency,
+                      currency: product.currency || uploadSnapshot.currency,
                       type: product.type,
                       available_quantity: product.available,
                       image_url: imageUrl,
@@ -1595,6 +1637,7 @@ export default function UploadScreen() {
 
               const localVideo: Video = {
                 id: newVideo.id,
+                eventId: newEvent.id !== "temp-event-id" ? newEvent.id : undefined,
                 userId: uploadSnapshot.currentUserId,
                 user: {
                   id: uploadSnapshot.profile.id,
@@ -1680,6 +1723,9 @@ export default function UploadScreen() {
           message: getUploadFailureMessage(error),
           retryAction: () => startManagedUpload("unknown"),
         });
+      }).finally(() => {
+        uploadLaunchLockRef.current = false;
+        setIsUploading(false);
       });
     };
 
@@ -1719,18 +1765,21 @@ export default function UploadScreen() {
     launchManagedUpload(preflightNetwork.hint);
   };
 
-  if (!permission) return <View />;
-
-  if (!permission.granted) {
-    return (
-      <View style={styles.permissionContainer}>
-        <Text style={styles.permissionText}>We need your permission to use the camera</Text>
-        <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-          <Text style={styles.permissionButtonText}>Grant Permission</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  const handleUpload = async () => {
+    if (preparingUploadRef.current || uploadLaunchLockRef.current || isUploading) return;
+    preparingUploadRef.current = true;
+    setIsPreparingUpload(true);
+    try {
+      await performUpload();
+    } catch (error) {
+      uploadLaunchLockRef.current = false;
+      setIsUploading(false);
+      Alert.alert("Upload Failed", getUploadFailureMessage(error));
+    } finally {
+      preparingUploadRef.current = false;
+      setIsPreparingUpload(false);
+    }
+  };
 
   if (isLoadingEditPayload) {
     return (
@@ -1753,6 +1802,13 @@ export default function UploadScreen() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
       >
+        {!permission?.granted && <TouchableOpacity onPress={requestPermission} style={{ padding: 16 }}><Text style={{ color: '#fff' }}>Enable camera to record a video</Text></TouchableOpacity>}
+        {user?.user_type === 'business' && <View style={{ padding: 16 }}>
+          <TouchableOpacity onPress={chooseFlyer} style={{ padding: 14, backgroundColor: '#333', borderRadius: 8 }}>
+            <Text style={{ color: '#fff' }}>{flyerUri ? 'Change event flyer' : 'Add event image / flyer (video optional)'}</Text>
+          </TouchableOpacity>
+          {flyerUri && <Image source={{ uri: flyerUri }} style={{ height: 180, marginTop: 12, borderRadius: 8 }} contentFit="contain" />}
+        </View>}
         {!videoUri ? (
           <View style={styles.mediaSelectionContainer}>
             <View style={styles.mediaSelectionHeader}>
@@ -1827,9 +1883,6 @@ export default function UploadScreen() {
               </View>
             ) : null}
 
-            <View style={styles.watermarkPreviewContainer}>
-              <VideoWatermark visible={true} position="center" opacity={0.4} size={{ width: 34, height: 34 }} />
-            </View>
 
             <TouchableOpacity style={[styles.resetButton, { top: Math.max(insets.top + 52, 68) }]} onPress={resetCamera}>
               <X size={20} color="#fff" />
@@ -2254,13 +2307,15 @@ export default function UploadScreen() {
           <TouchableOpacity
             style={[
               styles.uploadButton,
-              (!videoUri || !eventName.trim() || isUploading) && styles.uploadButtonDisabled,
+              (isUploading || isPreparingUpload) && styles.uploadButtonDisabled,
             ]}
             onPress={handleUpload}
-            disabled={!videoUri || !eventName.trim() || isUploading}
+            disabled={isUploading || isPreparingUpload}
+            accessibilityRole="button"
+            accessibilityState={{ busy: isUploading || isPreparingUpload }}
           >
             <Upload size={20} color="#fff" style={styles.uploadIcon} />
-            <Text style={styles.uploadButtonText}>{isEditMode ? "Save Changes" : "Upload Event"}</Text>
+            <Text style={styles.uploadButtonText}>{isPreparingUpload ? "Preparing…" : isUploading ? "Uploading…" : isEditMode ? "Save Changes" : "Upload Event"}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

@@ -21,6 +21,9 @@ class MainActivity : ReactActivity() {
     SplashScreenManager.registerOnActivity(this)
     // @generated end expo-splashscreen
     super.onCreate(null)
+    // Let Android draw a focusable window even if JS startup is delayed.
+    // Keeping pre-draw blocked behind the splash causes repeated input ANRs.
+    window.decorView.postDelayed({ SplashScreenManager.hide() }, 1500)
   }
 
   /**

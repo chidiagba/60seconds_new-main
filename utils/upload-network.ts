@@ -41,7 +41,9 @@ export const assessUploadNetwork = async (timeoutMs = 3500): Promise<UploadNetwo
       return { hint: "weak", latencyMs: timeoutMs };
     }
 
-    return { hint: "offline", latencyMs: null };
+    // A blocked probe host (or browser CORS) does not prove the upload server is offline.
+    // Let the real upload attempt report connectivity failures and use its retry policy.
+    return { hint: "unknown", latencyMs: null };
   }
 };
 

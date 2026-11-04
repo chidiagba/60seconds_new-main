@@ -73,6 +73,16 @@ export interface EventListItem {
 }
 
 export class EventQueries {
+  static async getDealsEvents(limit = 60): Promise<{ success: boolean; events?: EventListItem[]; error?: string }> {
+    const { data, error } = await supabase.from('events')
+      .select('*,products!inner(id),video:videos(id,title,thumbnail_url,video_url)')
+      .eq('is_public', true).in('status', PUBLIC_OPEN_EVENT_STATUSES)
+      .eq('products.is_active', true).gt('products.available_quantity', 0).gt('products.price', 0)
+      .or(`end_date.gt.${new Date().toISOString()},and(end_date.is.null,start_date.gt.${new Date().toISOString()})`)
+      .order('created_at', { ascending: false }).limit(limit);
+    if (error) return { success: false, error: this.formatError(error) };
+    return { success: true, events: (data || []).map((event: any) => ({ ...event, has_products: true, product_count: event.products.length })) };
+  }
   /**
    * Fetches latest public events that have a linked video.
    * This powers Discover when users want newest events first.
@@ -88,7 +98,6 @@ export class EventQueries {
           .from('events')
           .select(selectClause)
           .eq('is_public', true)
-          .not('video_id', 'is', null)
           .order('created_at', { ascending: false })
           .limit(limit);
 
@@ -110,12 +119,18 @@ export class EventQueries {
         return { success: false, error: this.formatError(error) };
       }
 
+      const { data: saleableProducts, error: productError } = await supabase.from('products')
+        .select('event_id').in('event_id', (events || []).map((e: any) => e.id))
+        .eq('is_active', true).gt('available_quantity', 0).gt('price', 0);
+      if (productError) throw productError;
+      const counts = new Map<string, number>();
+      for (const product of saleableProducts || []) counts.set(product.event_id, (counts.get(product.event_id) || 0) + 1);
       return {
         success: true,
         events: ((Array.isArray(events) ? events : []) as any[]).map((event) => ({
           ...event,
-          has_products: false,
-          product_count: 0,
+          has_products: (counts.get(event.id) || 0) > 0,
+          product_count: counts.get(event.id) || 0,
         })),
       };
     } catch (error) {
@@ -143,7 +158,6 @@ export class EventQueries {
           .select(selectClause)
           .eq('is_public', true)
           .in('status', PUBLIC_OPEN_EVENT_STATUSES)
-          .not('video_id', 'is', null)
           .or(`end_date.gt.${nowIso},and(end_date.is.null,start_date.gt.${nowIso})`)
           .order('current_attendees', { ascending: false })
           .order('created_at', { ascending: false })

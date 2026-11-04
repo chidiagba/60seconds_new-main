@@ -100,7 +100,7 @@ export default function WalletScreen() {
     };
 
     const channel = supabase
-      .channel(`business-wallet-${wallet.id}`)
+      .channel(`business-wallet-${wallet.id}-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         {

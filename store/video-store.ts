@@ -119,6 +119,9 @@ const fetchAllVideoRows = async (batchSize = LOCATION_FILTER_BATCH_SIZE) => {
 
 
 interface VideoState {
+  feedMode: 'random' | 'recent';
+  feedSeed: string;
+  setFeedMode: (mode: 'random' | 'recent') => Promise<void>;
   videos: Video[];
   currentVideoIndex: number;
   comments: Comment[];
@@ -166,6 +169,13 @@ interface VideoState {
 }
 
 export const useVideoStore = create<VideoState>((set, get) => ({
+  feedMode: 'random',
+  feedSeed: '',
+  setFeedMode: async (mode) => {
+    if (fetchVideosInFlight) await fetchVideosInFlight;
+    set({ feedMode: mode });
+    await get().fetchVideos();
+  },
   videos: [],
   currentVideoIndex: 0,
   comments: [],
@@ -210,11 +220,15 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       return fetchVideosInFlight;
     }
 
+    if (fetchMoreVideosInFlight) await fetchMoreVideosInFlight;
+    if (fetchVideosInFlight) return fetchVideosInFlight;
     console.log('📹 VideoStore: Fetching videos from database...');
     set({ isLoading: true, error: null });
     fetchVideosInFlight = (async () => {
       try {
-      const videosData = await videoService.getVideos(FEED_PAGE_SIZE, 0);
+      const seed = get().feedMode === 'random' ? `${Date.now()}-${Math.random()}` : undefined;
+      set({ feedSeed: seed || '' });
+      const videosData = await videoService.getVideos(FEED_PAGE_SIZE, 0, seed);
       console.log('📹 VideoStore: Fetched', videosData.length, 'videos from database');
       
       if (videosData.length === 0) {
@@ -295,6 +309,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       
       const { deletedVideoIds } = get();
       const visibleVideos = videosWithProducts.filter((video) => !deletedVideoIds.has(video.id));
+      if (get().feedMode === 'random' && visibleVideos.length > 1 && visibleVideos.every((v, i) => v.id === get().videos[i]?.id)) visibleVideos.push(visibleVideos.shift()!);
       console.log('📹 VideoStore: Transformed', visibleVideos.length, 'videos successfully');
       await persistVideoFeedCache(visibleVideos);
       // Reset pagination state on a fresh fetch
@@ -313,7 +328,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
 
   fetchMoreVideos: async () => {
     const { isFetchingMore, hasMoreVideos, _feedOffset, deletedVideoIds } = get();
-    if (isFetchingMore || !hasMoreVideos) return;
+    if (fetchVideosInFlight || isFetchingMore || !hasMoreVideos) return;
     if (fetchMoreVideosInFlight) {
       return fetchMoreVideosInFlight;
     }
@@ -322,7 +337,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
     set({ isFetchingMore: true });
     fetchMoreVideosInFlight = (async () => {
       try {
-      const videosData = await videoService.getVideos(FEED_PAGE_SIZE, _feedOffset);
+      const videosData = await videoService.getVideos(FEED_PAGE_SIZE, _feedOffset, get().feedSeed || undefined);
       console.log('📹 VideoStore: Fetched', videosData.length, 'more videos');
 
       if (videosData.length === 0) {
@@ -449,11 +464,12 @@ export const useVideoStore = create<VideoState>((set, get) => ({
   },
   
   fetchVideoById: async (id: string) => {
+    if (fetchVideosInFlight) await fetchVideosInFlight;
     const { videos } = get();
     
     // If videos are already loaded, find the video
     let video = videos.find(v => v.id === id);
-    if (video) return video;
+    // Fetch the authoritative record even when cached URLs have expired.
     
     // Otherwise, try to fetch it explicitly
     try {
@@ -491,11 +507,11 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       // Fetch related event
       let eventId = undefined;
       let eventCurrency: string | null = null;
-      let eventData: { id: string; currency?: string | null; start_date?: string | null; end_date?: string | null; status?: string | null } | null = null;
+      let eventData: { id: string; image_url?: string | null; currency?: string | null; start_date?: string | null; end_date?: string | null; status?: string | null } | null = null;
       try {
         const { data } = await supabase
           .from('events')
-          .select('id, currency, start_date, end_date, status')
+          .select('id, image_url, currency, start_date, end_date, status')
           .eq('video_id', id)
           .maybeSingle();
         if (data) {
@@ -533,6 +549,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
 
       const formattedVideo: Video = enrichVideoEventStatus({
         id: videoData.id,
+        eventImageUrl: eventData?.image_url || undefined,
         url: resolvedVideoUrl,
         watermarkedVideoUrl: resolvedWatermarkedUrl || undefined,
         watermarkStatus: (videoData as any).watermark_status,
@@ -1152,6 +1169,14 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       
       const { deletedVideoIds } = get();
       const visibleVideos = transformedAndFilteredVideos.filter((video) => !deletedVideoIds.has(video.id));
+      if (get().feedMode === 'random') {
+        for (let i = visibleVideos.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [visibleVideos[i], visibleVideos[j]] = [visibleVideos[j], visibleVideos[i]];
+        }
+        set({ feedSeed: `${Date.now()}-${Math.random()}` });
+      }
+
 
       if (visibleVideos.length === 0) {
         await persistVideoFeedCache([]);

@@ -1,3 +1,4 @@
+import { reconcileGuestPaystack } from '../_shared/guest-paystack.ts';
 // @ts-nocheck
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -725,6 +726,8 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    if (metadata.guest_order_id && String(data.reference || '').startsWith('guest_paystack_')) return await reconcileGuestPaystack(supabaseAdmin,data.reference);
 
     const paymentType = String(
       metadata?.paymentType || metadata?.payment_type || metadata?.type || "order_payment"

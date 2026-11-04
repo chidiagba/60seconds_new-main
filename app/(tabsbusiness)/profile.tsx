@@ -1,3 +1,5 @@
+import AvatarImage from '@/components/AvatarImage';
+import { ProfileTableActions } from '@/features/tables/ProfileTableActions';
 // app/(tabs)/profile.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, ActivityIndicator, Alert, Linking } from 'react-native';
@@ -71,7 +73,7 @@ export default function ProfileScreen() {
 
   const { videos: allVideos, userLikedVideos, deletedVideoIds, fetchVideos, loadUserLikes, removeVideo } = useVideoStore();
   const resolvedProfileAvatar = resolveAvatarUrl({
-    avatarUrl: authProfile?.avatar_url || currentUser?.avatar,
+    avatarUrl: authProfile ? authProfile.avatar_url : currentUser?.avatar,
     avatarGender: (authProfile as any)?.avatar_gender,
     fallbackUrl: 'https://via.placeholder.com/150',
   });
@@ -170,9 +172,10 @@ export default function ProfileScreen() {
     try {
       setIsUploadingAvatar(true);
       const publicUrl = await uploadImageToSupabase(result.assets[0].uri, authUser.id, 'avatars');
-      await updateProfile({ avatar_url: publicUrl });
+      const { error } = await updateProfile({ avatar_url: publicUrl, avatar_gender: null } as any);
+      if (error) throw error;
     } catch (err) {
-      Alert.alert('Upload Failed', 'Could not upload profile photo. Please try again.');
+      Alert.alert('Upload Failed', err instanceof Error ? err.message : 'Could not save profile photo. Please try again.');
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -316,8 +319,8 @@ export default function ProfileScreen() {
         text: 'View',
         onPress: () =>
           router.push({
-            pathname: '/(tabsbusiness)',
-            params: { selectedVideoId: String(video.id) },
+            pathname: '/event/[id]',
+                    params: { id: String(video.id) },
           }),
       },
       {
@@ -448,8 +451,8 @@ export default function ProfileScreen() {
       <View style={styles.profileSection}>
         <View style={styles.avatarContainer}>
           {resolvedProfileAvatar ? (
-            <Image
-              source={{ uri: resolvedProfileAvatar }}
+            <AvatarImage
+              uri={resolvedProfileAvatar}
               style={styles.profileImage}
               contentFit="cover"
               transition={300}
@@ -652,6 +655,9 @@ export default function ProfileScreen() {
         )}
       </View>
 
+      {authProfile.user_type === 'business' && <TouchableOpacity accessibilityRole="button" onPress={() => router.push({pathname:'/tables/venue',params:{venueId:authProfile.id,venueName:authProfile.business_name || authProfile.full_name}})} style={{padding:16,margin:16,borderWidth:1,borderColor:'#fff',borderRadius:8}}><Text style={{color:'#fff',textAlign:'center',fontWeight:'700'}}>Book a table</Text></TouchableOpacity>}
+      {isCurrentUserProfile && <ProfileTableActions />}
+
       {/* TABS */}
       <View style={styles.tabsContainer}>
         <TouchableOpacity style={[styles.tab, activeTab === 'videos' && styles.activeTab]} onPress={handleVideosPress}>
@@ -711,8 +717,8 @@ export default function ProfileScreen() {
                   }
 
                   router.push({
-                    pathname: '/(tabsbusiness)',
-                    params: { selectedVideoId: String(video.id) },
+                    pathname: '/event/[id]',
+                    params: { id: String(video.id) },
                   });
                 }}
               >
@@ -776,8 +782,8 @@ export default function ProfileScreen() {
                 style={styles.videoThumbnail}
                 onPress={() =>
                   router.push({
-                    pathname: '/(tabsbusiness)',
-                    params: { selectedVideoId: String(video.id) },
+                    pathname: '/event/[id]',
+                    params: { id: String(video.id) },
                   })
                 }
               >

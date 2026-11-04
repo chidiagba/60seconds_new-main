@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { Database } from './supabase';
-import { resolveCurrencyFromCountry } from '@/utils/country-currency';
+import { resolveCurrencyFromCountry, resolveEventCurrency } from '@/utils/country-currency';
 
 type Tables = Database['public']['Tables'];
 type EventInsert = Tables['events']['Insert'];
@@ -70,10 +70,11 @@ export class EventCreationService {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('country, country_code')
+        .select('country, country_code, user_type')
         .eq('id', user.id)
         .maybeSingle();
 
+      if (data.event.image_url && !data.video && profile?.user_type !== 'business') throw new Error('Only business users can create image-only events');
       const defaultCurrency = resolveCurrencyFromCountry({
         country: profile?.country || user.user_metadata?.country,
         countryCode: profile?.country_code || user.user_metadata?.country_code,
@@ -81,8 +82,9 @@ export class EventCreationService {
 
       console.log('🚀 Starting event creation process for user:', user.id);
 
-      // Step 2: Create event first
-      const eventResult = await this.createEvent(data.event, user.id, defaultCurrency);
+      const eventCurrency = resolveEventCurrency(data.products || [], data.event.currency || defaultCurrency);
+      // Persist the chosen offer currency rather than the account's default.
+      const eventResult = await this.createEvent({ ...data.event, currency: eventCurrency }, user.id, eventCurrency);
       if (!eventResult.success || !eventResult.event) {
         throw new Error(`Failed to create event: ${eventResult.error}`);
       }
@@ -104,10 +106,10 @@ export class EventCreationService {
       // Step 4: Create products if provided
       let productsResult = null;
       if (data.products && data.products.length > 0) {
-        productsResult = await this.createProducts(data.products, user.id, eventResult.event.id, defaultCurrency);
+        productsResult = await this.createProducts(data.products, user.id, eventResult.event.id, eventCurrency);
         if (!productsResult.success) {
-          console.warn('⚠️ Products creation failed, but event was created:', productsResult.error);
-          // Continue without products - event is still valid
+          await supabase.from('events').delete().eq('id', eventResult.event.id).eq('user_id', user.id);
+          throw new Error(`Products could not be saved: ${productsResult.error}`);
         } else {
           console.log('✅ Products created successfully:', productsResult.products?.length);
         }
@@ -260,7 +262,7 @@ export class EventCreationService {
         name: product.name,
         description: product.description,
         price: product.price,
-        currency: product.currency || defaultCurrency || 'USD',
+        currency: product.currency?.trim().toUpperCase() || defaultCurrency || 'USD',
         type: product.type,
         available_quantity: product.available_quantity || 0,
         sold_quantity: 0,

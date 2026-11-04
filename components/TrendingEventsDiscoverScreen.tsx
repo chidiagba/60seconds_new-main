@@ -22,6 +22,7 @@ import {
   UserCircle,
 } from "lucide-react-native";
 import Colors from "@/constants/colors";
+import { isEventClosed } from "@/utils/event-status";
 import { useVideoStore } from "@/store/video-store";
 import { useAuthStore } from "@/store/auth-store";
 import { AttendanceStatus } from "@/types";
@@ -30,6 +31,7 @@ import { supabase } from "@/lib/supabase";
 import { DEFAULT_AVATAR_URL, resolveAvatarUrl } from "@/utils/avatar";
 
 const categories = [
+  { id: "deals", name: "Deals" },
   { id: "1", name: "Nightclubs" },
   { id: "2", name: "Concerts" },
   { id: "3", name: "Festivals" },
@@ -76,6 +78,7 @@ const getEventPreviewVideoUrl = (event: EventListItem) => {
 
 const eventMatchesCategory = (event: EventListItem, categoryName: string) => {
   const name = categoryName.toLowerCase();
+  if (name === "deals") return event.has_products && event.product_count > 0 && ["open", "published"].includes(event.status) && !isEventClosed({ status: event.status, startDate: event.start_date, endDate: event.end_date });
   const eventName = String(event.event_name || "").toLowerCase();
   const locationName = String(event.location_name || "").toLowerCase();
   const category = String(event.category || "").toLowerCase();
@@ -133,6 +136,13 @@ export default function TrendingEventsDiscoverScreen({ homePath }: Props) {
   const loadLatestEvents = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage(null);
+    if (selectedCategoryId === 'deals') {
+      const result = await EventQueries.getDealsEvents();
+      setEvents(result.events || []);
+      setErrorMessage(result.error || null);
+      setIsLoading(false);
+      return;
+    }
     const latestResult = await EventQueries.getLatestEvents();
 
     if (latestResult.success && (latestResult.events?.length || 0) > 0) {
@@ -153,7 +163,7 @@ export default function TrendingEventsDiscoverScreen({ homePath }: Props) {
       );
     }
     setIsLoading(false);
-  }, []);
+  }, [selectedCategoryId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -175,7 +185,10 @@ export default function TrendingEventsDiscoverScreen({ homePath }: Props) {
 
   const handleVideoPress = (event: EventListItem) => {
     const eventVideoId = getEventVideoId(event);
-    if (!eventVideoId) return;
+    if (!eventVideoId || selectedCategoryId === 'deals') {
+      router.push({ pathname: '/[id]', params: { id: event.id } });
+      return;
+    }
     setCurrentVideoIndex(0);
     router.push({
       pathname: homePath,
@@ -281,7 +294,6 @@ export default function TrendingEventsDiscoverScreen({ homePath }: Props) {
       <TouchableOpacity
         style={styles.eventCard}
         onPress={() => handleVideoPress(item)}
-          disabled={!eventVideoId}
       >
         {shouldShowVideoPreview ? (
           <ExpoVideo

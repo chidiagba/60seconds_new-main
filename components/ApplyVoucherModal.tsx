@@ -22,6 +22,7 @@ interface ApplyVoucherModalProps {
   onApply: (discountAmount: number, voucher?: Voucher) => void;
   totalAmount: number;
   productId?: string;
+  businessId?: string;
 }
 
 export default function ApplyVoucherModal({ 
@@ -29,7 +30,8 @@ export default function ApplyVoucherModal({
   onClose, 
   onApply,
   totalAmount,
-  productId
+  productId,
+  businessId
 }: ApplyVoucherModalProps) {
   const { validateVoucher, isLoading } = useVoucherStore();
   
@@ -55,7 +57,7 @@ export default function ApplyVoucherModal({
     
     handleHapticFeedback();
     
-    const result = await validateVoucher(voucherCode.trim(), totalAmount, productId);
+    const result = await validateVoucher(voucherCode.trim(), totalAmount, productId, businessId);
     setValidationResult(result);
     
     if (result.valid && result.discountAmount) {

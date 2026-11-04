@@ -1,5 +1,8 @@
 package app.sixtyseconds.watermark
 
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import androidx.media3.common.OverlaySettings
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.annotation.OptIn
@@ -49,6 +52,21 @@ class NativeVideoWatermarkModule : Module() {
       return
     }
 
+    val retriever = MediaMetadataRetriever()
+    val durationMs = try {
+      retriever.setDataSource(context, video)
+      retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+    } catch (error: Exception) {
+      null
+    } finally {
+      retriever.release()
+    }
+    if (durationMs == null || durationMs <= 0) {
+      bitmap.recycle()
+      promise.reject("E_DURATION", "The source video duration is invalid", null)
+      return
+    }
+    val logoStartUs = ((durationMs - 1000).coerceAtLeast(0)) * 1000
     val anchor = when (position) {
       "top-left" -> floatArrayOf(-0.94f, 0.94f)
       "top-right" -> floatArrayOf(0.94f, 0.94f)
@@ -65,7 +83,12 @@ class NativeVideoWatermarkModule : Module() {
       .setOverlayFrameAnchor(overlayAnchorX, overlayAnchorY)
       .setBackgroundFrameAnchor(anchor[0], anchor[1])
       .build()
-    val overlay = BitmapOverlay.createStaticBitmapOverlay(bitmap, settings)
+    val hiddenSettings = StaticOverlaySettings.Builder().setAlphaScale(0f).build()
+    val overlay = object : BitmapOverlay() {
+      override fun getBitmap(presentationTimeUs: Long): Bitmap = bitmap
+      override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings =
+        if (presentationTimeUs >= logoStartUs) settings else hiddenSettings
+    }
     val effects = Effects(emptyList(), listOf<Effect>(OverlayEffect(listOf(overlay))))
     val editedMediaItem = EditedMediaItem.Builder(MediaItem.fromUri(video))
       .setEffects(effects)

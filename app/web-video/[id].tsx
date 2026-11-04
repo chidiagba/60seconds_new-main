@@ -8,19 +8,24 @@ import {
   Platform,
   TouchableOpacity,
   Share,
+  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MapPin, Calendar, Copy, Share2 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
-import { mockVideos } from '@/mocks/videos';
+import { useVideoStore } from '@/store/video-store';
 import { Video } from '@/types';
 import * as Clipboard from 'expo-clipboard';
+import { supabase } from '@/lib/supabase';
+import { findPublicEventForVideo } from '@/lib/public-event-link';
 import { buildVideoShareUrl } from '@/constants/app-links';
 
 export default function WebVideoScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [video, setVideo] = useState<Video | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const getUploaderUsername = (inputVideo: Video | null) => {
     const rawUsername = String(inputVideo?.user?.username || '').trim();
@@ -29,10 +34,27 @@ export default function WebVideoScreen() {
   };
 
   useEffect(() => {
-    if (id) {
-      const foundVideo = mockVideos.find((v) => v.id === id);
-      setVideo(foundVideo || null);
-    }
+    let active = true;
+    setVideo(null);
+    setLoading(true);
+    setLoadError(false);
+    if (!id) { setLoading(false); return; }
+    void (async () => {
+      try {
+        // Historical video links must expose the same inventory as event links.
+        const eventId = await findPublicEventForVideo(supabase, id);
+        if (!active) return;
+        if (eventId) {
+          router.replace({ pathname: '/web-event/[id]', params: { id: eventId } });
+          return;
+        }
+        const result = await useVideoStore.getState().fetchVideoById(id);
+        if (active) { setVideo(result || null); setLoading(false); }
+      } catch {
+        if (active) { setLoadError(true); setLoading(false); }
+      }
+    })();
+    return () => { active = false; };
   }, [id]);
 
   const handleShare = async () => {
@@ -65,11 +87,15 @@ export default function WebVideoScreen() {
     alert('Link copied to clipboard!');
   };
 
+  if (loading) {
+    return <SafeAreaView style={styles.container}><ActivityIndicator accessibilityLabel="Loading event details" style={{ marginTop: 80 }} /></SafeAreaView>;
+  }
+
   if (!video) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.placeholder}>
-          <Text style={styles.placeholderText}>Video not found</Text>
+          <Text style={styles.placeholderText}>{loadError ? 'Unable to load event details. Please refresh to try again.' : 'Video not found'}</Text>
         </View>
       </SafeAreaView>
     );

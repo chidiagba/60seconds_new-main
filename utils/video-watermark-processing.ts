@@ -26,7 +26,7 @@ export function processVideoWatermarkAfterUpload(input: {
         allowedExtensions: VIDEO_EXTENSIONS,
         fallbackExtension: result.outputType,
       });
-      const fileName = `${input.userId}/wm_${input.videoId}_${Date.now()}.${result.outputType}`;
+      const fileName = `${input.userId}/wm_end_v1_${input.videoId}_${Date.now()}.${result.outputType}`;
       const uploaded = await storageService.uploadVideo(arrayBuffer, fileName, result.mimeType);
       const remoteUrl = await storageService.getVideoUrl(uploaded.path);
       await videoService.updateVideo(input.videoId, {

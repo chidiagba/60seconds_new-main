@@ -2,7 +2,7 @@
   "expo": {
     "name": "60Seconds",
     "slug": "nightvibe-nightlife-video-platform",
-    "version": "106.0.0",
+    "version": "114.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
@@ -15,8 +15,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.sixtyseconds.nightlife-nightlife-video-platform",
-      "buildNumber": "106",
+      "bundleIdentifier": "app.sixtyseconds.nightlife",
+      "buildNumber": "114",
       "config": {
         "googleMapsApiKey": "AIzaSyDIbbjLmJj4l4BxLdj9xpnguG5BRhm5v-M"
       },
@@ -25,7 +25,8 @@
         "NSLocationAlwaysUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
         "NSLocationWhenInUseUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
         "LSApplicationQueriesSchemes": [
-          "twint"
+          "twint",
+          "whatsapp"
         ],
         "NSLocalNetworkUsageDescription": "Allow $(PRODUCT_NAME) to connect to local network devices for development server access.",
         "NSBonjourServices": [
@@ -43,10 +44,10 @@
         "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to access your camera",
         "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your photos"
       }
-    }, 
+    },
     "android": {
-      "versionCode": 106,
-      "versionName": "106.0.0",
+      "versionCode": 114,
+      "versionName": "114.0.0",
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
@@ -75,6 +76,8 @@
       }
     },
     "web": {
+      "bundler": "metro",
+      "output": "single",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
@@ -112,7 +115,8 @@
         {
           "photosPermission": "The app accesses your photos to let you share them with your friends."
         }
-      ]
+      ],
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true

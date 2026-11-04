@@ -1,27 +1,23 @@
 import { supabase } from '@/lib/supabase';
+import { getSafeFileExtension, readUriAsArrayBuffer } from './media-upload';
 
 /**
  * Converts a local image URI to ArrayBuffer
  */
 export const uriToArrayBuffer = async (uri: string): Promise<ArrayBuffer> => {
-  try {
-    const response = await fetch(uri);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.statusText}`);
-    }
-    return await response.arrayBuffer();
-  } catch (error) {
-    console.error('Error converting URI to ArrayBuffer:', error);
-    throw new Error('Failed to process image');
-  }
+  const { arrayBuffer } = await readUriAsArrayBuffer(uri, {
+    allowedExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'],
+    fallbackExtension: 'jpg',
+  });
+  if (!arrayBuffer.byteLength) throw new Error('The selected image is empty. Please choose another photo.');
+  return arrayBuffer;
 };
 
 /**
  * Gets the file extension from a URI
  */
 export const getFileExtension = (uri: string): string => {
-  const match = uri.match(/\.([^.]+)$/);
-  return match ? match[1] : 'jpg';
+  return getSafeFileExtension(uri, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'], 'jpg');
 };
 
 /**
@@ -34,6 +30,8 @@ export const getMimeType = (extension: string): string => {
     png: 'image/png',
     gif: 'image/gif',
     webp: 'image/webp',
+    heic: 'image/heic',
+    heif: 'image/heif',
   };
   return mimeTypes[extension.toLowerCase()] || 'image/jpeg';
 };

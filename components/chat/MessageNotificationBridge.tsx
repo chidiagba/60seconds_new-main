@@ -1,5 +1,7 @@
-import React, { useEffect } from 'react';
+import { setCurrentPushToken } from '@/utils/push-device';
+import React, { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 
 import { useAuth } from '@/lib/auth';
@@ -69,24 +71,50 @@ async function isGroupMessageForUser(groupId: string, userId: string) {
 }
 
 export default function MessageNotificationBridge() {
-  const router = useRouter();
   const { user } = useAuth();
+  const registeredToken = useRef<string | null>(null);
+  const handledResponse = useRef<string | null>(null);
+  useEffect(() => {
+    if (!user?.id || Platform.OS === 'web' || !NotificationsModule) return;
+    let cancelled = false;
+    let token: string | undefined;
+    (async () => {
+      if (Platform.OS === 'android') await NotificationsModule.setNotificationChannelAsync('default', { name: 'Messages and followers', importance: 4 });
+      const permission = await NotificationsModule.requestPermissionsAsync();
+      if (permission.status !== 'granted' || cancelled) return;
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
+      if (!projectId) return;
+      token = (await NotificationsModule.getExpoPushTokenAsync({ projectId })).data;
+      if (cancelled || !token) return;
+      const { error } = await supabase.from('push_devices').upsert({ token, user_id: user.id, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      registeredToken.current = token;
+      await setCurrentPushToken(token);
+    })().catch(error => console.warn('Push registration failed:', error));
+    return () => {
+      cancelled = true;
+      registeredToken.current = null;
+      if (token) void supabase.from('push_devices').delete().eq('token', token).then(() => {});
+    };
+  }, [user?.id]);
+  const router = useRouter();
   const incrementUnread = useMessageUnreadStore((state) => state.incrementUnread);
 
   useEffect(() => {
-    if (!NotificationsModule || Platform.OS === 'web') {
+    if (!user?.id || !NotificationsModule || Platform.OS === 'web') {
       return;
     }
 
-    NotificationsModule.requestPermissionsAsync().catch(() => {
-      // Ignore permission prompt errors.
-    });
-
+    let active = true;
     const handleNotificationRoute = (data: any) => {
       if (!data) {
         return;
       }
 
+      if (data.kind === 'follower' && data.userId) {
+        router.push({ pathname: '/profile', params: { userId: String(data.userId) } });
+        return;
+      }
       if (data.kind === 'event') {
         router.push('/');
         return;
@@ -111,20 +139,21 @@ export default function MessageNotificationBridge() {
       }
     };
 
-    NotificationsModule.getLastNotificationResponseAsync?.().then((response: any) => {
-      const data = response?.notification?.request?.content?.data;
-      handleNotificationRoute(data);
-    });
-
-    const responseSub = NotificationsModule.addNotificationResponseReceivedListener((response: any) => {
-      const data = response?.notification?.request?.content?.data || {};
-      handleNotificationRoute(data);
-    });
+    const routeResponse = (response: any) => {
+      const request = response?.notification?.request;
+      if (!active || !request || request.identifier === handledResponse.current) return;
+      handledResponse.current = request.identifier;
+      handleNotificationRoute(request.content?.data);
+      NotificationsModule.clearLastNotificationResponse?.();
+    };
+    NotificationsModule.getLastNotificationResponseAsync?.().then(routeResponse).catch((error: any) => console.warn('Unable to read notification:', error));
+    const responseSub = NotificationsModule.addNotificationResponseReceivedListener(routeResponse);
 
     return () => {
+      active = false;
       responseSub.remove();
     };
-  }, [router]);
+  }, [router, user?.id]);
 
   useEffect(() => {
     if (!user?.id || !NotificationsModule) {
@@ -152,6 +181,7 @@ export default function MessageNotificationBridge() {
 
         incrementUnread();
 
+        if (registeredToken.current) return;
         const senderName = await getProfileDisplayName(String(row.sender_id));
         await NotificationsModule.scheduleNotificationAsync({
           content: {
@@ -190,6 +220,7 @@ export default function MessageNotificationBridge() {
 
         incrementUnread();
 
+        if (registeredToken.current) return;
         const [{ data: group }, senderName] = await Promise.all([
           supabase
             .from('group_chats')
@@ -199,7 +230,6 @@ export default function MessageNotificationBridge() {
           getProfileDisplayName(String(row.sender_id)),
         ]);
 
-        const isEvent = row.message_type === 'event';
         const body =
           row.message_type === 'video'
             ? `${senderName} shared a video`
@@ -211,9 +241,7 @@ export default function MessageNotificationBridge() {
           content: {
             title: group?.name || 'Group message',
             body,
-            data: isEvent
-              ? { kind: 'event' }
-              : {
+            data: {
                   kind: 'message',
                   chatType: 'group',
                   chatId: String(row.group_chat_id),

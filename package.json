@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start --tunnel",
+    "build:web": "expo export --platform web",
     "start-web": "expo start --web --tunnel",
     "start-web-dev": "DEBUG=expo* expo start --web --tunnel",
     "start-server": "tsx start-server.js",
@@ -26,7 +27,7 @@
     "reconcile:paystack-order": "tsx scripts/reconcile-orphaned-paystack-order.ts",
     "backfill:ticket-receipts": "tsx scripts/backfill-missing-ticket-receipts.ts",
     "backfill:paystack-subaccounts": "tsx scripts/backfill-paystack-subaccounts.ts",
-    "postinstall": "node scripts/patch-ffmpeg-podspec.js && node scripts/patch-expo-message-socket.js && node scripts/patch-stripe-swift-interop.js"
+    "postinstall": "node scripts/patch-ffmpeg-podspec.js && node scripts/patch-ffmpeg-android.js && node scripts/patch-expo-message-socket.js && node scripts/patch-stripe-swift-interop.js && node scripts/patch-expo-av-ios.js"
   },
   "dependencies": {
     "@expo/react-native-action-sheet": "^4.1.1",
@@ -61,6 +62,7 @@
     "expo-location": "~19.0.7",
     "expo-media-library": "^18.2.0",
     "expo-notifications": "~0.32.16",
+    "expo-print": "~15.0.8",
     "expo-router": "~6.0.15",
     "expo-sharing": "~14.0.8",
     "expo-splash-screen": "~31.0.11",

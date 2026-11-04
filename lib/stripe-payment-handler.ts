@@ -1,3 +1,4 @@
+import { ensureStripeInitialized } from "@/lib/stripe-initialization";
 import { Platform, Alert, Linking } from 'react-native';
 import Constants from 'expo-constants';
 
@@ -38,8 +39,8 @@ export async function initializeStripePayment(params: StripePaymentParams) {
  */
 async function initializeNativeStripePayment(params: StripePaymentParams) {
   try {
-    const { useStripe } = require('@stripe/stripe-react-native');
-    const stripe = useStripe();
+    const stripe = require('@stripe/stripe-react-native');
+    await ensureStripeInitialized();
 
     const stripeKey =
       process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ||

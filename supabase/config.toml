@@ -494,3 +494,15 @@ entrypoint = "./functions/backfill-external-settlements/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/repair-single-external-settlement/index.ts"
+
+[functions.guest-event]
+verify_jwt = false
+
+[functions.guest-checkout-webhook]
+verify_jwt = false
+
+[functions.deliver-push]
+verify_jwt = false
+
+[functions.guest-checkout-reconcile]
+verify_jwt = false

@@ -27,6 +27,7 @@ const EULA_ACCEPTED_KEY = 'eula_accepted_v1';
 const SIGNIN_PROMPT_INTERVAL = 3;
 
 export default function HomeScreen() {
+  const { feedMode, feedSeed, setFeedMode } = useVideoStore();
   const router = useRouter();
   const { user: authUser } = useAuth();
   const params = useLocalSearchParams<{ selectedVideoId?: string }>();
@@ -37,6 +38,11 @@ export default function HomeScreen() {
   const [showEULA, setShowEULA] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const [visibleVideoIndex, setVisibleVideoIndex] = useState(0);
+  useEffect(() => {
+    setVisibleVideoIndex(0);
+    setCurrentVideoIndex(0);
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [feedSeed]);
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
   const [locationPermission, setLocationPermission] = useState<boolean | null>(null);
   const [hasCheckedLocationPermission, setHasCheckedLocationPermission] = useState(Platform.OS === 'web');
@@ -120,6 +126,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
+        if (!selectedVideoIdFromParams) void fetchVideos();
         refreshLocationPermission().catch((error) => {
           console.warn('Error checking location permission on app active:', error);
         });
@@ -184,6 +191,7 @@ export default function HomeScreen() {
     }
 
     (async () => {
+      hasCheckedMissingVideoRef.current.delete(selectedVideoIdFromParams);
       setPendingSelectedVideoId(selectedVideoIdFromParams);
       setIsPreloadingVideo(true);
       setShowAllVideos(true);
@@ -387,10 +395,7 @@ export default function HomeScreen() {
       hasCheckedMissingVideoRef.current.add(pendingSelectedVideoId);
 
       try {
-        await videoService.getVideo(pendingSelectedVideoId);
-        if (!cancelled) {
-          await fetchVideos();
-        }
+        await useVideoStore.getState().fetchVideoById(pendingSelectedVideoId);
       } catch (error: any) {
         if (!cancelled) {
           const errorCode = error?.code;
@@ -425,6 +430,7 @@ export default function HomeScreen() {
     return (
       <View style={[styles.videoContainer, { height: feedViewportHeight }]}>
         <VideoPlayer
+          preload={isHomeFocused && Math.abs(index - visibleVideoIndex) <= 1}
           uri={item.url}
           paused={index !== visibleVideoIndex || !isHomeFocused || manuallyPausedIndex === index}
           autoplay={true}
@@ -454,9 +460,20 @@ export default function HomeScreen() {
     );
   }
 
+  const feedModeControls = (
+      <View style={{ position: 'absolute', top: insets.top + 56, left: 8, zIndex: 20, flexDirection: 'row', backgroundColor: '#111b', borderRadius: 8 }}>
+        {(['random', 'recent'] as const).map(mode => (
+          <TouchableOpacity key={mode} accessibilityRole="button" accessibilityState={{ selected: feedMode === mode }} onPress={() => { setShowAllVideos(true); void setFeedMode(mode); flatListRef.current?.scrollToOffset({ offset: 0, animated: false }); }} style={{ padding: 12 }}>
+            <Text style={{ color: feedMode === mode ? '#ff5252' : '#fff' }}>{mode === 'random' ? 'For you' : 'Recent'}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+  );
+
   if (locationError && videos.length === 0 && Platform.OS !== 'web') {
     return (
       <View style={styles.errorContainer}>
+        {feedModeControls}
         <MapPin size={50} color={Colors.dark.primary} />
         <Text style={styles.errorTitle}>Location Access Needed</Text>
         <Text style={styles.errorText}>{locationError}</Text>
@@ -498,6 +515,7 @@ export default function HomeScreen() {
   if (!isLoading && videos.length === 0) {
     return (
       <View style={styles.emptyContainer}>
+        {feedModeControls}
         <MapPin size={50} color={Colors.dark.primary} />
         <Text style={styles.emptyTitle}>No Events Nearby</Text>
         <Text style={styles.emptyText}>We couldn't find any events within 30km of your location.</Text>
@@ -540,6 +558,7 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      {feedModeControls}
       {Platform.OS !== 'web' && hasCheckedLocationPermission && locationPermission === false && (
         <View style={[styles.locationBanner, { paddingTop: Math.max(insets.top, 12) }]}>
           <Text style={styles.locationBannerText}>Enable location to see nearby events</Text>
@@ -955,6 +974,7 @@ const styles = StyleSheet.create({
 //   if (!isLoading && eventsWithVideos.length === 0) {
 //     return (
 //       <View style={styles.emptyContainer}>
+//         {feedModeControls}
 //         <MapPin size={50} color={Colors.dark.primary} />
 //         <Text style={styles.emptyTitle}>No Events Found</Text>
 //         <Text style={styles.emptyText}>Try refreshing or show all videos.</Text>
@@ -1229,6 +1249,7 @@ const styles = StyleSheet.create({
 //   if (!isLoading && videos.length === 0) {
 //     return (
 //       <View style={styles.emptyContainer}>
+//         {feedModeControls}
 //         <MapPin size={50} color={Colors.dark.primary} />
 //         <Text style={styles.emptyTitle}>No Events Found</Text>
 //         <Text style={styles.emptyText}>Try refreshing or show all videos.</Text>
@@ -1544,6 +1565,7 @@ const styles = StyleSheet.create({
 //   if (!isLoading && videos.length === 0) {
 //     return (
 //       <View style={styles.emptyContainer}>
+//         {feedModeControls}
 //         <MapPin size={50} color={Colors.dark.primary} />
 //         <Text style={styles.emptyTitle}>No Events Nearby</Text>
 //         <Text style={styles.emptyText}>We couldn't find any events within 30km of your location.</Text>

@@ -55,12 +55,22 @@ public final class NativeVideoWatermarkModule: Module {
     // Composite the static logo with Core Image instead. This stays inside the
     // video compositor, preserves the asset's preferred transform and avoids a
     // second full-resolution Core Animation surface for every frame.
+    let durationSeconds = CMTimeGetSeconds(asset.duration)
+    guard durationSeconds.isFinite, durationSeconds > 0 else {
+      promise.reject("E_DURATION", "The source video duration is invalid")
+      return
+    }
+    let logoStartSeconds = max(0, durationSeconds - 1)
     let logoImage = CIImage(cgImage: logoCGImage)
     let safeScale = CGFloat(max(0.04, min(0.12, scale)))
     let safeOpacity = CGFloat(max(0.15, min(1, opacity)))
     let videoComposition = AVVideoComposition(asset: asset) { request in
       autoreleasepool {
         let source = request.sourceImage
+        guard CMTimeGetSeconds(request.compositionTime) >= logoStartSeconds else {
+          request.finish(with: source, context: nil)
+          return
+        }
         let extent = source.extent.integral
         guard extent.width > 0, extent.height > 0, logoImage.extent.width > 0 else {
           request.finish(with: source, context: nil)

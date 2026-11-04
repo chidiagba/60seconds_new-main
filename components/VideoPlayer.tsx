@@ -19,6 +19,7 @@ interface VideoPlayerProps {
   taggedUsers?: TaggedUser[];
   showWatermark?: boolean;
   onLoadError?: () => void;
+  preload?: boolean;
 }
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -42,22 +43,23 @@ const hasEmbeddedWatermark = (uri: string) => {
     || normalizedUri.includes('watermarked');
 };
 
-export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWithSound = true, onPress, taggedUsers, showWatermark = true, onLoadError }: VideoPlayerProps) {
+export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWithSound = true, onPress, taggedUsers, showWatermark = true, onLoadError, preload = true }: VideoPlayerProps) {
   const router = useRouter();
   const isFocused = useIsFocused();
   const videoRef = useRef<ExpoVideo>(null);
   const lastProgressSecondRef = useRef(-1);
+  const [showEndLogo, setShowEndLogo] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(!paused);
   const [showPlayButton, setShowPlayButton] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [showTaggedUsers, setShowTaggedUsers] = useState(true);
-  const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
+  const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState || 'active');
   const [hasError, setHasError] = useState(false);
   const [videoInstanceKey, setVideoInstanceKey] = useState(0);
-  const [androidImplementation, setAndroidImplementation] = useState<'MediaPlayer' | 'ExoPlayer'>('MediaPlayer');
+  const [androidImplementation, setAndroidImplementation] = useState<'MediaPlayer' | 'ExoPlayer'>('ExoPlayer');
   const hasRetriedDecoderFallbackRef = useRef(false);
-  const canPlay = !paused && appState === 'active' && isFocused;
+  const canPlay = (autoplay ? !paused : isPlaying) && appState === 'active' && isFocused;
   const canPlayWithSound = autoplayWithSound && canPlay;
   const androidVideoProps = Platform.OS === 'android' ? ({ androidImplementation } as any) : {};
   // Uploaded videos whose storage name contains `wm_` already have the logo
@@ -97,19 +99,18 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
     // Cleanup function to unload video when component unmounts
     return () => {
       subscription.remove();
-      if (videoRef.current && Platform.OS !== 'web') {
-        videoRef.current.unloadAsync().catch((error) => {
-          console.error('🎬 VideoPlayer: Error unloading video:', error);
-        });
-      }
+      // ExpoVideo unloads itself on unmount. This ref can already point at the
+      // replacement source when the URI changes; unloading it here stops that clip.
     };
   }, [uri]);
 
   useEffect(() => {
-    setVideoInstanceKey((prev) => prev + 1);
+    setShowEndLogo(false);
+    lastProgressSecondRef.current = -1;
+    setCurrentTime(0);
     setHasError(false);
     setIsLoading(true);
-    setAndroidImplementation('MediaPlayer');
+    setAndroidImplementation('ExoPlayer');
     hasRetriedDecoderFallbackRef.current = false;
   }, [uri]);
 
@@ -171,7 +172,8 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
 
   const handlePlaybackStatusUpdate = (status: any) => {
     if (status.isLoaded) {
-      setIsLoading(false);
+      setIsLoading(status.isBuffering && canPlay);
+      setShowEndLogo(Boolean(status.durationMillis > 0 && status.positionMillis >= Math.max(0, status.durationMillis - 1000)));
       if (status.positionMillis !== undefined && taggedUsers && taggedUsers.length > 0) {
         const nextSecond = Math.floor(status.positionMillis / 1000);
         if (nextSecond !== lastProgressSecondRef.current) {
@@ -252,21 +254,24 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
           <View style={styles.errorFallbackContainer}>
             <Ionicons name="videocam-off" size={40} color={Colors.dark.subtext} />
             <Text style={styles.errorFallbackText}>Video unavailable</Text>
+            <TouchableOpacity accessibilityLabel="Retry video" onPress={() => { setHasError(false); setIsLoading(true); setVideoInstanceKey(key => key + 1); }}>
+              <Text style={styles.errorFallbackText}>Tap to retry</Text>
+            </TouchableOpacity>
           </View>
-        ) : (
-          // Always mount ExpoVideo so Android/iOS can preload/buffer adjacent videos.
-          // We only control playback via shouldPlay — the component stays mounted even when paused.
+        ) : (preload || canPlay) ? (
+          // Keep only the current video and its immediate neighbors loaded in the feed.
           <ExpoVideo
-            key={videoInstanceKey}
+            key={`${uri}:${videoInstanceKey}`}
             ref={videoRef}
             source={{ uri }}
             style={styles.video}
             resizeMode={ResizeMode.COVER}
             {...androidVideoProps}
-            shouldPlay={Platform.OS === 'web' ? isPlaying : canPlay}
+            shouldPlay={canPlay}
             isMuted={!canPlayWithSound}
             volume={1.0}
             isLooping
+            progressUpdateIntervalMillis={canPlay ? 100 : 1000}
             onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
             useNativeControls={Platform.OS === 'web'}
             onError={(error) => {
@@ -281,7 +286,7 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
               onLoadError?.();
             }}
           />
-        )}
+        ) : null}
 
 
         {isLoading && !paused && (
@@ -307,7 +312,7 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
 
         {/* Watermark */}
         <VideoWatermark
-          visible={shouldShowOverlayWatermark}
+          visible={shouldShowOverlayWatermark && showEndLogo}
           position="bottom-right"
           opacity={0.8}
           size={{ width: 160, height: 80 }}

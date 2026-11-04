@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
     for (const product of products || []) {
       if (product.is_active === false) return respond({ error: `${product.name} is unavailable` }, 409);
       const qty = quantities.get(product.id) || 0;
-      const available = Number(product.available_quantity || 0) - Number(product.sold_quantity || 0);
+      const available = Number(product.available_quantity || 0);
       if (Number.isFinite(available) && available < qty) return respond({ error: `Insufficient availability for ${product.name}` }, 409);
       if (!product.business_id) return respond({ error: `Organizer missing for ${product.name}` }, 409);
       owners.add(product.business_id);
@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
       if (currency && currency !== productCurrency) return respond({ error: "Mixed currencies are not supported" }, 409);
       currency = productCurrency;
       const unitPrice = Number(product.price || 0);
-      subtotal += unitPrice * qty;
+      subtotal += money(unitPrice * 1.04) * qty;
       items.push({ product_id: product.id, quantity: qty, price: unitPrice, name: product.name, type: product.type, description: product.description, currency: productCurrency });
     }
     if (owners.size !== 1) return respond({ error: "Checkout must contain products from one organizer" }, 409);
@@ -109,15 +109,19 @@ Deno.serve(async (req) => {
     const voucherId = String(body.voucherId || "").trim();
     if (voucherId) {
       const { data: voucher } = await admin.from("vouchers").select("*").eq("id", voucherId).eq("business_id", organizerId).eq("is_active", true).maybeSingle();
-      if (voucher && (!voucher.expiry_date || new Date(voucher.expiry_date) > new Date()) && subtotal >= Number(voucher.min_purchase_amount || 0)) {
-        discount = voucher.discount_type === "percentage" ? subtotal * Number(voucher.discount_amount || 0) / 100 : Number(voucher.discount_amount || 0);
-        if (voucher.max_discount_amount) discount = Math.min(discount, Number(voucher.max_discount_amount));
-        discount = Math.min(subtotal, Math.max(0, discount));
-      }
+      if (!voucher) return respond({error: 'Voucher not found or inactive'},400);
+      if (voucher.expiry_date && new Date(voucher.expiry_date) <= new Date()) return respond({error:'Voucher has expired'},400);
+      if (voucher.usage_limit != null && voucher.usage_count >= voucher.usage_limit) return respond({error:'Voucher usage limit reached'},400);
+      if (subtotal < Number(voucher.min_purchase_amount || 0)) return respond({error:'Minimum voucher purchase amount not reached'},400);
+      if (voucher.product_id && ids.some(id => id !== voucher.product_id)) return respond({error:'Voucher is only valid for specific products'},400);
+      const value = Number(voucher.discount_value ?? voucher.discount_amount);
+      discount = voucher.discount_type === 'percentage' ? money(subtotal * value / 100) : value;
+      if (voucher.max_discount_amount != null) discount = Math.min(discount,Number(voucher.max_discount_amount));
+      discount = Math.min(subtotal,Math.max(0,discount));
     }
-    subtotal = money(subtotal - discount);
-    const platformFee = money(subtotal * 0.04);
-    const total = money(subtotal + platformFee);
+    const total = money(subtotal - discount);
+    subtotal = money(total / 1.04);
+    const platformFee = money(total - subtotal);
     reference = `60seconds_order_${crypto.randomUUID().replaceAll("-", "")}`;
     const { data: order, error: orderError } = await admin.from("orders").insert({
       user_id: authData.user.id, business_id: organizerId, event_id: products?.[0]?.event_id || null,

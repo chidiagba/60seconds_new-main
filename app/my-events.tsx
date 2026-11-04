@@ -44,7 +44,7 @@ function EventThumbnail({ event }: { event: EventWithProducts }) {
 
 export default function MyEventsScreen() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const [events, setEvents] = useState<EventWithProducts[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -176,6 +176,12 @@ export default function MyEventsScreen() {
                   </View>
                 </View>
 
+                {profile?.user_type === 'business' && <TouchableOpacity onPress={(e) => { e.stopPropagation(); router.push({pathname:'/edit-event-media' as any,params:{id:event.id}}); }} style={{paddingVertical:10}}>
+                  <Text style={{color:Colors.dark.primary}}>Edit event images & video</Text>
+                </TouchableOpacity>}
+                <TouchableOpacity onPress={(e) => { e.stopPropagation(); router.push({pathname:'/tables/event' as any,params:{id:event.id}}); }} style={{paddingVertical:10}}>
+                  <Text style={{color:Colors.dark.primary}}>Manage tables & paid reservations</Text>
+                </TouchableOpacity>
                 {!!event.description && <Text style={styles.eventDescription} numberOfLines={2}>{event.description}</Text>}
 
                 <View style={styles.metaRow}>

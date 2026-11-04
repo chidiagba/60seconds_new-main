@@ -13,4 +13,18 @@ config.resolver.extraNodeModules = {
   'native-video-watermark': path.resolve(__dirname, 'modules/native-video-watermark'),
 };
 
+// react-async-hook 3.6.1 advertises an ESM entry at the package root,
+// although the published file is in dist/. Resolve the existing file on web.
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // The location screen already renders its browser fallback.
+  if (platform === 'web' && moduleName === 'react-native-maps') return { type: 'empty' };
+  if (platform === 'web' && moduleName === '@stripe/stripe-react-native') {
+    return { type: 'sourceFile', filePath: path.resolve(__dirname, 'lib/stripe-native.web.tsx') };
+  }
+  if (moduleName === 'react-async-hook') {
+    return context.resolveRequest(context, require.resolve('react-async-hook'), platform);
+  }
+  return context.resolveRequest(context, moduleName, platform);
+};
+
 module.exports = config;

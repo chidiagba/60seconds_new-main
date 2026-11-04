@@ -1,6 +1,12 @@
+import { voucherDiscount } from '@/utils/commerce-rules';
 import { create } from 'zustand';
 import { Voucher } from '@/types';
-import { mockVouchers } from '@/mocks/vouchers';
+import { voucherService } from '@/lib/database';
+import { supabase } from '@/lib/supabase';
+import { voucherDiscountFields } from '@/utils/voucher-fields';
+
+const fromRow = (r: any): Voucher => ({ id: r.id, businessId: r.business_id, code: r.code, name: r.name || r.title, description: r.description, productId: r.product_id || undefined, ...voucherDiscountFields(r), minPurchaseAmount: r.min_purchase_amount, maxDiscountAmount: r.max_discount_amount, expiryDate: r.expiry_date, usageLimit: r.usage_limit, usageCount: r.usage_count, isActive: r.is_active, createdAt: r.created_at });
+const toRow = (v: Partial<Voucher>): any => Object.fromEntries(Object.entries(v).filter(([k]) => !['id','createdAt','usageCount','businessId'].includes(k)).map(([k,value]) => [k.replace(/[A-Z]/g, c => '_' + c.toLowerCase()), k === 'code' ? String(value).trim().toUpperCase() : value]));
 import { useAuthStore } from './auth-store';
 
 interface VoucherState {
@@ -16,7 +22,7 @@ interface VoucherState {
   updateVoucher: (voucherId: string, updates: Partial<Voucher>) => Promise<boolean>;
   deleteVoucher: (voucherId: string) => Promise<boolean>;
   toggleVoucherStatus: (voucherId: string) => Promise<boolean>;
-  validateVoucher: (code: string, amount: number, productId?: string) => Promise<{
+  validateVoucher: (code: string, amount: number, productId?: string, businessId?: string) => Promise<{
     valid: boolean;
     voucher?: Voucher;
     discountAmount?: number;
@@ -36,19 +42,16 @@ export const useVoucherStore = create<VoucherState>((set, get) => ({
   fetchVouchers: async (businessId?: string) => {
     set({ isLoading: true, error: null });
     try {
-      // In a real app, this would be an API call
-      // Simulating network delay
-      await new Promise(resolve => setTimeout(resolve, 500));
       
       let filteredVouchers;
       if (businessId) {
-        filteredVouchers = mockVouchers.filter(voucher => voucher.businessId === businessId);
+        filteredVouchers = (await voucherService.getBusinessVouchers(businessId)).map(fromRow);
       } else {
         const { user } = useAuthStore.getState();
         if (!user || !user.isBusinessAccount) {
           throw new Error('Only business accounts can access vouchers');
         }
-        filteredVouchers = mockVouchers.filter(voucher => voucher.businessId === user.id);
+        filteredVouchers = (await voucherService.getBusinessVouchers(user.id)).map(fromRow);
       }
       
       set({ vouchers: filteredVouchers, isLoading: false });
@@ -60,11 +63,10 @@ export const useVoucherStore = create<VoucherState>((set, get) => ({
   getVoucherByCode: async (code: string) => {
     set({ isLoading: true, error: null });
     try {
-      // In a real app, this would be an API call
-      // Simulating network delay
-      await new Promise(resolve => setTimeout(resolve, 300));
       
-      const voucher = mockVouchers.find(v => v.code === code && v.isActive);
+      const { data, error } = await supabase.from('vouchers').select('*').ilike('code', code.trim().toUpperCase().replace(/[%_]/g, c => '\\' + c)).maybeSingle();
+      if (error) throw error;
+      const voucher = data ? fromRow(data) : null;
       set({ isLoading: false });
       return voucher || null;
     } catch (error: any) {
@@ -81,25 +83,9 @@ export const useVoucherStore = create<VoucherState>((set, get) => ({
         throw new Error('Only business accounts can create vouchers');
       }
       
-      // In a real app, this would be an API call
-      // Simulating network delay
-      await new Promise(resolve => setTimeout(resolve, 800));
       
-      // Check if code already exists
-      const existingVoucher = mockVouchers.find(v => v.code === voucherData.code);
-      if (existingVoucher) {
-        throw new Error('Voucher code already exists');
-      }
-      
-      // Create new voucher
-      const newVoucher: Voucher = {
-        id: Date.now().toString(),
-        businessId: user.id,
-        usageCount: 0,
-        createdAt: new Date().toISOString(),
-        ...voucherData,
-      };
-      
+      const newVoucher = fromRow(await voucherService.createVoucher({ ...toRow(voucherData), business_id: user.id }));
+
       // Add to local state
       set(state => ({
         vouchers: [...state.vouchers, newVoucher],
@@ -132,10 +118,8 @@ export const useVoucherStore = create<VoucherState>((set, get) => ({
         throw new Error('You can only update your own vouchers');
       }
       
-      // In a real app, this would be an API call
-      // Simulating network delay
-      await new Promise(resolve => setTimeout(resolve, 500));
       
+      await voucherService.updateVoucher(voucherId, toRow(updates));
       // Update voucher
       const updatedVouchers = vouchers.map(v => 
         v.id === voucherId ? { ...v, ...updates } : v
@@ -168,10 +152,9 @@ export const useVoucherStore = create<VoucherState>((set, get) => ({
         throw new Error('You can only delete your own vouchers');
       }
       
-      // In a real app, this would be an API call
-      // Simulating network delay
-      await new Promise(resolve => setTimeout(resolve, 500));
       
+      const { error } = await supabase.from('vouchers').delete().eq('id', voucherId).eq('business_id', user.id);
+      if (error) throw error;
       // Delete voucher
       const updatedVouchers = vouchers.filter(v => v.id !== voucherId);
       
@@ -202,10 +185,8 @@ export const useVoucherStore = create<VoucherState>((set, get) => ({
         throw new Error('You can only update your own vouchers');
       }
       
-      // In a real app, this would be an API call
-      // Simulating network delay
-      await new Promise(resolve => setTimeout(resolve, 300));
       
+      await voucherService.updateVoucher(voucherId, { is_active: !voucherToUpdate.isActive });
       // Toggle status
       const updatedVouchers = vouchers.map(v => 
         v.id === voucherId ? { ...v, isActive: !v.isActive } : v
@@ -219,68 +200,19 @@ export const useVoucherStore = create<VoucherState>((set, get) => ({
     }
   },
   
-  validateVoucher: async (code, amount, productId) => {
+  validateVoucher: async (code, amount, productId, businessId) => {
     set({ isLoading: true, error: null });
     try {
-      // In a real app, this would be an API call
-      // Simulating network delay
-      await new Promise(resolve => setTimeout(resolve, 300));
       
-      const voucher = mockVouchers.find(v => v.code === code);
+      const voucher = await get().getVoucherByCode(code);
       
       if (!voucher) {
         set({ isLoading: false });
         return { valid: false, errorMessage: 'Voucher not found' };
       }
       
-      if (!voucher.isActive) {
-        set({ isLoading: false });
-        return { valid: false, errorMessage: 'Voucher is inactive' };
-      }
-      
-      const now = new Date();
-      const expiryDate = new Date(voucher.expiryDate);
-      if (now > expiryDate) {
-        set({ isLoading: false });
-        return { valid: false, errorMessage: 'Voucher has expired' };
-      }
-      
-      if (voucher.usageCount >= voucher.usageLimit) {
-        set({ isLoading: false });
-        return { valid: false, errorMessage: 'Voucher usage limit reached' };
-      }
-      
-      if (voucher.minPurchaseAmount && amount < voucher.minPurchaseAmount) {
-        set({ isLoading: false });
-        return { 
-          valid: false, 
-          errorMessage: `Minimum purchase amount is $${voucher.minPurchaseAmount.toFixed(2)}` 
-        };
-      }
-      
-      if (voucher.productId && voucher.productId !== productId) {
-        set({ isLoading: false });
-        return { 
-          valid: false, 
-          errorMessage: 'Voucher is only valid for specific products' 
-        };
-      }
-      
-      // Calculate discount amount
-      let discountAmount = 0;
-      if (voucher.discountType === 'percentage') {
-        discountAmount = (amount * voucher.discountValue) / 100;
-        if (voucher.maxDiscountAmount && discountAmount > voucher.maxDiscountAmount) {
-          discountAmount = voucher.maxDiscountAmount;
-        }
-      } else {
-        discountAmount = voucher.discountValue;
-        if (discountAmount > amount) {
-          discountAmount = amount;
-        }
-      }
-      
-      set({ isLoading: false });
+      const discountAmount = voucherDiscount(voucher, amount, productId, businessId);
+      set(state => ({ isLoading: false, vouchers: [...state.vouchers.filter(v => v.id !== voucher.id), voucher] }));
       return { 
         valid: true, 
         voucher, 
@@ -293,7 +225,7 @@ export const useVoucherStore = create<VoucherState>((set, get) => ({
   },
   
   applyVoucher: (code) => {
-    const voucher = mockVouchers.find(v => v.code === code && v.isActive);
+    const voucher = get().vouchers.find(v => v.code.toUpperCase() === code.trim().toUpperCase() && v.isActive);
     set({ activeVoucher: voucher || null });
   },
   
@@ -306,13 +238,11 @@ export const useVoucherStore = create<VoucherState>((set, get) => ({
     try {
       const { vouchers } = get();
       
-      // In a real app, this would be an API call
-      // Simulating network delay
-      await new Promise(resolve => setTimeout(resolve, 300));
       
+      const redeemed = fromRow(await voucherService.redeemVoucher(voucherId));
       // Increment usage count
       const updatedVouchers = vouchers.map(v => 
-        v.id === voucherId ? { ...v, usageCount: v.usageCount + 1 } : v
+        v.id === voucherId ? redeemed : v
       );
       
       set({ vouchers: updatedVouchers, isLoading: false });

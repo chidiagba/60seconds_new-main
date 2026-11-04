@@ -39,6 +39,7 @@ export interface Video {
   caption?: string;
   shareAnalytics?: ShareAnalytics;
   eventId?: string; // Add event ID to link to products
+  eventImageUrl?: string;
   eventStartDate?: string;
   eventEndDate?: string;
   eventStatus?: 'open' | 'closed';

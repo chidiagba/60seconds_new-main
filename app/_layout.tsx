@@ -6,6 +6,7 @@ import React, { useEffect } from "react";
 import Constants from "expo-constants";
 import { StatusBar } from "expo-status-bar";
 import Colors from "@/constants/colors";
+import { STRIPE_PUBLISHABLE_KEY } from "@/lib/stripe-initialization";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { trpc, trpcClient } from "@/lib/trpc";
 import { AppRegistry, Platform, AppState } from "react-native";
@@ -19,7 +20,7 @@ const isExpoGo =
   (Constants as any)?.appOwnership === "expo" ||
   (Constants as any)?.executionEnvironment === "storeClient";
 
-if (!isExpoGo && Platform.OS !== "web") {
+if (!isExpoGo && Platform.OS === "ios") {
   try {
     const stripeModule = require("@stripe/stripe-react-native");
     StripeProviderComponent = stripeModule?.StripeProvider || null;
@@ -50,11 +51,15 @@ import { settleExternalOrderPayment } from '@/lib/external-payment-settlement';
 
 // Reserve control of the native launch screen before React mounts. Calling
 // hideAsync without this can race iOS splash registration on a cold start.
-SplashScreen.preventAutoHideAsync().catch(() => {
-  // A previous fast refresh may already own the splash screen.
-});
+if (Platform.OS === 'ios') {
+  SplashScreen.preventAutoHideAsync().catch(() => {
+    // A previous fast refresh may already own the splash screen.
+  });
+}
 
-export const unstable_settings = {
+// A browser deep link must not mount the home feed behind the event page.
+// Its native EULA modal otherwise covers public guest checkout.
+export const unstable_settings = Platform.OS === "web" ? {} : {
   initialRouteName: "(tabs)",
 };
 
@@ -315,6 +320,8 @@ function AppContent() {
                     animation: "slide_from_right",
                   }}
                 >
+                <Stack.Screen name="web-event/[id]" options={{ headerShown: false }} />
+                <Stack.Screen name="[id]" options={{ headerShown: false }} />
                 <Stack.Screen name="(tabs)" options={{ headerShown: false, title: "" }} />
                 <Stack.Screen name="(tabsbusiness)" options={{ headerShown: false, title: "" }} />
                 <Stack.Screen
@@ -537,10 +544,7 @@ function AppContent() {
 
 function RootLayoutNav() {
   // Use publishable key from env/config if available, otherwise fall back to the provided key.
-  const stripeKey =
-    process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
-    // Fallback publishable key (set by developer for testing). Replace with env var in production.
-    "pk_live_51SnDvXJTbyjuWarpewYMsveVy4MZcwQGtfcSfWa3qq390qr8Da0xFdcoA6Nya6UeUUNsApKVUnWbxw9tf2Mymscp00AbgC2cOa";
+  const stripeKey = STRIPE_PUBLISHABLE_KEY;
 
   // Read Apple Pay merchant identifier from env or expo config extras. This must match the Merchant ID
   // configured in your Apple Developer account and the Xcode project entitlements.
@@ -569,9 +573,8 @@ function RootLayoutNav() {
     );
   }
 
-  // Wrap children with StripeProvider for both iOS and Android
-  // iOS includes Apple Pay + PassKit with proper merchant configuration
-  // Android includes Google Pay via Stripe PaymentSheet
+  // iOS keeps its Apple Pay configuration. Android initializes Stripe at checkout
+  // so its Compose setup cannot delay the first focused application window.
   const paystackPublicKey =
     process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY ||
     'pk_test_your_public_key_here';

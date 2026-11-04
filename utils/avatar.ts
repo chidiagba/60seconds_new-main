@@ -32,3 +32,13 @@ export const resolveAvatarUrl = (params: {
 
   return params.fallbackUrl || DEFAULT_AVATAR_URL;
 };
+
+/** Preserve omitted legacy fields, but never undo an intentional avatar removal. */
+export function mergeProfileAvatarFields<T extends { id: string; avatar_url?: string | null; avatar_gender?: AvatarGender }>(next: T, previous: T | null): T {
+  if (!previous || previous.id !== next.id) return next;
+  return {
+    ...next,
+    avatar_url: next.avatar_url !== undefined ? next.avatar_url : previous.avatar_url,
+    avatar_gender: next.avatar_gender !== undefined ? next.avatar_gender : previous.avatar_gender,
+  };
+}
