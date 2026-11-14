@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -178,7 +179,7 @@ export const useProductStore = create<ProductState>()(
       const existingItem = state.cart.find(item => item.product.id === product.id);
       
       if (existingItem) {
-        console.log('🛒 Updating cart item quantity:', product.name, 'new quantity:', existingItem.quantity + quantity);
+        logger.debug('🛒 Updating cart item quantity:', product.name, 'new quantity:', existingItem.quantity + quantity);
         return {
           cart: state.cart.map(item => 
             item.product.id === product.id 
@@ -187,7 +188,7 @@ export const useProductStore = create<ProductState>()(
           )
         };
       } else {
-        console.log('🛒 Adding new item to cart:', product.name, 'quantity:', quantity);
+        logger.debug('🛒 Adding new item to cart:', product.name, 'quantity:', quantity);
         return {
           cart: [...state.cart, { product, quantity }]
         };
@@ -212,7 +213,7 @@ export const useProductStore = create<ProductState>()(
   },
   
   clearCart: () => {
-    console.log('🛒 Clearing cart');
+    logger.debug('🛒 Clearing cart');
     set({ cart: [] });
   },
   
@@ -358,7 +359,7 @@ export const useProductStore = create<ProductState>()(
       // Debug: Log when cart is loaded from storage
       onRehydrateStorage: () => (state) => {
         if (state?.cart) {
-          console.log('🛒 Cart loaded from storage:', state.cart.length, 'items');
+          logger.debug('🛒 Cart loaded from storage:', state.cart.length, 'items');
         }
       },
     }

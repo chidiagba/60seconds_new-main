@@ -169,6 +169,12 @@ export type ProductType = 'ticket' | 'drink' | 'reservation' | 'merchandise';
 
 // Voucher types
 export interface Voucher {
+  currency?: string;
+  eventId?: string;
+  allowedUserIds?: string[];
+  perUserLimit?: number;
+  applicableProducts?: string[];
+  applicableCategories?: string[];
   id: string;
   businessId: string;
   code: string;

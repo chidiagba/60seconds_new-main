@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { useAuth } from '@/lib/auth-provider';
@@ -45,7 +46,7 @@ export default function SupabaseExample() {
         setBusinessVouchers(vouchers);
       }
     } catch (error) {
-      console.error('Error loading user data:', error);
+      logger.error('Error loading user data:', error);
       Alert.alert('Error', 'Failed to load user data');
     } finally {
       setLoading(false);
@@ -82,7 +83,7 @@ export default function SupabaseExample() {
       loadUserData();
     } catch (error) {
       Alert.alert('Error', 'Failed to create video');
-      console.error('Error creating video:', error);
+      logger.error('Error creating video:', error);
     } finally {
       setLoading(false);
     }
@@ -113,7 +114,7 @@ export default function SupabaseExample() {
       loadUserData();
     } catch (error) {
       Alert.alert('Error', 'Failed to create event');
-      console.error('Error creating event:', error);
+      logger.error('Error creating event:', error);
     } finally {
       setLoading(false);
     }
@@ -143,7 +144,7 @@ export default function SupabaseExample() {
       loadUserData();
     } catch (error) {
       Alert.alert('Error', 'Failed to create voucher');
-      console.error('Error creating voucher:', error);
+      logger.error('Error creating voucher:', error);
     } finally {
       setLoading(false);
     }
@@ -152,7 +153,7 @@ export default function SupabaseExample() {
   const handleSignOut = async () => {
     const { error } = await signOut();
     if (error) {
-      Alert.alert('Error', error.message);
+      Alert.alert('Error', String(error));
     }
   };
 

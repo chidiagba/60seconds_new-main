@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { ProfileTableActions } from '@/features/tables/ProfileTableActions';
 import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Platform, ActivityIndicator } from "react-native";
@@ -26,7 +27,7 @@ export default function SettingsScreen() {
       presentApplePay = stripe.presentApplePay;
       isApplePaySupported = stripe.isApplePaySupported;
     } catch (error) {
-      console.warn("Stripe native module unavailable in settings screen", error);
+      logger.warn("Stripe native module unavailable in settings screen", error);
     }
   }
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -145,7 +146,7 @@ export default function SettingsScreen() {
                 }
               } catch (e) {
                 Alert.alert('Apple Pay', "Couldn't open sheet, see console for details.");
-                console.warn('Apple Pay demo error', e);
+                logger.warn('Apple Pay demo error', e);
               }
             }}
           />

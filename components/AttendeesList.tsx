@@ -1,3 +1,4 @@
+import AvatarImage from '@/components/AvatarImage';
 import React from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
@@ -74,8 +75,8 @@ export default function AttendeesList({
         ]}
         onPress={() => handleUserPress(item.userId)}
       >
-        <Image
-          source={{ uri: item.user.avatar }}
+        <AvatarImage
+          uri={item.user.avatar} userId={item.user?.id}
           style={styles.avatar}
           contentFit="cover"
           transition={300}

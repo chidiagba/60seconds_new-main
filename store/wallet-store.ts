@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { calculateOwnerWalletBalance } from '../supabase/functions/_shared/owner-wallet-balance';
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -413,10 +414,10 @@ const shouldAutoSyncPaystackBankAccount = (bankAccount?: Partial<BusinessBankAcc
   return payoutProvider !== 'paystack' || verificationStatus !== 'verified' || !hasRecipientCode || !hasSubaccountCode;
 };
 
-const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
+const withTimeout = async <T>(promise: PromiseLike<T>, timeoutMs: number, message: string): Promise<T> => {
   return await new Promise<T>((resolve, reject) => {
     const timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
-    promise
+    Promise.resolve(promise)
       .then((result) => {
         clearTimeout(timeoutId);
         resolve(result);
@@ -641,12 +642,12 @@ export const useWalletStore = create<WalletState>()(
           const effectiveUserId = authUserData.user?.id || user?.id;
 
           if (!effectiveUserId) {
-            console.log('⚠️ No user found - skipping wallet fetch');
+            logger.debug('⚠️ No user found - skipping wallet fetch');
             set({ wallet: null, isLoading: false });
             return;
           }
           
-          console.log('🔍 Fetching wallet for user:', effectiveUserId);
+          logger.debug('🔍 Fetching wallet for user:', effectiveUserId);
 
           const { data: profileData } = await supabase
             .from('profiles')
@@ -690,7 +691,7 @@ export const useWalletStore = create<WalletState>()(
           if (walletError) {
             if (walletError.code === 'PGRST116') {
               // Wallet not found, create one (idempotent to avoid duplicate key races).
-              console.log('📝 Creating new wallet for user:', effectiveUserId);
+              logger.debug('📝 Creating new wallet for user:', effectiveUserId);
               const { data: newWallet, error: createError } = await supabase
                 .from('wallets')
                 .upsert({
@@ -732,7 +733,7 @@ export const useWalletStore = create<WalletState>()(
                   }
 
                   set({ wallet: existingWallet, selectedCurrency, isLoading: false });
-                  console.log('✅ Wallet fetched after duplicate conflict:', existingWallet);
+                  logger.debug('✅ Wallet fetched after duplicate conflict:', existingWallet);
                   return;
                 }
 
@@ -747,7 +748,7 @@ export const useWalletStore = create<WalletState>()(
               });
               
               set({ wallet: newWallet, selectedCurrency, isLoading: false });
-              console.log('✅ Wallet created successfully:', newWallet);
+              logger.debug('✅ Wallet created successfully:', newWallet);
             } else {
               throw new Error(`Failed to fetch wallet: ${walletError.message}`);
             }
@@ -770,10 +771,10 @@ export const useWalletStore = create<WalletState>()(
             }
 
             set({ wallet: walletData, selectedCurrency, isLoading: false });
-            console.log('✅ Wallet fetched successfully:', walletData);
+            logger.debug('✅ Wallet fetched successfully:', walletData);
           }
         } catch (error: any) {
-          console.warn('Wallet fetch unavailable:', error);
+          logger.warn('Wallet fetch unavailable:', error);
           set({ error: error?.message || 'Wallet is temporarily unavailable', isLoading: false });
         }
       },
@@ -784,18 +785,18 @@ export const useWalletStore = create<WalletState>()(
         try {
           let { wallet } = get();
           if (!wallet) {
-            console.log('⚠️ No wallet loaded - fetching wallet before transactions');
+            logger.debug('⚠️ No wallet loaded - fetching wallet before transactions');
             await get().fetchWallet();
             wallet = get().wallet;
 
             if (!wallet) {
-              console.log('⚠️ No wallet found - skipping transactions fetch');
+              logger.debug('⚠️ No wallet found - skipping transactions fetch');
               set(silent ? { transactions: [], isBackgroundSyncing: false } : { transactions: [], isLoading: false });
               return;
             }
           }
           
-          console.log('🔍 Fetching transactions for wallet:', wallet.id);
+          logger.debug('🔍 Fetching transactions for wallet:', wallet.id);
 
           const { user } = useAuthStore.getState();
           const isBusinessUser = !!user?.isBusinessAccount;
@@ -810,9 +811,9 @@ export const useWalletStore = create<WalletState>()(
               if (withdrawalReconcileError) {
                 throw withdrawalReconcileError;
               }
-              console.log('✅ Withdrawal reconciliation completed:', withdrawalReconcileData);
+              logger.debug('✅ Withdrawal reconciliation completed:', withdrawalReconcileData);
             } catch (reconcileError: any) {
-              console.warn('⚠️ Withdrawal reconciliation unavailable:', reconcileError?.message || reconcileError);
+              logger.warn('⚠️ Withdrawal reconciliation unavailable:', reconcileError?.message || reconcileError);
             }
 
             try {
@@ -821,9 +822,9 @@ export const useWalletStore = create<WalletState>()(
                 { body: { days: 90 } }
               );
               if (settlementError) throw settlementError;
-              console.log('✅ Paystack bank settlement reconciliation completed:', settlementData);
+              logger.debug('✅ Paystack bank settlement reconciliation completed:', settlementData);
             } catch (settlementError: any) {
-              console.warn('⚠️ Paystack settlement reconciliation unavailable:', settlementError?.message || settlementError);
+              logger.warn('⚠️ Paystack settlement reconciliation unavailable:', settlementError?.message || settlementError);
             }
           }
 
@@ -840,9 +841,9 @@ export const useWalletStore = create<WalletState>()(
                     { body: { days: 45 } }
                   );
                   if (gatewayReconcileError) {
-                    console.warn('⚠️ Paystack sales reconciliation unavailable:', gatewayReconcileError.message);
+                    logger.warn('⚠️ Paystack sales reconciliation unavailable:', gatewayReconcileError.message);
                   } else {
-                    console.log('✅ Paystack sales reconciliation completed:', gatewayReconcileData);
+                    logger.debug('✅ Paystack sales reconciliation completed:', gatewayReconcileData);
                   }
                 }
                 await get().reconcileBusinessWalletBalance();
@@ -852,7 +853,7 @@ export const useWalletStore = create<WalletState>()(
                   lastBusinessReconcileStatus: 'success',
                 });
               } catch (reconcileError: any) {
-                console.warn('⚠️ Business settlement reconciliation unavailable:', reconcileError?.message || reconcileError);
+                logger.warn('⚠️ Business settlement reconciliation unavailable:', reconcileError?.message || reconcileError);
                 set({
                   lastBusinessReconcileStatus: 'failed',
                 });
@@ -981,7 +982,7 @@ export const useWalletStore = create<WalletState>()(
               .eq('id', wallet.id);
 
             if (walletUpdateError) {
-              console.warn('⚠️ Failed to sync wallet snapshot from transactions:', walletUpdateError.message);
+              logger.warn('⚠️ Failed to sync wallet snapshot from transactions:', walletUpdateError.message);
             }
 
             const nextWallet: any = {
@@ -1005,9 +1006,9 @@ export const useWalletStore = create<WalletState>()(
             ...(silent ? { isBackgroundSyncing: false } : { isLoading: false }),
             selectedCurrency: resolvedWalletCurrency,
           });
-          console.log('✅ Transactions fetched successfully:', transactionsData);
+          logger.debug('✅ Transactions fetched successfully:', transactionsData);
         } catch (error: any) {
-          console.warn('Transactions fetch unavailable:', error);
+          logger.warn('Transactions fetch unavailable:', error);
           set({
             error: error?.message || 'Transactions are temporarily unavailable',
             ...(silent ? { isBackgroundSyncing: false } : { isLoading: false }),
@@ -1034,7 +1035,7 @@ export const useWalletStore = create<WalletState>()(
             .eq('owner_id', user.id);
 
           if (receiptError) {
-            console.warn('⚠️ Ticket receipt reconciliation unavailable; trying paid orders and wallet metadata:', receiptError.message);
+            logger.warn('⚠️ Ticket receipt reconciliation unavailable; trying paid orders and wallet metadata:', receiptError.message);
           }
 
           const receipts = (receiptRows || []) as TicketReceiptSettlementRow[];
@@ -1048,7 +1049,7 @@ export const useWalletStore = create<WalletState>()(
             .eq('business_id', user.id);
 
           if (productError) {
-            console.warn('⚠️ Business product lookup skipped for wallet reconciliation:', productError.message);
+            logger.warn('⚠️ Business product lookup skipped for wallet reconciliation:', productError.message);
           }
 
           const businessProducts = ((productRows || []) as BusinessProductSettlementRow[])
@@ -1063,7 +1064,7 @@ export const useWalletStore = create<WalletState>()(
             .order('created_at', { ascending: false });
 
           if (orderError) {
-            console.warn('⚠️ Business order reconciliation skipped:', orderError.message);
+            logger.warn('⚠️ Business order reconciliation skipped:', orderError.message);
           }
 
           const orderBackedReceipts: TicketReceiptSettlementRow[] = ((orderRows || []) as BusinessOrderSettlementRow[])
@@ -1093,7 +1094,7 @@ export const useWalletStore = create<WalletState>()(
               .order('created_at', { ascending: false });
 
             if (paidOrderError) {
-              console.warn('⚠️ Product order reconciliation skipped:', paidOrderError.message);
+              logger.warn('⚠️ Product order reconciliation skipped:', paidOrderError.message);
             } else {
               for (const order of (paidOrderRows || []) as BusinessOrderSettlementRow[]) {
                 if (!order?.id || knownProductSettlementOrderIds.has(order.id)) continue;
@@ -1149,7 +1150,7 @@ export const useWalletStore = create<WalletState>()(
             .order('created_at', { ascending: false });
 
           if (buyerDebitError) {
-            console.warn('⚠️ Business buyer-debit reconciliation skipped:', buyerDebitError.message);
+            logger.warn('⚠️ Business buyer-debit reconciliation skipped:', buyerDebitError.message);
           }
 
           const buyerDebitBackedReceipts: TicketReceiptSettlementRow[] = ((buyerDebitRows || []) as any[])
@@ -1196,7 +1197,7 @@ export const useWalletStore = create<WalletState>()(
               .in('metadata->>order_id', orderIds);
 
             if (existingError) {
-              console.warn('⚠️ Failed to check existing business settlements:', existingError.message);
+              logger.warn('⚠️ Failed to check existing business settlements:', existingError.message);
             } else {
               for (const row of existingRows || []) {
                 const orderId = (row as any)?.metadata?.order_id || (row as any)?.metadata?.orderId;
@@ -1272,7 +1273,7 @@ export const useWalletStore = create<WalletState>()(
             .insert(transactionsToInsert);
 
           if (insertError) {
-            console.warn('⚠️ Failed to create missing business wallet settlements:', insertError.message);
+            logger.warn('⚠️ Failed to create missing business wallet settlements:', insertError.message);
             return;
           }
 
@@ -1282,7 +1283,7 @@ export const useWalletStore = create<WalletState>()(
             .eq('wallet_id', wallet.id);
 
           if (refreshedTransactionsError) {
-            console.warn('⚠️ Failed to refresh business wallet ledger after reconciliation:', refreshedTransactionsError.message);
+            logger.warn('⚠️ Failed to refresh business wallet ledger after reconciliation:', refreshedTransactionsError.message);
           }
 
           const refreshedTransactions = (refreshedTransactionRows || transactionsToInsert).map((row: TransactionRow) =>
@@ -1301,7 +1302,7 @@ export const useWalletStore = create<WalletState>()(
             .eq('id', wallet.id);
 
           if (walletUpdateError) {
-            console.warn('⚠️ Failed to update reconciled business wallet balance:', walletUpdateError.message);
+            logger.warn('⚠️ Failed to update reconciled business wallet balance:', walletUpdateError.message);
           }
 
           set({
@@ -1314,7 +1315,7 @@ export const useWalletStore = create<WalletState>()(
             selectedCurrency: reconciledCurrency,
           });
         } catch (error: any) {
-          console.warn('⚠️ Business wallet reconciliation failed:', error?.message || error);
+          logger.warn('⚠️ Business wallet reconciliation failed:', error?.message || error);
           throw new Error(error?.message || 'Business wallet reconciliation failed');
         }
       },
@@ -1360,12 +1361,12 @@ export const useWalletStore = create<WalletState>()(
         try {
           const { user } = useAuthStore.getState();
           if (!user) {
-            console.log('⚠️ No user found - skipping payment methods fetch');
+            logger.debug('⚠️ No user found - skipping payment methods fetch');
             set({ paymentMethods: [], isLoading: false });
             return;
           }
           
-          console.log('🔍 Fetching payment methods for user:', user.id);
+          logger.debug('🔍 Fetching payment methods for user:', user.id);
           const { data: paymentMethodsData, error: paymentMethodsError } = await withTimeout<any>(
             supabase
               .from('payment_methods')
@@ -1379,21 +1380,21 @@ export const useWalletStore = create<WalletState>()(
           
           if (paymentMethodsError) {
             if (paymentMethodsError.message === 'Payment methods fetch timeout') {
-              console.log('⏰ Payment methods fetch timeout - using empty array');
+              logger.debug('⏰ Payment methods fetch timeout - using empty array');
             } else {
-              console.log('⚠️ Payment methods fetch error:', paymentMethodsError.message);
+              logger.debug('⚠️ Payment methods fetch error:', paymentMethodsError.message);
             }
             set({ paymentMethods: [], isLoading: false });
             return;
           }
           
           set({ paymentMethods: paymentMethodsData || [], isLoading: false });
-          console.log('✅ Payment methods fetched successfully:', paymentMethodsData);
+          logger.debug('✅ Payment methods fetched successfully:', paymentMethodsData);
         } catch (error: any) {
           if (error?.message === 'Payment methods fetch timeout') {
-            console.log('⏰ Payment methods fetch timeout - using empty array');
+            logger.debug('⏰ Payment methods fetch timeout - using empty array');
           } else {
-            console.warn('⚠️ Payment methods fetch error:', error?.message || error);
+            logger.warn('⚠️ Payment methods fetch error:', error?.message || error);
           }
           // Don't fail completely, just show empty state
           set({ paymentMethods: [], isLoading: false, error: null });
@@ -1431,7 +1432,7 @@ export const useWalletStore = create<WalletState>()(
             const metadataPayload = (authData.user?.user_metadata as any)?.business_bank_account as BusinessBankAccountMetadata | undefined;
             let mappedFromMetadata = mapBusinessBankAccountMetadata(effectiveUserId, metadataPayload || {});
 
-            if (shouldAutoSyncPaystackBankAccount(mappedFromMetadata)) {
+            if (mappedFromMetadata && shouldAutoSyncPaystackBankAccount(mappedFromMetadata)) {
               const verification = await verifyBusinessBankAccountWithPaystack({
                 accountName: mappedFromMetadata.accountName,
                 accountNumber: mappedFromMetadata.accountNumber,
@@ -1486,7 +1487,7 @@ export const useWalletStore = create<WalletState>()(
 
           let mappedFromTable = data ? mapBusinessBankAccountRow(data as BusinessBankAccountRow) : null;
 
-          if (shouldAutoSyncPaystackBankAccount(mappedFromTable)) {
+          if (mappedFromTable && shouldAutoSyncPaystackBankAccount(mappedFromTable)) {
             const verification = await verifyBusinessBankAccountWithPaystack({
               accountName: mappedFromTable.accountName,
               accountNumber: mappedFromTable.accountNumber,
@@ -1655,7 +1656,7 @@ export const useWalletStore = create<WalletState>()(
             .eq('id', wallet.id)
             .then(({ error }) => {
               if (error) {
-                console.warn('⚠️ Failed to update wallet currency:', error.message);
+                logger.warn('⚠️ Failed to update wallet currency:', error.message);
               }
             });
         }
@@ -1727,7 +1728,7 @@ export const useWalletStore = create<WalletState>()(
             },
           });
           
-          console.log('Paystack payment initialized:', paymentData);
+          logger.debug('Paystack payment initialized:', paymentData);
           
           // Return success with reference
           set({ 
@@ -1737,7 +1738,7 @@ export const useWalletStore = create<WalletState>()(
           
           return true;
         } catch (error: any) {
-          console.error('Paystack payment error:', error);
+          logger.error('Paystack payment error:', error);
           set({ error: error.message, isLoading: false });
           return false;
         }
@@ -1753,241 +1754,22 @@ export const useWalletStore = create<WalletState>()(
           const verification = await PaystackService.verifyPayment(reference);
           
           if (verification.data.status === 'success') {
-            console.log('Paystack payment verified successfully:', verification.data);
+            logger.debug('Paystack payment verified successfully:', verification.data);
             set({ isLoading: false });
             return true;
           } else {
             throw new Error(`Payment verification failed: ${verification.data.status}`);
           }
         } catch (error: any) {
-          console.error('Paystack verification error:', error);
+          logger.error('Paystack verification error:', error);
           set({ error: error.message, isLoading: false });
           return false;
         }
       },
       
-      makePayment: async (amount: number, description: string, metadata: any) => {
-        set({ isLoading: true, error: null });
-        try {
-          const { wallet, transactions, calculateTransactionFee } = get();
-          
-          // Check if this is a Twint or Paystack payment
-          const isTwintPayment = metadata.paymentProvider === 'twint';
-          const isPaystackPayment = metadata.paymentProvider === 'paystack';
-          const isStripePayment = metadata.paymentProvider === 'stripe';
-          
-          if (!isTwintPayment && !isPaystackPayment && !isStripePayment && !wallet) {
-            throw new Error('Wallet not initialized');
-          }
-          
-          // Calculate the 5% platform fee
-          const fee = calculateTransactionFee(amount);
-          const totalAmount = amount + fee;
-          
-          // For wallet payments, check balance
-          if (!isTwintPayment && !isPaystackPayment && !isStripePayment && wallet && wallet.balance < totalAmount) {
-            throw new Error('Insufficient funds');
-          }
-          
-          // In a real app, this would be an API call to process payment
-          // Simulating network delay
-          await new Promise(resolve => setTimeout(resolve, 800));
-          
-          // Generate transaction ID
-          const transactionId = Date.now().toString();
-          
-          // For Twint or Paystack payments, we would process through their respective APIs
-          if (isStripePayment) {
-            set({
-              isLoading: false,
-            });
-            return true;
-          }
-
-          if (isTwintPayment || isPaystackPayment) {
-            if (metadata.externalPaymentVerified === true) {
-              if (metadata.orderId) {
-                const provider = isTwintPayment ? 'twint' : 'paystack';
-                const paymentReference = metadata.twintPaymentId || metadata.twintTransactionId || metadata.paystackReference || null;
-                const paymentTransactionId = metadata.twintTransactionId || metadata.paystackReference || null;
-
-                const settlement = await settleExternalOrderPayment({
-                  orderId: metadata.orderId,
-                  provider,
-                  paymentReference,
-                  paymentTransactionId,
-                  recipientId: metadata.recipientId || metadata.businessId || null,
-                  grossAmount: Number(metadata.grossAmount ?? amount),
-                  netAmount: Number(metadata.netAmount ?? NaN),
-                  currency: metadata.currency || DEFAULT_CURRENCY,
-                  videoId: metadata.videoId || null,
-                  items: Array.isArray(metadata.items)
-                    ? metadata.items
-                    : Array.isArray(metadata.cartItems)
-                      ? metadata.cartItems.map((item: any) => ({
-                          productId: item.productId || item.product_id || item.id,
-                          quantity: Number(item.quantity || 1),
-                          unitPrice: Number(item.unitPrice || item.unit_price || item.price || 0),
-                          currency: metadata.currency || DEFAULT_CURRENCY,
-                          ownerId: metadata.recipientId || metadata.businessId || null,
-                        }))
-                      : [],
-                  metadata,
-                });
-
-                if (!settlement.success) {
-                  throw new Error(settlement.error || 'Failed to settle verified external order');
-                }
-              }
-
-              set({ isLoading: false });
-              return true;
-            }
-
-            // Create order in Supabase for external payments
-            const { user } = useAuthStore.getState();
-            if (!user) {
-              throw new Error('User not authenticated');
-            }
-
-            // Create order record in Supabase
-            const { data: orderData, error: orderError } = await supabase
-              .from('orders')
-              .insert({
-                user_id: user.id,
-                business_id: metadata.recipientId,
-                order_date: new Date().toISOString(),
-                items: metadata.cartItems || [],
-                payment_method: isTwintPayment ? 'twint' : 'paystack',
-                total_amount: amount,
-                status: 'pending',
-                payment_status: 'pending',
-                payment_provider: isTwintPayment ? 'twint' : 'paystack',
-                payment_metadata: metadata
-              })
-              .select()
-              .single();
-
-            if (orderError) {
-              throw new Error(`Failed to create order: ${orderError.message}`);
-            }
-
-            // Initialize external payment
-            let paymentData;
-            if (isPaystackPayment) {
-              const { default: PaystackService } = await import('@/lib/paystack');
-              paymentData = await PaystackService.initializePayment({
-                email: user.email || 'user@example.com',
-                amount: amount,
-                currency: 'USD',
-                userId: user.id,
-                orderId: orderData.id,
-                paymentType: 'order_payment',
-                metadata: {
-                  ...metadata,
-                  description,
-                  orderId: orderData.id,
-                  businessId: metadata.recipientId
-                }
-              });
-            } else if (isTwintPayment) {
-              const { default: WorldlineService } = await import('@/lib/worldline');
-              paymentData = await WorldlineService.initializePayment({
-                amount: amount,
-                currency: 'USD',
-                orderId: orderData.id,
-                customerEmail: user.email || 'user@example.com',
-                customerName: user.name || 'User',
-                description: description,
-                userId: user.id,
-                paymentType: 'order_payment',
-                metadata: {
-                  ...metadata,
-                  description,
-                  orderId: orderData.id,
-                  businessId: metadata.recipientId
-                }
-              });
-            }
-
-            console.log('External payment initialized:', paymentData);
-            
-            set({
-              isLoading: false,
-            });
-            
-            return true;
-          }
-          
-          // Standard wallet payment flow
-          // Create new transaction for the payment (including fee)
-          const newTransaction: Transaction = {
-            id: transactionId,
-            walletId: wallet!.id,
-            amount: -totalAmount, // Negative amount for payment (includes fee)
-            type: 'payment',
-            status: 'completed',
-            description,
-            transactionFee: fee,
-            metadata: {
-              ...metadata,
-              subtotal: amount,
-              feeRecipientId: PLATFORM_ACCOUNT_ID,
-              paymentProvider: 'internal'
-            },
-            createdAt: new Date().toISOString(),
-          };
-          
-          // Create a separate transaction for the platform fee
-          const feeTransaction: Transaction = {
-            id: `fee_${transactionId}`,
-            walletId: PLATFORM_WALLET_ID,
-            amount: fee,
-            type: 'fee',
-            status: 'completed',
-            description: `Platform fee for ${description}`,
-            metadata: {
-              originalTransactionId: transactionId,
-              businessId: metadata.recipientId,
-              paymentProvider: 'internal'
-            },
-            createdAt: new Date().toISOString(),
-          };
-          
-          // Create a transaction for the business (recipient) - they receive the amount minus fee
-          const businessTransaction: Transaction = {
-            id: `business_${transactionId}`,
-            walletId: metadata.recipientId, // Business wallet ID
-            amount: amount, // Original amount without fee
-            type: 'payment',
-            status: 'completed',
-            description: `Payment received: ${description}`,
-            metadata: {
-              originalTransactionId: transactionId,
-              senderId: wallet!.userId,
-              paymentProvider: 'internal'
-            },
-            createdAt: new Date().toISOString(),
-          };
-          
-          // Update wallet balance for standard wallet payments
-          const updatedWallet: Wallet = {
-            ...wallet!,
-            balance: wallet!.balance - totalAmount,
-            updatedAt: new Date().toISOString(),
-          };
-          
-          set({
-            wallet: updatedWallet,
-            transactions: [newTransaction, feeTransaction, businessTransaction, ...transactions],
-            isLoading: false,
-          });
-          
-          return true;
-        } catch (error: any) {
-          set({ error: error.message, isLoading: false });
-          return false;
-        }
+      makePayment: async (_amount: number, _description: string, _metadata: any) => {
+        set({isLoading:false,error:'Legacy payment simulation is retired. Complete a server-verified checkout.'});
+        return false;
       },
       
       transferFunds: async (amount: number, recipientId: string, description: string) => {
@@ -2269,16 +2051,16 @@ export const useWalletStore = create<WalletState>()(
       },
       
       addPaymentMethod: async (paymentMethod, userParam) => {
-        console.log("=== WALLET STORE: addPaymentMethod ===");
-        console.log("Input paymentMethod:", paymentMethod);
-        console.log("Input userParam:", userParam);
+        logger.debug("=== WALLET STORE: addPaymentMethod ===");
+        logger.debug("Input paymentMethod:", paymentMethod);
+        logger.debug("Input userParam:", userParam);
         
         set({ isLoading: true, error: null });
         try {
           // Use passed user parameter or get from store
           const user = userParam || useAuthStore.getState().user;
           
-          console.log("User:", user);
+          logger.debug("User:", user);
           
           if (!user) {
             throw new Error("User must be authenticated to add payment method");
@@ -2286,7 +2068,7 @@ export const useWalletStore = create<WalletState>()(
           
           // If this is set as default, update other payment methods first
           if (paymentMethod.isDefault) {
-            console.log("🔄 Setting other payment methods as non-default");
+            logger.debug("🔄 Setting other payment methods as non-default");
             await supabase
               .from('payment_methods')
               .update({ is_default: false })
@@ -2321,15 +2103,15 @@ export const useWalletStore = create<WalletState>()(
             throw new Error(`Failed to add payment method: ${insertError.message}`);
           }
           
-          console.log("✅ Payment method added to Supabase:", newPaymentMethod);
+          logger.debug("✅ Payment method added to Supabase:", newPaymentMethod);
           
           // Refresh payment methods from database
           await get().fetchPaymentMethods();
           
-          console.log("✅ Payment method added successfully");
+          logger.debug("✅ Payment method added successfully");
           return true;
         } catch (error: any) {
-          console.log("❌ Error adding payment method:", error);
+          logger.debug("❌ Error adding payment method:", error);
           set({ error: error.message, isLoading: false });
           return false;
         }

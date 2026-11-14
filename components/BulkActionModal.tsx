@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, TextInput, ScrollView, Alert } from 'react-native';
 import { X, MessageCircle, Gift, Send } from 'lucide-react-native';
@@ -45,7 +46,7 @@ export default function BulkActionModal({
       setMessage('');
       onClose();
     } catch (error) {
-      console.error('Failed to send message:', error);
+      logger.error('Failed to send message:', error);
       Alert.alert('Error', 'Failed to send message');
     } finally {
       setIsLoading(false);
@@ -65,7 +66,7 @@ export default function BulkActionModal({
       setSelectedVoucherId('');
       onClose();
     } catch (error) {
-      console.error('Failed to share voucher:', error);
+      logger.error('Failed to share voucher:', error);
       Alert.alert('Error', 'Failed to share voucher');
     } finally {
       setIsLoading(false);

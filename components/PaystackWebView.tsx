@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
@@ -176,7 +177,7 @@ export default function PaystackWebView({
 
       await AsyncStorage.setItem(PAYSTACK_EVENT_STORAGE_KEY, JSON.stringify(next));
     } catch (trackingError) {
-      console.warn('Failed to track Paystack payment event:', trackingError);
+      logger.warn('Failed to track Paystack payment event:', trackingError);
     }
   }, [amount, description, email, selectedChannel]);
 
@@ -294,7 +295,7 @@ export default function PaystackWebView({
 
     if (error) {
       const edgeMessage = await getEdgeFunctionErrorMessage(error, 'Please try again.');
-      console.warn('Paystack routing lookup unavailable; using platform collection:', edgeMessage);
+      logger.warn('Paystack routing lookup unavailable; using platform collection:', edgeMessage);
       return {};
     }
 
@@ -312,7 +313,7 @@ export default function PaystackWebView({
 
     // A missing/unverified organizer route must not prevent a buyer from paying.
     // The server initializes an unsplit platform transaction in this case.
-    console.info('Paystack organizer routing not available; using platform collection.', data?.code || 'NO_ROUTE');
+    logger.info('Paystack organizer routing not available; using platform collection.', data?.code || 'NO_ROUTE');
     return {};
   };
 
@@ -337,6 +338,8 @@ export default function PaystackWebView({
         body: {
           items: purchaseItems,
           voucherId: metadata?.voucherId || null,
+          voucherCode: metadata?.voucherCode || null,
+          requestKey: metadata?.checkoutRequestKey || undefined,
           videoId: metadata?.videoId || null,
           platform: Platform.OS,
           subaccount: effectiveSubaccount,
@@ -344,6 +347,9 @@ export default function PaystackWebView({
           channels,
         },
       });
+      if (!error && data?.completed && data?.order?.payment_status==='paid') {
+        onSuccess(String(data.order.payment_reference),String(data.order.id));return;
+      }
       if (error || !data?.success || !data?.authorizationUrl) {
         const edgeMessage = error
           ? await getEdgeFunctionErrorMessage(error, 'Unable to create the pending order.')
@@ -457,7 +463,7 @@ export default function PaystackWebView({
     } catch (error: any) {
       // Keep expected checkout failures inside the payment UI. console.error
       // triggers the React Native development error overlay and hides the alert.
-      console.warn('Paystack payment could not start:', error?.message || error);
+      logger.warn('Paystack payment could not start:', error?.message || error);
 
       const message = error?.message || 'There was an error starting the Paystack payment.';
       const canShowRoutingFixButton =

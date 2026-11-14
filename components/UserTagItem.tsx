@@ -1,3 +1,4 @@
+import AvatarImage from '@/components/AvatarImage';
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
@@ -24,8 +25,8 @@ export default function UserTagItem({
       onPress={onPress}
       disabled={!onPress}
     >
-      <Image
-        source={{ uri: user.avatar }}
+      <AvatarImage
+        uri={user.avatar} userId={user?.id}
         style={styles.avatar}
         contentFit="cover"
         transition={300}

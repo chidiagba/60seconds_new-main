@@ -21,3 +21,5 @@ test('direct and group notification taps open their relevant chat',()=>{
 test('a pending response cannot navigate after logout or unmount cleanup',()=>{
  const f=fixture();f.context.active=false;f.response('late',{kind:'message',chatId:'chat'});assert.equal(f.calls.length,0);
 });
+
+test('purchase completion notification opens the fulfilled order',()=>{const f=fixture();f.response('order-1',{kind:'order',orderId:'paid-order'});assert.equal(f.calls[0].pathname,'/order/[id]');assert.equal(f.calls[0].params.id,'paid-order');});

@@ -8,7 +8,6 @@ export const config = {
   supabase: {
     url: process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://rvvujgbaswecqohixgog.supabase.co',
     anonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_sIzCwLBlhd1--vlMsdY1Hg_UEWYbGVp',
-    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   },
 
   // App Configuration

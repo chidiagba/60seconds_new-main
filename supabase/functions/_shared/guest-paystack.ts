@@ -10,7 +10,7 @@ async function paystack(path: string, body?: unknown) {
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const result = await response.json();
-  if (!response.ok || !result.status) throw new Error(result.message || 'Paystack is unavailable');
+  if (!response.ok || result.status!==true) throw new Error(result.message || 'Paystack is unavailable');
   return result.data;
 }
 
@@ -57,7 +57,7 @@ export async function reconcileGuestPaystack(db: any, reference: string): Promis
   if (transaction.reference !== reference || transaction.metadata?.guest_order_id !== id) throw new Error('Paystack booking reference mismatch');
   const session = {id:reference,metadata:{guest_order_id:id},amount_total:transaction.amount,currency:String(transaction.currency).toLowerCase()};
   if (transaction.status !== 'success') {
-    if (checkout.state === 'reserved' && Date.now() >= Date.parse(checkout.expires_at) && !['pending','processing','ongoing','queued'].includes(transaction.status)) return fulfillGuestSession(session,false);
+    if (checkout.state === 'reserved' && Date.now() >= Date.parse(checkout.expires_at) && ['failed','cancelled'].includes(transaction.status)) return fulfillGuestSession(session,false);
     return new Response('Payment pending');
   }
   const {data: order,error: orderError} = await db.from('orders').select('*').eq('id',id).single();
@@ -75,17 +75,11 @@ export async function reconcileGuestPaystack(db: any, reference: string): Promis
     if (refundError) throw refundError;
     return new Response('Refund requested');
   }
-  const {error: finishError} = await db.rpc('finish_guest_order',{order_key:id,paid:true,session_key:reference});
-  if (finishError) throw finishError;
-  const {data: settled} = await db.from('guest_checkouts').select('state').eq('order_id',id).single();
-  if (settled?.state === 'paid') {
-    const gross = Number(order.total_amount), net = Number((gross/1.04).toFixed(2));
-    const {error: ledgerError} = await db.rpc('finalize_paystack_ledger',{
-      p_order_id:id,p_reference:reference,p_transaction_id:String(transaction.id),p_owner_id:order.business_id,p_buyer_id:order.user_id,
-      p_gross:gross,p_net:net,p_fee:Number((gross-net).toFixed(2)),p_currency:order.currency,p_metadata:{items:order.items},
-    });
-    if (ledgerError) throw ledgerError;
-  }
+  const {error: settlementError}=await db.rpc('settle_verified_guest_payment',{
+    order_key:id,provider:'paystack',reference,paid_amount:Number(transaction.amount)/100,paid_currency:transaction.currency,transaction_key:String(transaction.id),
+  });
+  if(settlementError)throw settlementError;
+  const {data:settled}=await db.from('guest_checkouts').select('state').eq('order_id',id).single();
   // Handle expiry racing a verified payment by rechecking the settled state.
   if (settled?.state === 'released') return reconcileGuestPaystack(db,reference);
   return fulfillGuestSession(session,true);

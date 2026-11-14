@@ -1,12 +1,9 @@
 // @ts-nocheck
+import { corsForRequest } from '../_shared/cors.ts';
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+
 
 const supabaseUrl =
   Deno.env.get('SUPABASE_URL') ||
@@ -21,11 +18,7 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-const respond = (body: unknown) =>
-  new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
+
 
 const normalizeLower = (value: unknown) => String(value || '').trim().toLowerCase();
 const normalizeUpper = (value: unknown) => String(value || '').trim().toUpperCase();
@@ -136,6 +129,12 @@ const mapRoutingResponse = (input: {
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsForRequest(req);
+  const respond = (body: unknown) =>
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -206,7 +205,7 @@ Deno.serve(async (req) => {
       return respond({
         success: false,
         code: 'LOOKUP_FAILED',
-        error: `Could not resolve organizer payout routing: ${bankError.message}`,
+        error: 'Request could not be completed',
         canUpdateBankDetails: ownerId === requesterId,
       });
     }
@@ -293,7 +292,7 @@ Deno.serve(async (req) => {
     return respond({
       success: false,
       code: 'INTERNAL_ERROR',
-      error: error?.message || 'Unexpected error while resolving Paystack routing.',
+      error: 'Request could not be completed',
     });
   }
 });

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState } from "react";
 import {
   View,
@@ -96,10 +97,10 @@ export default function DirectCardPaymentScreen() {
     }
 
     try {
-      console.log("💳 Processing direct credit card payment...");
-      console.log("💰 Amount:", amount);
-      console.log("📧 Email:", email);
-      console.log("💳 Card:", cardNumber.replace(/\s/g, "").slice(0, 4) + "****");
+      logger.debug("💳 Processing direct credit card payment...");
+      logger.debug("💰 Amount:", amount);
+      logger.debug("📧 Email:", email);
+      logger.debug("💳 Card:", cardNumber.replace(/\s/g, "").slice(0, 4) + "****");
       
       // Authentication required - no mock users in production
       
@@ -121,7 +122,7 @@ export default function DirectCardPaymentScreen() {
       });
 
       if (result.success) {
-        console.log("✅ Direct card payment successful:", result);
+        logger.debug("✅ Direct card payment successful:", result);
         
         Alert.alert(
           "Payment Initialized!",
@@ -142,7 +143,7 @@ export default function DirectCardPaymentScreen() {
         Alert.alert("Payment Failed", "The payment could not be processed. Please try again.");
       }
     } catch (error: any) {
-      console.error("❌ Direct card payment error:", error);
+      logger.error("❌ Direct card payment error:", error);
       Alert.alert(
         "Payment Error",
         error.message || "An error occurred during payment processing.",

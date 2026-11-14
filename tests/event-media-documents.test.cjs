@@ -37,3 +37,25 @@ test('separate receipts in one order never reuse the same cached PDF',()=>{
  assert.notEqual(ticketDocumentFileName({id:'ticket-one',order_number:'ORDER-1'}),ticketDocumentFileName({id:'ticket-two',order_number:'ORDER-1'}));
  assert.notEqual(ticketDocumentFileName({id:'ticket-one',order_number:'ORDER-1'}),ticketDocumentFileName({id:'product-one',order_number:'ORDER-1'}));
 });
+const {loadTicketSellers,ticketSeller}=load('lib/ticket-seller.ts');
+test('ticket PDFs include seller identity and business contacts beside the actual receipt QR',()=>{
+ const seller=ticketSeller({business_name:'Lekki & Co',username:'lekki',business_address:'10 Main Street',business_phone:'+234 123',business_website:'https://example.test',email:'private@example.test'});
+ const html=ticketDocumentHtml({...ticket,seller},receiptQrImage(ticket.qr_code_data));
+ for(const value of ['Sold by','Lekki &amp; Co','@lekki','10 Main Street','+234 123','https://example.test','Receipt QR code'])assert.ok(html.includes(value));
+ assert.doesNotMatch(html,/private@example.test/);
+ assert.match(ticketDocumentFileName({id:'one',order_number:'ORDER-1'}),/seller-v6/);
+});
+test('ticket seller lookup batches owners and supports profile schemas without optional contact columns',async()=>{
+ let calls=0;
+ const db={from:()=>({select:fields=>({in:async(column,ids)=>{
+  calls++;assert.equal(ids.length,1);
+  if(fields.includes('business_phone'))return {error:{code:'42703'}};
+  return {data:[{id:'seller',business_name:'Verified business',username:'seller',location_city:'Lagos'}]};
+ }})})};
+ const sellers=await loadTicketSellers(db,['seller','seller']);
+ assert.equal(calls,2);assert.equal(sellers.get('seller').name,'Verified business');assert.equal(sellers.get('seller').address,'Lagos');
+});
+test('missing business details are explicit and seller lookup failures are retryable',async()=>{
+ assert.equal(ticketSeller({}).name,'Business details unavailable');
+ await assert.rejects(loadTicketSellers({from:()=>({select:()=>({in:async()=>({error:{code:'42501'}})})})},['seller']),/try again/);
+});

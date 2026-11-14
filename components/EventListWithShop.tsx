@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -41,7 +42,7 @@ export function EventListWithShop({ onEventPress, onShopPress }: EventListWithSh
       }
     } catch (err) {
       setError('An unexpected error occurred');
-      console.error('Error loading events:', err);
+      logger.error('Error loading events:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -129,7 +130,7 @@ export function EventListWithShop({ onEventPress, onShopPress }: EventListWithSh
 
         {/* Price and Attendees */}
         <View style={styles.priceRow}>
-          {item.ticket_price > 0 ? (
+          {(item.ticket_price ?? 0) > 0 ? (
             <Text style={styles.price}>
               ${item.ticket_price} {item.currency}
             </Text>

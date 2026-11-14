@@ -1,3 +1,5 @@
+import { WATERMARK_VERSION, WATERMARK_OPACITY, WATERMARK_SCALE, watermarkUsername, watermarkFFmpegFilter, watermarkWidth } from './watermark-layout';
+import { logger } from '@/lib/logger';
 import { NativeModules, Platform } from 'react-native';
 import { Asset } from 'expo-asset';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -25,7 +27,7 @@ function loadFFmpeg(): boolean {
     FFprobeKit = module?.FFprobeKit;
     return !!FFmpegKit && !!ReturnCode;
   } catch (error) {
-    console.warn('[Watermark] FFmpeg fallback is unavailable in this build:', error);
+    logger.warn('[Watermark] FFmpeg fallback is unavailable in this build:', error);
     return false;
   }
 }
@@ -34,17 +36,18 @@ let localWatermark: number | null = null;
 try {
   localWatermark = require('../assets/images/second.png');
 } catch (error) {
-  console.error('[Watermark] Failed to load app icon asset:', error);
+  logger.error('[Watermark] Failed to load app icon asset:', error);
 }
 
 export interface WatermarkOptions {
+  username?: string;
   position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
   opacity?: number;
   scale?: number;
   /** Retained for call-site compatibility; native processing does not upload the source. */
   sourceUrl?: string;
   strict?: boolean;
-  /** If true, return the original URI when native processing is unavailable. */
+  /** Legacy option; exports always fail rather than returning an unwatermarked source. */
   allowFallback?: boolean;
 }
 
@@ -66,7 +69,6 @@ export class VideoWatermarkError extends Error {
 export class VideoWatermarkService {
   private static instance: VideoWatermarkService;
   private watermarkUri: string | null = null;
-  private backgroundWatermarkJobs = new Map<string, Promise<string>>();
 
   static getInstance(): VideoWatermarkService {
     if (!VideoWatermarkService.instance) {
@@ -80,7 +82,7 @@ export class VideoWatermarkService {
   }
 
   private getCachedWatermarkUri(cacheKey: string, outputType: 'mp4' | 'mov' = 'mp4'): string {
-    return `${FileSystem.cacheDirectory}wm_cached_${this.sanitizeCacheKey(cacheKey)}.${outputType}`;
+    return `${FileSystem.cacheDirectory}wm_${WATERMARK_VERSION}_cached_${this.sanitizeCacheKey(cacheKey)}.${outputType}`;
   }
 
   private async ensureLocalFile(inputUri: string, filePrefix: string): Promise<string> {
@@ -109,16 +111,6 @@ export class VideoWatermarkService {
     return result.uri;
   }
 
-  private overlayExpression(position: NonNullable<WatermarkOptions['position']>): string {
-    switch (position) {
-      case 'top-left': return '20:20';
-      case 'top-right': return 'main_w-overlay_w-20:20';
-      case 'bottom-left': return '20:main_h-overlay_h-20';
-      case 'center': return '(main_w-overlay_w)/2:(main_h-overlay_h)/2';
-      default: return 'main_w-overlay_w-20:main_h-overlay_h-20';
-    }
-  }
-
   private async isValidOutput(uri: string): Promise<boolean> {
     try {
       const info = await FileSystem.getInfoAsync(uri);
@@ -139,30 +131,23 @@ export class VideoWatermarkService {
 
   private async addWatermarkWithFFmpeg(
     localVideoUri: string,
-    options: Required<Pick<WatermarkOptions, 'position' | 'opacity' | 'scale'>>
+    options: Required<Pick<WatermarkOptions, 'position' | 'opacity' | 'scale'>>,
+    brandedImageUri: string
   ): Promise<string | null> {
     if (!loadFFmpeg() || !this.watermarkUri) return null;
 
-    const localLogoUri = await this.ensureLocalFile(this.watermarkUri, 'wm_logo');
+    const localLogoUri = brandedImageUri;
     const inputPath = this.filePath(localVideoUri);
     const logoPath = this.filePath(localLogoUri);
     const probe = await FFprobeKit.getMediaInformation(inputPath);
     const duration = Number(probe.getMediaInformation()?.getDuration());
     if (!Number.isFinite(duration) || duration <= 0) throw new Error('Invalid video duration');
-    const logoStart = Math.max(0, duration - 1);
-    const logoWidth = Math.max(80, Math.min(320, Math.round(1080 * options.scale)));
-    const filter = [
-      `[1:v]scale=${logoWidth}:-2,format=rgba,colorchannelmixer=aa=${options.opacity}[wm]`,
-      `[0:v:0][wm]overlay=${this.overlayExpression(options.position)}:format=auto:enable='gte(t,${logoStart})'[v]`,
-    ].join(';');
-
-    // Device FFmpeg builds expose different encoders. Try the preferred H.264
-    // encoders first, then MPEG-4 as the broadly available final fallback.
-    const encoders: Array<{ name: string; args: string[] }> = [
-      { name: 'libx264', args: ['-preset', 'veryfast', '-crf', '23'] },
-      { name: 'h264', args: ['-crf', '23'] },
-      { name: 'mpeg4', args: ['-q:v', '4'] },
-    ];
+    const streams = probe.getMediaInformation()?.getStreams() || [];
+    const videoStream = streams.find((stream: any) => stream.getType() === 'video');
+    const shortSide = Math.min(Number(videoStream?.getWidth()), Number(videoStream?.getHeight()));
+    if (!Number.isFinite(shortSide) || shortSide <= 0) throw new Error('Invalid source dimensions');
+    const filter = watermarkFFmpegFilter(watermarkWidth(shortSide, options.scale), options.opacity);
+    const encoders = [{ name: 'libx264', args: ['-preset', 'slow', '-crf', '18'] }];
     let lastLogs = '';
 
     for (const encoder of encoders) {
@@ -173,10 +158,10 @@ export class VideoWatermarkService {
       const session = await FFmpegKit.executeWithArguments([
         '-y', '-i', inputPath, '-i', logoPath,
         '-filter_complex', filter,
-        '-map', '[v]', '-map', '0:a:0?',
+        '-map', '[v]', '-map', '0:a?',
         '-c:v', encoder.name, ...encoder.args,
         '-pix_fmt', 'yuv420p',
-        '-c:a', 'aac', '-b:a', '128k',
+        '-c:a', 'copy',
         '-movflags', '+faststart',
         outputPath,
       ]);
@@ -188,7 +173,7 @@ export class VideoWatermarkService {
       await FileSystem.deleteAsync(outputUri, { idempotent: true }).catch(() => {});
     }
 
-    console.warn('[Watermark] FFmpeg fallback failed:', lastLogs.slice(-1000));
+    logger.warn('[Watermark] FFmpeg fallback failed:', lastLogs.slice(-1000));
     return null;
   }
 
@@ -210,17 +195,13 @@ export class VideoWatermarkService {
   }
 
   async getCachedWatermarkedVideo(cacheKey: string): Promise<string | null> {
-    for (const outputType of ['mp4', 'mov'] as const) {
-      const targetUri = this.getCachedWatermarkUri(cacheKey, outputType);
-      try {
-        const info = await FileSystem.getInfoAsync(targetUri);
-        if (info.exists && (typeof info.size !== 'number' || info.size > 1024)) {
-          return targetUri;
-        }
-        await FileSystem.deleteAsync(targetUri, { idempotent: true }).catch(() => {});
-      } catch {
-        // Try the other supported container.
-      }
+    const targetUri = this.getCachedWatermarkUri(cacheKey, 'mp4');
+    try {
+      const info = await FileSystem.getInfoAsync(targetUri);
+      if (info.exists && (typeof info.size !== 'number' || info.size > 1024)) return targetUri;
+      await FileSystem.deleteAsync(targetUri, { idempotent: true }).catch(() => {});
+    } catch {
+      // The export will be regenerated if the MP4 cache cannot be read.
     }
     return null;
   }
@@ -234,33 +215,35 @@ export class VideoWatermarkService {
     return targetUri;
   }
 
-  async startBackgroundWatermark(
-    videoUri: string,
-    cacheKey: string,
-    options: WatermarkOptions = {}
-  ): Promise<void> {
-    if (Platform.OS === 'web' || !videoUri) return;
-    if (await this.getCachedWatermarkedVideo(cacheKey)) return;
-    if (this.backgroundWatermarkJobs.has(cacheKey)) return;
+  private exportJobs = new Map<string, Promise<WatermarkResult>>();
 
-    const job = this.addWatermarkToVideo(videoUri, {
-      ...options,
-      strict: false,
-      allowFallback: true,
-    })
-      .then(async result => {
-        return this.cacheWatermarkedVideo(cacheKey, result.uri, result.outputType);
-      })
-      .catch(error => {
-        console.warn('[Watermark] Background native watermark failed:', error);
-        return videoUri;
-      })
-      .finally(() => {
-        this.backgroundWatermarkJobs.delete(cacheKey);
-      });
-
-    this.backgroundWatermarkJobs.set(cacheKey, job);
-    void job;
+  async prepareExport(videoUri: string, username: string, videoId: string): Promise<WatermarkResult> {
+    const handle = watermarkUsername(username);
+    const identity = `${WATERMARK_VERSION}|${videoId}|${videoUri}|${handle}`;
+    // Two independent hashes keep long signed URLs out of filenames.
+    let a = 2166136261, b = 5381;
+    for (const char of identity) { a = Math.imul(a ^ char.charCodeAt(0), 16777619); b = Math.imul(b, 33) ^ char.charCodeAt(0); }
+    const key = `${(a >>> 0).toString(16)}_${(b >>> 0).toString(16)}`;
+    const existing = this.exportJobs.get(key);
+    if (existing) return existing;
+    const job = (async (): Promise<WatermarkResult> => {
+      const cached = await this.getCachedWatermarkedVideo(key);
+      if (cached) {
+        const outputType = cached.endsWith('.mov') ? 'mov' : 'mp4';
+        return { uri: cached, applied: true, outputType, mimeType: outputType === 'mov' ? 'video/quicktime' : 'video/mp4', source: 'native' };
+      }
+      const result = await this.addWatermarkToVideo(videoUri, { username: handle, strict: true, allowFallback: false });
+      try {
+        const uri = await this.cacheWatermarkedVideo(key, result.uri, result.outputType);
+        return { ...result, uri };
+      } finally {
+        if (result.uri !== videoUri) {
+          await FileSystem.deleteAsync(result.uri, { idempotent: true }).catch(() => {});
+        }
+      }
+    })().finally(() => this.exportJobs.delete(key));
+    this.exportJobs.set(key, job);
+    return job;
   }
 
   async addWatermarkToVideo(videoUri: string, options: WatermarkOptions = {}): Promise<WatermarkResult> {
@@ -268,19 +251,26 @@ export class VideoWatermarkService {
       throw new VideoWatermarkError('NATIVE_WATERMARK_MODULE_UNAVAILABLE', 'Native watermarking is unavailable on web');
     }
 
-    const strict = options.strict ?? false;
-    const allowFallback = options.allowFallback ?? false;
+    let brandedImageUri: string | null = null;
+    let localVideoUri: string | null = null;
     try {
       await this.preloadWatermark();
       if (!this.watermarkUri) throw new Error('Watermark app icon is unavailable');
 
-      const localVideoUri = await this.ensureLocalFile(videoUri, 'wm_native_source');
+      const username = watermarkUsername(options.username || '');
+      if (!NativeVideoWatermark?.createWatermarkImage || !NativeVideoWatermark?.exportBrandedVideo) {
+        throw new Error('This app binary must be updated to support branded video exports');
+      }
+      brandedImageUri = await NativeVideoWatermark.createWatermarkImage(this.watermarkUri, username);
+      if (!await this.isValidOutput(brandedImageUri)) throw new Error('Branded watermark image could not be created');
+      localVideoUri = await this.ensureLocalFile(videoUri, 'wm_native_source');
       const normalizedOptions: Required<Pick<WatermarkOptions, 'position' | 'opacity' | 'scale'>> = {
         position: options.position ?? 'bottom-right',
-        opacity: Math.max(0.15, Math.min(1, options.opacity ?? 0.8)),
-        scale: Math.max(0.04, Math.min(0.12, options.scale ?? 0.1)),
+        opacity: Math.max(0.5, Math.min(1, options.opacity ?? WATERMARK_OPACITY)),
+        scale: Math.max(0.18, Math.min(0.36, options.scale ?? WATERMARK_SCALE)),
       };
 
+      let nativeExportError: unknown;
       try {
         if (!NativeVideoWatermark) {
           throw new VideoWatermarkError(
@@ -288,38 +278,47 @@ export class VideoWatermarkService {
             'The native watermark module is not included in this app binary'
           );
         }
-        const result = await NativeVideoWatermark.addWatermark(
+        const result = await NativeVideoWatermark.exportBrandedVideo(
           localVideoUri,
-          this.watermarkUri,
+          brandedImageUri,
           normalizedOptions.position,
           normalizedOptions.opacity,
           normalizedOptions.scale
         );
-        if (result && result !== localVideoUri && await this.isValidOutput(result)) {
-          console.log(`[Watermark] Applied locally with ${Platform.OS === 'ios' ? 'AVFoundation' : 'Media3 Transformer'}`);
-          const outputType = result.split('?')[0].toLowerCase().endsWith('.mov') ? 'mov' : 'mp4';
-          return { uri: result, applied: true, outputType, mimeType: outputType === 'mov' ? 'video/quicktime' : 'video/mp4', source: 'native' };
+        const resultExtension = result?.split('?')[0].toLowerCase().split('.').pop();
+        if (result && result !== localVideoUri && resultExtension === 'mp4' && await this.isValidOutput(result)) {
+          logger.debug(`[Watermark] Applied locally with ${Platform.OS === 'ios' ? 'AVFoundation' : 'Media3 Transformer'}`);
+          return { uri: result, applied: true, outputType: 'mp4', mimeType: 'video/mp4', source: 'native' };
+        }
+        if (result && result !== localVideoUri) {
+          await FileSystem.deleteAsync(result, { idempotent: true }).catch(() => {});
         }
         throw new Error('Native watermark export did not produce a valid video');
       } catch (nativeError) {
-        console.warn('[Watermark] Primary native exporter failed; trying FFmpeg:', nativeError);
+        nativeExportError = nativeError;
+        logger.warn('[Watermark] Primary native exporter failed; trying FFmpeg:', nativeError);
       }
 
-      const ffmpegResult = await this.addWatermarkWithFFmpeg(localVideoUri, normalizedOptions);
+      const ffmpegResult = await this.addWatermarkWithFFmpeg(localVideoUri, normalizedOptions, brandedImageUri);
       if (ffmpegResult) {
-        console.log('[Watermark] Applied locally with FFmpeg fallback');
+        logger.debug('[Watermark] Applied locally with FFmpeg fallback');
         return { uri: ffmpegResult, applied: true, outputType: 'mp4', mimeType: 'video/mp4', source: 'ffmpeg' };
       }
-      throw new Error('Both native and FFmpeg watermark exporters failed');
+      const nativeReason = nativeExportError instanceof Error ? nativeExportError.message : String(nativeExportError || 'unknown native export error');
+      throw new Error(`${Platform.OS} video export failed (${nativeReason}); the MP4 fallback exporter is unavailable or failed`);
     } catch (error) {
-      console.error('[Watermark] Native watermark failed:', error);
+      logger.error('[Watermark] Native watermark failed:', error);
       const wrapped = error instanceof VideoWatermarkError
         ? error
         : new VideoWatermarkError('WATERMARK_EXPORT_FAILED', `Watermark failed on ${Platform.OS}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
       // Kept only for source compatibility. A failed export is never represented as
       // a successful result containing the original URI.
-      if (!strict && allowFallback) throw wrapped;
       throw wrapped;
+    } finally {
+      if (brandedImageUri) await FileSystem.deleteAsync(brandedImageUri, { idempotent: true }).catch(() => {});
+      if (localVideoUri && localVideoUri !== videoUri) {
+        await FileSystem.deleteAsync(localVideoUri, { idempotent: true }).catch(() => {});
+      }
     }
   }
 }

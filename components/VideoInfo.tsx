@@ -1,3 +1,4 @@
+import { venueCoordinates } from '@/utils/venue-location';
 import AvatarImage from '@/components/AvatarImage';
 import React from "react";
 import {
@@ -5,6 +6,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  ScrollView,
   Platform,
   Linking,
 } from "react-native";
@@ -47,7 +49,6 @@ interface ResolvedTargetCoords {
 }
 
 const resolvedTargetCoordsCache = new Map<string, ResolvedTargetCoords | null>();
-const resolvedDistanceCache = new Map<string, string | null>();
 
 const parseCoordinate = (
   value: unknown,
@@ -94,6 +95,11 @@ export default function VideoInfo({ video }: VideoInfoProps) {
     isFollowing(video.userId)
   );
   const [showAllTags, setShowAllTags] = React.useState(false);
+  const [showDetails, setShowDetails] = React.useState(false);
+  React.useEffect(() => {
+    setShowDetails(false);
+    setShowAllTags(false);
+  }, [video.id]);
   const [attendanceStatus, setAttendanceStatus] =
     React.useState<AttendanceStatus | null>(isAttending(video.id));
   const [showTicketsModal, setShowTicketsModal] = React.useState(false);
@@ -108,10 +114,10 @@ export default function VideoInfo({ video }: VideoInfoProps) {
   const videoLocationCountry = video.location?.country ?? "";
   const distanceLookupKey = `${video.id}|${videoLatitude}|${videoLongitude}|${videoLocationName}|${videoLocationCity}|${videoLocationCountry}`;
   const [userDistance, setUserDistance] = React.useState<string | null>(
-    resolvedDistanceCache.get(distanceLookupKey) ?? null
+    null
   );
   const [isDistanceLoading, setIsDistanceLoading] = React.useState(
-    Platform.OS !== "web" && !resolvedDistanceCache.has(distanceLookupKey)
+    Platform.OS !== "web"
   );
 
   const computeDistanceFromLocation = React.useCallback(
@@ -139,13 +145,6 @@ export default function VideoInfo({ video }: VideoInfoProps) {
   );
 
   React.useEffect(() => {
-    const cachedDistance = resolvedDistanceCache.get(distanceLookupKey);
-    if (cachedDistance !== undefined) {
-      setUserDistance(cachedDistance);
-      setIsDistanceLoading(false);
-      return;
-    }
-
     setUserDistance(null);
     setIsDistanceLoading(Platform.OS !== "web");
   }, [distanceLookupKey]);
@@ -155,18 +154,21 @@ export default function VideoInfo({ video }: VideoInfoProps) {
     let unsubscribe: (() => void) | null = null;
 
     if (Platform.OS === "web") {
-      resolvedDistanceCache.set(distanceLookupKey, null);
+
       setUserDistance(null);
       setIsDistanceLoading(false);
       return;
     }
 
+    let distanceRequest = 0;
     const applyDistance = async (
       location: { coords: { latitude: number; longitude: number } },
       target: ResolvedTargetCoords
     ) => {
+      const requestId = ++distanceRequest;
       const formattedDistance = await computeDistanceFromLocation(location, target);
-      resolvedDistanceCache.set(distanceLookupKey, formattedDistance);
+      if (isCancelled || requestId !== distanceRequest) return;
+
       if (!isCancelled) {
         setUserDistance(formattedDistance);
         setIsDistanceLoading(false);
@@ -179,35 +181,7 @@ export default function VideoInfo({ video }: VideoInfoProps) {
         let targetCoords = resolvedTargetCoordsCache.get(distanceLookupKey);
 
         if (targetCoords === undefined) {
-          let targetLat = parseCoordinate(videoLatitude, "latitude");
-          let targetLon = parseCoordinate(videoLongitude, "longitude");
-
-          if (isFallbackZeroCoordinatePair(targetLat, targetLon)) {
-            targetLat = null;
-            targetLon = null;
-          }
-
-          if (targetLat == null || targetLon == null) {
-            const locationLabel =
-              videoLocationName || videoLocationCity || videoLocationCountry;
-            if (locationLabel) {
-              const geocoded = await getCoordinatesFromAddress(locationLabel);
-              if (geocoded) {
-                targetLat = parseCoordinate(geocoded.latitude, "latitude");
-                targetLon = parseCoordinate(geocoded.longitude, "longitude");
-
-                if (isFallbackZeroCoordinatePair(targetLat, targetLon)) {
-                  targetLat = null;
-                  targetLon = null;
-                }
-              }
-            }
-          }
-
-          targetCoords =
-            targetLat != null && targetLon != null
-              ? { latitude: targetLat, longitude: targetLon }
-              : null;
+          targetCoords = venueCoordinates({ latitude: videoLatitude, longitude: videoLongitude });
           resolvedTargetCoordsCache.set(distanceLookupKey, targetCoords);
         }
 
@@ -216,7 +190,7 @@ export default function VideoInfo({ video }: VideoInfoProps) {
         }
 
         if (!targetCoords) {
-          resolvedDistanceCache.set(distanceLookupKey, null);
+
           if (!isCancelled) {
             setUserDistance(null);
             setIsDistanceLoading(false);
@@ -233,7 +207,7 @@ export default function VideoInfo({ video }: VideoInfoProps) {
         // One-shot location read for initial exact value.
         const location = await getCurrentLocation({
           requestPermission: true,
-          maxCacheAgeMs: 120000,
+          maxCacheAgeMs: 15000,
         });
 
         if (isCancelled) {
@@ -243,7 +217,7 @@ export default function VideoInfo({ video }: VideoInfoProps) {
         if (location) {
           applyDistance(location, targetCoords);
         } else if (!cachedLocation) {
-          resolvedDistanceCache.set(distanceLookupKey, null);
+
           setUserDistance(null);
           setIsDistanceLoading(false);
         }
@@ -261,7 +235,7 @@ export default function VideoInfo({ video }: VideoInfoProps) {
           }
         );
       } catch {
-        resolvedDistanceCache.set(distanceLookupKey, null);
+
         if (!isCancelled) {
           setUserDistance(null);
           setIsDistanceLoading(false);
@@ -348,8 +322,8 @@ export default function VideoInfo({ video }: VideoInfoProps) {
 
   const handleEventPress = () => {
     router.push({
-      pathname: `/event/${video.id}`,
-      params: { eventName: video.eventName },
+      pathname: "/event/[id]",
+      params: { id: video.id, eventName: video.eventName },
     });
   };
 
@@ -409,7 +383,8 @@ export default function VideoInfo({ video }: VideoInfoProps) {
         <TouchableOpacity onPress={handleProfilePress} style={styles.userInfo}>
           <View style={styles.avatarContainer}>
             <AvatarImage
-              uri={isOwnVideo ? (currentUser?.avatar || video.user.avatar) : video.user.avatar}
+              uri={video.user.avatar}
+              userId={video.userId}
               style={styles.avatar}
               contentFit="cover"
               transition={300}
@@ -460,87 +435,106 @@ export default function VideoInfo({ video }: VideoInfoProps) {
         )}
       </View>
 
-      {video.caption && <Text style={styles.caption}>{video.caption}</Text>}
+      <TouchableOpacity
+        style={styles.detailsToggle}
+        onPress={() => setShowDetails((visible) => !visible)}
+        accessibilityRole="button"
+        accessibilityLabel={showDetails ? "Hide video details" : "Show video details"}
+        accessibilityState={{ expanded: showDetails }}
+      >
+        <Text style={styles.detailsToggleText}>
+          {showDetails ? "Hide details" : "Show details"}
+        </Text>
+      </TouchableOpacity>
 
-      {/* Tagged Users Section */}
-      {hasTaggedUsers && (
-        <View style={styles.taggedUsersContainer}>
-          <View style={styles.taggedUsersHeader}>
-            <Users size={14} color={Colors.dark.primary} />
-            <Text style={styles.taggedUsersTitle}>Tagged:</Text>
-          </View>
+      {showDetails && (
+        <ScrollView style={styles.detailsPanel} nestedScrollEnabled>
+          {video.caption && <Text style={styles.caption}>{video.caption}</Text>}
 
-          <View style={styles.tagsList}>
-            {visibleTags.map((taggedUser: TaggedUser) => (
-              <UserTagItem
-                key={taggedUser.userId}
-                user={taggedUser.user}
-                onPress={() => handleTaggedUserPress(taggedUser.userId)}
-                showRemoveButton={false}
-              />
-            ))}
+          {/* Tagged Users Section */}
+          {hasTaggedUsers && (
+            <View style={styles.taggedUsersContainer}>
+              <View style={styles.taggedUsersHeader}>
+                <Users size={14} color={Colors.dark.primary} />
+                <Text style={styles.taggedUsersTitle}>Tagged:</Text>
+              </View>
 
-            {hiddenTagsCount > 0 && !showAllTags && (
-              <TouchableOpacity
-                style={styles.moreTagsButton}
-                onPress={toggleShowAllTags}
-              >
-                <Text style={styles.moreTagsText}>+{hiddenTagsCount} more</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      )}
+              <View style={styles.tagsList}>
+                {visibleTags.map((taggedUser: TaggedUser) => (
+                  <UserTagItem
+                    key={taggedUser.userId}
+                    user={taggedUser.user}
+                    onPress={() => handleTaggedUserPress(taggedUser.userId)}
+                    showRemoveButton={false}
+                  />
+                ))}
 
-      {/* Hashtags section - commented out for now
-      {video.hashtags && video.hashtags.length > 0 && (
-        <View style={styles.hashtagsContainer}>
-          {video.hashtags.map((tag, index) => (
-            <TouchableOpacity
-              key={index}
-              onPress={() => handleHashtagPress(tag)}
-              style={styles.hashtagButton}
-            >
-              <Hash size={14} color={Colors.dark.primary} />
-              <Text style={styles.hashtagText}>{tag}</Text>
+                {hiddenTagsCount > 0 && !showAllTags && (
+                  <TouchableOpacity
+                    style={styles.moreTagsButton}
+                    onPress={toggleShowAllTags}
+                  >
+                    <Text style={styles.moreTagsText}>+{hiddenTagsCount} more</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* Hashtags section - commented out for now
+          {video.hashtags && video.hashtags.length > 0 && (
+            <View style={styles.hashtagsContainer}>
+              {video.hashtags.map((tag, index) => (
+                <TouchableOpacity
+                  key={index}
+                  onPress={() => handleHashtagPress(tag)}
+                  style={styles.hashtagButton}
+                >
+                  <Hash size={14} color={Colors.dark.primary} />
+                  <Text style={styles.hashtagText}>{tag}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          */}
+
+          <View style={styles.eventContainer}>
+            <TouchableOpacity onPress={handleEventPress} style={styles.eventInfo}>
+              <View style={styles.iconContainer}>
+                <Calendar size={16} color={Colors.dark.primary} />
+              </View>
+              <Text style={styles.eventName}>{video.eventName}</Text>
             </TouchableOpacity>
-          ))}
-        </View>
+
+            <TouchableOpacity
+              onPress={handleLocationPress}
+              style={styles.locationInfo}
+            >
+              <View style={styles.iconContainer}>
+                <MapPin size={16} color={Colors.dark.primary} />
+              </View>
+              <View style={styles.locationTextContainer}>
+                <Text style={styles.locationName}>{video.location.name}</Text>
+                <View style={styles.distanceRow}>
+                  <Text
+                    style={[styles.distanceText, !userDistance && styles.distanceTextMuted]}
+                    numberOfLines={1}
+                  >
+                    {isDistanceLoading
+                      ? "Calculating distance..."
+                      : userDistance
+                        ? `${userDistance} driving`
+                        : "Distance unavailable"}
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+
+          </View>
+        </ScrollView>
       )}
-      */}
 
       <View style={styles.eventContainer}>
-        <TouchableOpacity onPress={handleEventPress} style={styles.eventInfo}>
-          <View style={styles.iconContainer}>
-            <Calendar size={16} color={Colors.dark.primary} />
-          </View>
-          <Text style={styles.eventName}>{video.eventName}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={handleLocationPress}
-          style={styles.locationInfo}
-        >
-          <View style={styles.iconContainer}>
-            <MapPin size={16} color={Colors.dark.primary} />
-          </View>
-          <View style={styles.locationTextContainer}>
-            <Text style={styles.locationName}>{video.location.name}</Text>
-            <View style={styles.distanceRow}>
-              <Text
-                style={[styles.distanceText, !userDistance && styles.distanceTextMuted]}
-                numberOfLines={1}
-              >
-                {isDistanceLoading
-                  ? "Calculating distance..."
-                  : userDistance
-                    ? `${userDistance} away`
-                    : "Distance unavailable"}
-              </Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-
         {/* Attendance Button */}
         <TouchableOpacity
           style={styles.attendButtonContainer}
@@ -724,8 +718,27 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 3,
   },
+  detailsToggle: {
+    alignSelf: "flex-start",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    marginBottom: 8,
+  },
+  detailsToggleText: {
+    color: Colors.dark.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  detailsPanel: {
+    maxHeight: 220,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+  },
   taggedUsersContainer: {
-    marginTop: 150,
+    marginBottom: 12,
   },
   taggedUsersHeader: {
     flexDirection: "row",
@@ -799,6 +812,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   eventName: {
+    flex: 1,
     color: Colors.dark.text,
     fontWeight: "600",
     fontSize: 15,

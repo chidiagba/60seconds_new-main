@@ -1,3 +1,5 @@
+import AvatarImage from '@/components/AvatarImage';
+import { logger } from '@/lib/logger';
 import React, { useRef, useState, useEffect } from 'react';
 import { View, StyleSheet, Dimensions, ActivityIndicator, TouchableWithoutFeedback, Platform, TouchableOpacity, Text, AppState, AppStateStatus } from 'react-native';
 import { Video as ExpoVideo, ResizeMode } from 'expo-av';
@@ -18,6 +20,7 @@ interface VideoPlayerProps {
   onPress?: () => void;
   taggedUsers?: TaggedUser[];
   showWatermark?: boolean;
+  creatorUsername?: string;
   onLoadError?: () => void;
   preload?: boolean;
 }
@@ -43,12 +46,12 @@ const hasEmbeddedWatermark = (uri: string) => {
     || normalizedUri.includes('watermarked');
 };
 
-export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWithSound = true, onPress, taggedUsers, showWatermark = true, onLoadError, preload = true }: VideoPlayerProps) {
+export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWithSound = true, onPress, taggedUsers, creatorUsername = '', showWatermark = true, onLoadError, preload = true }: VideoPlayerProps) {
   const router = useRouter();
   const isFocused = useIsFocused();
   const videoRef = useRef<ExpoVideo>(null);
   const lastProgressSecondRef = useRef(-1);
-  const [showEndLogo, setShowEndLogo] = useState(false);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isPlaying, setIsPlaying] = useState(!paused);
   const [showPlayButton, setShowPlayButton] = useState(false);
@@ -78,7 +81,7 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
     }
 
     const nextImplementation = androidImplementation === 'MediaPlayer' ? 'ExoPlayer' : 'MediaPlayer';
-    console.warn(`🎬 VideoPlayer: ${source} decoder failure, retrying with ${nextImplementation}:`, errorMessage);
+    logger.warn(`🎬 VideoPlayer: ${source} decoder failure, retrying with ${nextImplementation}:`, errorMessage);
     hasRetriedDecoderFallbackRef.current = true;
     setAndroidImplementation(nextImplementation);
     setVideoInstanceKey((prev) => prev + 1);
@@ -93,7 +96,7 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
     });
 
     if (!uri || uri === '') {
-      console.error('🎬 VideoPlayer: Invalid video URI provided');
+      logger.error('🎬 VideoPlayer: Invalid video URI provided');
     }
 
     // Cleanup function to unload video when component unmounts
@@ -105,7 +108,6 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
   }, [uri]);
 
   useEffect(() => {
-    setShowEndLogo(false);
     lastProgressSecondRef.current = -1;
     setCurrentTime(0);
     setHasError(false);
@@ -152,7 +154,7 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
         }
 
         if (!isBackgroundAudioFocusError(error)) {
-          console.warn('🎬 VideoPlayer: Failed to prepare autoplay audio:', error);
+          logger.warn('🎬 VideoPlayer: Failed to prepare autoplay audio:', error);
         }
       }
     };
@@ -173,9 +175,9 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
   const handlePlaybackStatusUpdate = (status: any) => {
     if (status.isLoaded) {
       setIsLoading(status.isBuffering && canPlay);
-      setShowEndLogo(Boolean(status.durationMillis > 0 && status.positionMillis >= Math.max(0, status.durationMillis - 1000)));
-      if (status.positionMillis !== undefined && taggedUsers && taggedUsers.length > 0) {
-        const nextSecond = Math.floor(status.positionMillis / 1000);
+
+      if (status.positionMillis !== undefined) {
+        const nextSecond = Math.floor(status.positionMillis / 250) / 4;
         if (nextSecond !== lastProgressSecondRef.current) {
           lastProgressSecondRef.current = nextSecond;
           setCurrentTime(nextSecond);
@@ -187,7 +189,7 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
         return;
       }
 
-      console.error('🎬 VideoPlayer: Playback error:', status.error);
+      logger.error('🎬 VideoPlayer: Playback error:', status.error);
       setIsLoading(false);
       setHasError(true);
       onLoadError?.();
@@ -211,7 +213,7 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
             setTimeout(() => setShowPlayButton(false), 1500);
           }
         } catch (error) {
-          console.error('🎬 VideoPlayer: Error toggling play/pause:', error);
+          logger.error('🎬 VideoPlayer: Error toggling play/pause:', error);
         }
       } else {
         // For web, just toggle the state
@@ -280,7 +282,7 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
                 return;
               }
 
-              console.error('🎬 VideoPlayer: Video loading error:', error);
+              logger.error('🎬 VideoPlayer: Video loading error:', error);
               setIsLoading(false);
               setHasError(true);
               onLoadError?.();
@@ -312,10 +314,9 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
 
         {/* Watermark */}
         <VideoWatermark
-          visible={shouldShowOverlayWatermark && showEndLogo}
-          position="bottom-right"
-          opacity={0.8}
-          size={{ width: 160, height: 80 }}
+          visible={shouldShowOverlayWatermark}
+          username={creatorUsername}
+          seconds={currentTime}
         />
 
         {/* Tagged Users */}
@@ -340,8 +341,8 @@ export default function VideoPlayer({ uri, paused, autoplay = false, autoplayWit
                     handleTagPress(taggedUser.userId);
                   }}
                 >
-                  <Image
-                    source={{ uri: taggedUser.user.avatar }}
+                  <AvatarImage
+                    uri={taggedUser.user.avatar} userId={taggedUser.user?.id}
                     style={styles.tagAvatar}
                     contentFit="cover"
                   />

@@ -1,3 +1,4 @@
+import AvatarImage from '@/components/AvatarImage';
 import React from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
@@ -70,8 +71,8 @@ export default function BusinessCustomerList({
           )}
         </TouchableOpacity>
         
-        <Image
-          source={{ uri: item.customer.avatar }}
+        <AvatarImage
+          uri={item.customer.avatar} userId={item.customer?.id}
           style={styles.avatar}
           contentFit="cover"
           transition={300}

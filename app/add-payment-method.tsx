@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -109,12 +110,8 @@ export default function AddPaymentMethodScreen() {
   const handleSave = async () => {
     let currentUser = user;
     if (!user || !isAuthenticated) {
-      currentUser = {
-        id: "mock_user_" + Date.now(),
-        email: "test@example.com",
-        name: "Test User",
-        username: "testuser",
-      };
+      Alert.alert('Sign in required', 'Please sign in to add a payment method.');
+      return;
     }
 
     if (paymentType === "paystack" && !isLoggedInNigerianUser) {
@@ -396,6 +393,7 @@ export default function AddPaymentMethodScreen() {
 }
 
 const styles = StyleSheet.create({
+  rowInputs: { flexDirection: 'row', gap: 12 },
   container: {
     flex: 1,
     backgroundColor: Colors.dark.background,
@@ -577,10 +575,10 @@ const styles = StyleSheet.create({
   
 //   isServiceLoading = true;
 //   try {
-//     console.log("📦 Loading DatatransService module...");
+//     logger.debug("📦 Loading DatatransService module...");
 //     const module = await import("@/lib/datatrans");
-//     console.log("📦 Module loaded:", !!module);
-//     console.log("📦 Module default:", !!module.default);
+//     logger.debug("📦 Module loaded:", !!module);
+//     logger.debug("📦 Module default:", !!module.default);
     
 //     if (!module || !module.default) {
 //       throw new Error("DatatransService module did not export correctly");
@@ -590,15 +588,15 @@ const styles = StyleSheet.create({
     
 //     // Verify the service has the required methods
 //     if (typeof DatatransService.isRealDatatransKey !== 'function') {
-//       console.error("❌ DatatransService missing isRealDatatransKey method");
+//       logger.error("❌ DatatransService missing isRealDatatransKey method");
 //       throw new Error("DatatransService is missing required methods");
 //     }
     
-//     console.log("✅ DatatransService loaded successfully");
+//     logger.debug("✅ DatatransService loaded successfully");
 //     return DatatransService;
 //   } catch (error: any) {
-//     console.error("❌ Failed to load DatatransService:", error);
-//     console.error("❌ Error details:", error.message, error.stack);
+//     logger.error("❌ Failed to load DatatransService:", error);
+//     logger.error("❌ Error details:", error.message, error.stack);
 //     isServiceLoading = false;
 //     throw new Error(`Failed to load Datatrans payment service: ${error.message}. Please restart the app.`);
 //   } finally {
@@ -612,16 +610,16 @@ const styles = StyleSheet.create({
 //   const { user, isAuthenticated } = useAuthStore();
 
 //   // Debug: Log user state
-//   console.log("🔍 Add Payment Method Screen - User state:", user);
-//   console.log("🔍 Add Payment Method Screen - User ID:", user?.id);
-//   console.log("🔍 Add Payment Method Screen - User email:", user?.email);
-//   console.log(
+//   logger.debug("🔍 Add Payment Method Screen - User state:", user);
+//   logger.debug("🔍 Add Payment Method Screen - User ID:", user?.id);
+//   logger.debug("🔍 Add Payment Method Screen - User email:", user?.email);
+//   logger.debug(
 //     "🔍 Add Payment Method Screen - isAuthenticated:",
 //     isAuthenticated
 //   );
-//   console.log("🔍 Add Payment Method Screen - User type:", typeof user);
-//   console.log("🔍 Add Payment Method Screen - User is null:", user === null);
-//   console.log(
+//   logger.debug("🔍 Add Payment Method Screen - User type:", typeof user);
+//   logger.debug("🔍 Add Payment Method Screen - User is null:", user === null);
+//   logger.debug(
 //     "🔍 Add Payment Method Screen - User is undefined:",
 //     user === undefined
 //   );
@@ -695,7 +693,7 @@ const styles = StyleSheet.create({
 
 //         setPaystackStatus(isRealPaystackKey ? "real" : "mock");
 //       } catch (error) {
-//         console.error("Error checking Paystack status:", error);
+//         logger.error("Error checking Paystack status:", error);
 //         setPaystackStatus("mock");
 //       }
 //     };
@@ -707,7 +705,7 @@ const styles = StyleSheet.create({
 
 //   // Quick fill all Datatrans test data with one click
 //   const fillAllDatatransTestData = () => {
-//     console.log("🚀 Filling all Datatrans test data...");
+//     logger.debug("🚀 Filling all Datatrans test data...");
 //     setNickname("My Datatrans Card");
 //     setDatatransEmail("test@example.com");
 //     setDatatransAmount("100.00");
@@ -716,7 +714,7 @@ const styles = StyleSheet.create({
 //     setDatatransCvv("123");
 //     setDatatransCardholderName("John Doe");
 //     setIsDefault(false);
-//     console.log("✅ All Datatrans test data filled - Ready to test!");
+//     logger.debug("✅ All Datatrans test data filled - Ready to test!");
 //     Alert.alert(
 //       "✅ Test Data Filled!",
 //       "All fields have been filled with test data.\n\n💡 Make sure you have:\n• DATATRANS_MERCHANT_ID set\n• DATATRANS_PASSWORD set\n\nThen click 'Pay with Datatrans' to test!\n\n📊 View transactions at:\nhttps://admin.sandbox.datatrans.com",
@@ -899,7 +897,7 @@ const styles = StyleSheet.create({
 //     paymentProvider: "paystack" | "worldline" | "datatrans" = "paystack"
 //   ) => {
 //     try {
-//       console.log(
+//       logger.debug(
 //         `💾 Saving payment method after successful ${paymentProvider} payment...`
 //       );
 
@@ -972,7 +970,7 @@ const styles = StyleSheet.create({
 //                 country_code: "NG",
 //               },
 //             });
-//           console.log(
+//           logger.debug(
 //             "✅ Paystack payment method saved to Supabase:",
 //             supabasePaymentMethod
 //           );
@@ -995,7 +993,7 @@ const styles = StyleSheet.create({
 //                 country_code: "US",
 //               },
 //             });
-//           console.log(
+//           logger.debug(
 //             "✅ Worldline payment method saved to Supabase:",
 //             supabasePaymentMethod
 //           );
@@ -1021,13 +1019,13 @@ const styles = StyleSheet.create({
 //                 country_code: "CH",
 //               },
 //             });
-//           console.log(
+//           logger.debug(
 //             "✅ Datatrans payment method saved to Supabase:",
 //             supabasePaymentMethod
 //           );
 //         }
 //       } catch (supabaseError) {
-//         console.log(
+//         logger.debug(
 //           "⚠️ Supabase save failed, continuing with local save:",
 //           supabaseError
 //         );
@@ -1061,7 +1059,7 @@ const styles = StyleSheet.create({
 //       const success = await addPaymentMethod(paymentMethod, currentUser);
 
 //       if (success) {
-//         console.log(
+//         logger.debug(
 //           `🎉 Payment method saved successfully after ${paymentProvider} payment!`
 //         );
 
@@ -1101,7 +1099,7 @@ const styles = StyleSheet.create({
 //           );
 //         }
 //       } else {
-//         console.log("❌ Failed to save payment method after payment");
+//         logger.debug("❌ Failed to save payment method after payment");
 //         Alert.alert(
 //           "Warning",
 //           "Payment was successful but failed to save payment method. Please try adding it again.",
@@ -1109,7 +1107,7 @@ const styles = StyleSheet.create({
 //         );
 //       }
 //     } catch (error: any) {
-//       console.error("❌ Error saving payment method after payment:", error);
+//       logger.error("❌ Error saving payment method after payment:", error);
 //       Alert.alert(
 //         "Error",
 //         "Payment was successful but failed to save payment method. Please try adding it again.",
@@ -1122,7 +1120,7 @@ const styles = StyleSheet.create({
 //     // TEMPORARY: Create mock user if authentication is not working
 //     let currentUser = user;
 //     if (!user || !isAuthenticated) {
-//       console.log("⚠️ No user found, creating mock user for testing");
+//       logger.debug("⚠️ No user found, creating mock user for testing");
 //       currentUser = {
 //         id: "mock_user_" + Date.now(),
 //         email: "test@example.com",
@@ -1141,11 +1139,11 @@ const styles = StyleSheet.create({
 //       return;
 //     }
 
-//     console.log("🚀 Starting payment method creation process...");
-//     console.log("👤 Current user:", currentUser);
-//     console.log("👤 User ID:", currentUser?.id);
-//     console.log("👤 Payment type:", paymentType);
-//     console.log("👤 Nickname:", nickname);
+//     logger.debug("🚀 Starting payment method creation process...");
+//     logger.debug("👤 Current user:", currentUser);
+//     logger.debug("👤 User ID:", currentUser?.id);
+//     logger.debug("👤 Payment type:", paymentType);
+//     logger.debug("👤 Nickname:", nickname);
 
 //     if (paymentType === "credit_card") {
 //       if (!cardNumber || cardNumber.replace(/\s/g, "").length < 16) {
@@ -1170,7 +1168,7 @@ const styles = StyleSheet.create({
 
 //       // Process Paystack payment for credit card
 //       try {
-//         console.log("💳 Processing credit card payment with Paystack...");
+//         logger.debug("💳 Processing credit card payment with Paystack...");
 
 //         // Import PaystackService
 //         const { default: PaystackService } = await import("@/lib/paystack");
@@ -1221,7 +1219,7 @@ const styles = StyleSheet.create({
 //         });
 
 //         if (paymentResult.success) {
-//           console.log(
+//           logger.debug(
 //             "✅ Paystack payment processed successfully:",
 //             paymentResult
 //           );
@@ -1251,14 +1249,14 @@ const styles = StyleSheet.create({
 //                       },
 //                     })
 //                       .then((paymentReference) => {
-//                         console.log("Payment completed:", paymentReference);
+//                         logger.debug("Payment completed:", paymentReference);
 //                         // Save payment method after successful payment
 //                         if (currentUser) {
 //                           savePaymentMethodAfterPayment(currentUser, reference);
 //                         }
 //                       })
 //                       .catch((error) => {
-//                         console.error("Payment failed:", error);
+//                         logger.error("Payment failed:", error);
 //                         Alert.alert("Payment Failed", error.message);
 //                       });
 //                   } else {
@@ -1271,7 +1269,7 @@ const styles = StyleSheet.create({
 //                           text: "Copy URL",
 //                           onPress: () => {
 //                             // Copy URL to clipboard (if available)
-//                             console.log(
+//                             logger.debug(
 //                               "🔗 Authorization URL:",
 //                               paymentResult.authorization_url
 //                             );
@@ -1308,7 +1306,7 @@ const styles = StyleSheet.create({
 //           throw new Error("Payment processing failed");
 //         }
 //       } catch (error: any) {
-//         console.error("❌ Paystack payment error:", error);
+//         logger.error("❌ Paystack payment error:", error);
 //         Alert.alert(
 //           "Payment Error",
 //           error.message || "Failed to process payment. Please try again.",
@@ -1360,16 +1358,16 @@ const styles = StyleSheet.create({
 //         return;
 //       }
 //     } else if (paymentType === "paystack") {
-//       console.log("🔍 Validating Paystack payment method...");
-//       console.log("🔍 Paystack email:", paystackEmail);
-//       console.log("🔍 Email validation result:", validateEmail(paystackEmail));
+//       logger.debug("🔍 Validating Paystack payment method...");
+//       logger.debug("🔍 Paystack email:", paystackEmail);
+//       logger.debug("🔍 Email validation result:", validateEmail(paystackEmail));
 
 //       if (!paystackEmail || !validateEmail(paystackEmail)) {
-//         console.log("❌ Paystack validation failed");
+//         logger.debug("❌ Paystack validation failed");
 //         Alert.alert("Error", "Please enter a valid email for Paystack.");
 //         return;
 //       }
-//       console.log("✅ Paystack validation passed");
+//       logger.debug("✅ Paystack validation passed");
 //     } else if (paymentType === "worldline") {
 //       if (!worldlineEmail || !validateEmail(worldlineEmail)) {
 //         Alert.alert("Error", "Please enter a valid email for Worldline.");
@@ -1404,7 +1402,7 @@ const styles = StyleSheet.create({
 
 //       // Process Worldline payment for card
 //       try {
-//         console.log("💳 Processing Worldline card payment...");
+//         logger.debug("💳 Processing Worldline card payment...");
 
 //         // Import WorldlineService
 //         const { default: WorldlineService } = await import("@/lib/worldline");
@@ -1449,7 +1447,7 @@ const styles = StyleSheet.create({
 //         });
 
 //         if (paymentResult.success) {
-//           console.log(
+//           logger.debug(
 //             "✅ Worldline payment processed successfully:",
 //             paymentResult
 //           );
@@ -1481,7 +1479,7 @@ const styles = StyleSheet.create({
 //                       },
 //                     })
 //                       .then((paymentReference) => {
-//                         console.log(
+//                         logger.debug(
 //                           "Worldline payment completed:",
 //                           paymentReference
 //                         );
@@ -1495,7 +1493,7 @@ const styles = StyleSheet.create({
 //                         }
 //                       })
 //                       .catch((error) => {
-//                         console.error("Worldline payment failed:", error);
+//                         logger.error("Worldline payment failed:", error);
 //                         Alert.alert("Payment Failed", error.message);
 //                       });
 //                   } else {
@@ -1508,7 +1506,7 @@ const styles = StyleSheet.create({
 //                           text: "Copy URL",
 //                           onPress: () => {
 //                             // Copy URL to clipboard (if available)
-//                             console.log(
+//                             logger.debug(
 //                               "🔗 Worldline Authorization URL:",
 //                               paymentResult.data.authorization_url
 //                             );
@@ -1530,7 +1528,7 @@ const styles = StyleSheet.create({
 //           throw new Error("Worldline payment processing failed");
 //         }
 //       } catch (error: any) {
-//         console.error("❌ Worldline payment error:", error);
+//         logger.error("❌ Worldline payment error:", error);
 //         Alert.alert(
 //           "Payment Error",
 //           error.message ||
@@ -1583,7 +1581,7 @@ const styles = StyleSheet.create({
 
 //       // Process Datatrans payment for card
 //       try {
-//         console.log("💳 Processing Datatrans card payment...");
+//         logger.debug("💳 Processing Datatrans card payment...");
 
 //         // Load DatatransService
 //         const service = await getDatatransService();
@@ -1613,7 +1611,7 @@ const styles = StyleSheet.create({
 //         const amount = parseFloat(datatransAmount) || 100;
         
 //         // Process direct card payment with Datatrans
-//         console.log("📤 Sending payment request to backend...");
+//         logger.debug("📤 Sending payment request to backend...");
 //         const paymentResult = await service.processDirectCardPayment({
 //           email: currentUser?.email || datatransEmail,
 //           amount: amount, // Use amount from input field
@@ -1635,7 +1633,7 @@ const styles = StyleSheet.create({
 //         });
 
 //         // REPLACE START - Proper error logging and success handling
-//         console.log("📥 Payment result received:", JSON.stringify({
+//         logger.debug("📥 Payment result received:", JSON.stringify({
 //           success: paymentResult.success,
 //           status: paymentResult.data?.status,
 //           message: typeof paymentResult.message === 'string' ? paymentResult.message : JSON.stringify(paymentResult.message),
@@ -1652,7 +1650,7 @@ const styles = StyleSheet.create({
 //             status: paymentResult.data?.status || "success",
 //           };
           
-//           console.log("✅ Datatrans payment processed successfully:", JSON.stringify(successData, null, 2));
+//           logger.debug("✅ Datatrans payment processed successfully:", JSON.stringify(successData, null, 2));
 
 //           // Set success data and show modal
 //           setDatatransSuccessData(successData);
@@ -1676,9 +1674,9 @@ const styles = StyleSheet.create({
 //             if (paymentResult.message === '[object Object]') {
 //               // Message was incorrectly stringified, try to get from data or log full object
 //               errorMsg = "Payment failed. Check backend logs for details. Common issues: Invalid Datatrans credentials or API endpoint error.";
-//               console.error("❌ Error message is '[object Object]' - backend error handling issue");
-//               console.error("❌ Full payment result object:", JSON.stringify(paymentResult, null, 2));
-//               console.error("❌ paymentResult.data:", JSON.stringify(paymentResult.data, null, 2));
+//               logger.error("❌ Error message is '[object Object]' - backend error handling issue");
+//               logger.error("❌ Full payment result object:", JSON.stringify(paymentResult, null, 2));
+//               logger.error("❌ paymentResult.data:", JSON.stringify(paymentResult.data, null, 2));
 //             } else {
 //               errorMsg = paymentResult.message;
 //             }
@@ -1702,8 +1700,8 @@ const styles = StyleSheet.create({
 //             }
 //           }
           
-//           console.error("❌ Payment failed - Full result:", JSON.stringify(paymentResult, null, 2));
-//           console.error("❌ Extracted error message:", errorMsg);
+//           logger.error("❌ Payment failed - Full result:", JSON.stringify(paymentResult, null, 2));
+//           logger.error("❌ Extracted error message:", errorMsg);
           
 //           Alert.alert(
 //             "Payment Failed",
@@ -1730,8 +1728,8 @@ const styles = StyleSheet.create({
 //           errorMessage = JSON.stringify(error.data, null, 2);
 //         }
         
-//         console.error("❌ Datatrans payment error - Full error:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
-//         console.error("❌ Extracted error message:", errorMessage);
+//         logger.error("❌ Datatrans payment error - Full error:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+//         logger.error("❌ Extracted error message:", errorMessage);
         
 //         Alert.alert(
 //           "Payment Error",
@@ -1744,13 +1742,13 @@ const styles = StyleSheet.create({
 //     }
 
 //     // Create payment method object based on type
-//     console.log("🔧 Creating payment method object...");
+//     logger.debug("🔧 Creating payment method object...");
 //     let paymentMethod: any = {
 //       type: paymentType,
 //       nickname,
 //       isDefault,
 //     };
-//     console.log("🔧 Base payment method:", paymentMethod);
+//     logger.debug("🔧 Base payment method:", paymentMethod);
 
 //     if (paymentType === "bank_account") {
 //       paymentMethod = {
@@ -1776,7 +1774,7 @@ const styles = StyleSheet.create({
 //       };
 //     } else if (paymentType === "paystack") {
 //       // For now, save Paystack payment method locally (we'll add API integration later)
-//       console.log("🚀 Saving Paystack payment method locally...");
+//       logger.debug("🚀 Saving Paystack payment method locally...");
 
 //       paymentMethod = {
 //         ...paymentMethod,
@@ -1790,10 +1788,10 @@ const styles = StyleSheet.create({
 //         },
 //       };
 
-//       console.log("✅ Paystack payment method prepared:", paymentMethod);
+//       logger.debug("✅ Paystack payment method prepared:", paymentMethod);
 //     } else if (paymentType === "worldline") {
 //       // For now, save Worldline payment method locally (we'll add API integration later)
-//       console.log("🚀 Saving Worldline payment method locally...");
+//       logger.debug("🚀 Saving Worldline payment method locally...");
 
 //       paymentMethod = {
 //         ...paymentMethod,
@@ -1815,10 +1813,10 @@ const styles = StyleSheet.create({
 //         },
 //       };
 
-//       console.log("✅ Worldline payment method prepared:", paymentMethod);
+//       logger.debug("✅ Worldline payment method prepared:", paymentMethod);
 //     } else if (paymentType === "datatrans") {
 //       // For now, save Datatrans payment method locally (we'll add API integration later)
-//       console.log("🚀 Saving Datatrans payment method locally...");
+//       logger.debug("🚀 Saving Datatrans payment method locally...");
 
 //       paymentMethod = {
 //         ...paymentMethod,
@@ -1840,19 +1838,19 @@ const styles = StyleSheet.create({
 //         },
 //       };
 
-//       console.log("✅ Datatrans payment method prepared:", paymentMethod);
+//       logger.debug("✅ Datatrans payment method prepared:", paymentMethod);
 //     }
 
-//     console.log("🚀 Calling addPaymentMethod with:");
-//     console.log("🚀 Payment method:", paymentMethod);
-//     console.log("🚀 Current user:", currentUser);
+//     logger.debug("🚀 Calling addPaymentMethod with:");
+//     logger.debug("🚀 Payment method:", paymentMethod);
+//     logger.debug("🚀 Current user:", currentUser);
 
 //     const success = await addPaymentMethod(paymentMethod, currentUser);
 
-//     console.log("🚀 addPaymentMethod result:", success);
+//     logger.debug("🚀 addPaymentMethod result:", success);
 
 //     if (success) {
-//       console.log("🎉 Payment method saved successfully!");
+//       logger.debug("🎉 Payment method saved successfully!");
 //       const successMessage =
 //         (paymentType as string) === "paystack"
 //           ? "Your Paystack payment method has been saved successfully! The details will be shown every time you open the app."
@@ -1868,7 +1866,7 @@ const styles = StyleSheet.create({
 //         { text: "OK", onPress: () => router.back() },
 //       ]);
 //     } else {
-//       console.log("❌ Payment method save failed");
+//       logger.debug("❌ Payment method save failed");
 //       Alert.alert("Error", "Failed to save payment method. Please try again.", [
 //         { text: "OK" },
 //       ]);
@@ -1877,7 +1875,7 @@ const styles = StyleSheet.create({
 
 //   // TEMPORARY: Skip authentication check to fix the loop issue
 //   // TODO: Fix auth store persistence issue properly
-//   console.log(
+//   logger.debug(
 //     "🔍 Authentication state - isAuthenticated:",
 //     isAuthenticated,
 //     "user:",
@@ -1886,9 +1884,9 @@ const styles = StyleSheet.create({
 
 //   // For now, allow access to prevent the sign-in loop
 //   // if (!isAuthenticated || !user) {
-//   //   console.log("⚠️ Authentication check failed - showing auth required screen");
-//   //   console.log("⚠️ isAuthenticated:", isAuthenticated);
-//   //   console.log("⚠️ user:", user);
+//   //   logger.debug("⚠️ Authentication check failed - showing auth required screen");
+//   //   logger.debug("⚠️ isAuthenticated:", isAuthenticated);
+//   //   logger.debug("⚠️ user:", user);
 //   //
 //   //   return (
 //   //     <View style={styles.container}>

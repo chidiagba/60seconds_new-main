@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState, useRef } from "react";
 import {
   View,
@@ -80,7 +81,7 @@ export default function ReceiveMoneyScreen() {
         title: "Request Money",
       });
     } catch (error) {
-      console.error("Error sharing:", error);
+      logger.error("Error sharing:", error);
     }
   };
 

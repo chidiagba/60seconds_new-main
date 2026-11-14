@@ -1,3 +1,5 @@
+import { requestForegroundLocationPermission } from '@/utils/location';
+import { logger } from '@/lib/logger';
 
 
 
@@ -110,7 +112,7 @@ export default function HomeScreen() {
         await loadCachedVideos();
         await fetchVideos();
       } catch (error) {
-        console.error('Error fetching videos on mount:', error);
+        logger.error('Error fetching videos on mount:', error);
       }
     })();
   }, [fetchVideos, loadCachedVideos, refreshLocationPermission]);
@@ -118,7 +120,7 @@ export default function HomeScreen() {
   useFocusEffect(
     React.useCallback(() => {
       refreshLocationPermission().catch((error) => {
-        console.warn('Error checking location permission on focus:', error);
+        logger.warn('Error checking location permission on focus:', error);
       });
     }, [refreshLocationPermission])
   );
@@ -128,7 +130,7 @@ export default function HomeScreen() {
       if (nextState === 'active') {
         if (!selectedVideoIdFromParams) void fetchVideos();
         refreshLocationPermission().catch((error) => {
-          console.warn('Error checking location permission on app active:', error);
+          logger.warn('Error checking location permission on app active:', error);
         });
       }
     });
@@ -154,7 +156,7 @@ export default function HomeScreen() {
             await fetchVideos();
           }
         } catch (error) {
-          console.error('Error refreshing videos on focus:', error);
+          logger.error('Error refreshing videos on focus:', error);
         }
       };
 
@@ -204,7 +206,7 @@ export default function HomeScreen() {
         }
       } catch (error) {
         if (!cancelled) {
-          console.error('Error preloading selected profile video:', error);
+          logger.error('Error preloading selected profile video:', error);
           setIsPreloadingVideo(false);
         }
       }
@@ -239,7 +241,7 @@ export default function HomeScreen() {
 
   const handleEndReached = useCallback(() => {
     fetchMoreVideos().catch((error) => {
-      console.warn('fetchMoreVideos error:', error);
+      logger.warn('fetchMoreVideos error:', error);
     });
   }, [fetchMoreVideos]);
 
@@ -256,7 +258,7 @@ export default function HomeScreen() {
         await fetchVideos(); // Force refresh to get latest data
       }
     } catch (error) {
-      console.error('Error refreshing videos:', error);
+      logger.error('Error refreshing videos:', error);
       Alert.alert('Error', 'Failed to refresh videos. Please try again.');
     } finally {
       setIsRefreshing(false);
@@ -286,7 +288,7 @@ export default function HomeScreen() {
         return;
       }
       
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await requestForegroundLocationPermission();
       if (status === 'granted') {
         setLocationPermission(true);
         setHasCheckedLocationPermission(true);
@@ -304,7 +306,7 @@ export default function HomeScreen() {
         await fetchVideos();
       }
     } catch (error) {
-      console.error('Error requesting location:', error);
+      logger.error('Error requesting location:', error);
       setHasCheckedLocationPermission(true);
       setLocationError("Failed to get your location. Please try again.");
       await fetchVideos();
@@ -432,6 +434,7 @@ export default function HomeScreen() {
         <VideoPlayer
           preload={isHomeFocused && Math.abs(index - visibleVideoIndex) <= 1}
           uri={item.url}
+          creatorUsername={item.user?.username}
           paused={index !== visibleVideoIndex || !isHomeFocused || manuallyPausedIndex === index}
           autoplay={true}
           autoplayWithSound={true}
@@ -878,7 +881,7 @@ const styles = StyleSheet.create({
 //           await fetchVideos();
 //         }
 //       } catch (error) {
-//         console.error('Error getting location:', error);
+//         logger.error('Error getting location:', error);
 //         setLocationError("We couldn't access your location. You can continue without it or try again.");
 //         await fetchVideos();
 //       }
@@ -892,7 +895,7 @@ const styles = StyleSheet.create({
 //         const events = await getEventsWithVideos(); // Fetch events with videos from Supabase
 //         setEventsWithVideos(events); // Set the state with the events that contain videos
 //       } catch (error) {
-//         console.error('Error fetching events:', error);
+//         logger.error('Error fetching events:', error);
 //       }
 //     };
 
@@ -919,7 +922,7 @@ const styles = StyleSheet.create({
 //         await fetchVideos();
 //       }
 //     } catch (error) {
-//       console.error('Error refreshing videos:', error);
+//       logger.error('Error refreshing videos:', error);
 //       Alert.alert('Error', 'Failed to refresh videos. Please try again.');
 //     } finally {
 //       setIsRefreshing(false);
@@ -946,7 +949,7 @@ const styles = StyleSheet.create({
 //         await fetchVideos();
 //       }
 //     } catch (error) {
-//       console.error('Error requesting location:', error);
+//       logger.error('Error requesting location:', error);
 //       setLocationError("Failed to request location. Please try again.");
 //       await fetchVideos();
 //     }
@@ -1127,7 +1130,7 @@ const styles = StyleSheet.create({
 //           await fetchVideos();
 //         }
 //       } catch (error) {
-//         console.error('Error getting location:', error);
+//         logger.error('Error getting location:', error);
 //         setLocationError("We couldn't access your location. You can continue without it or try again.");
 //         await fetchVideos();
 //       }
@@ -1154,7 +1157,7 @@ const styles = StyleSheet.create({
 //         await fetchVideos();
 //       }
 //     } catch (error) {
-//       console.error('Error refreshing videos:', error);
+//       logger.error('Error refreshing videos:', error);
 //       Alert.alert('Error', 'Failed to refresh videos. Please try again.');
 //     } finally {
 //       setIsRefreshing(false);
@@ -1181,7 +1184,7 @@ const styles = StyleSheet.create({
 //         await fetchVideos();
 //       }
 //     } catch (error) {
-//       console.error('Error requesting location:', error);
+//       logger.error('Error requesting location:', error);
 //       setLocationError("Failed to request location. Please try again.");
 //       await fetchVideos();
 //     }
@@ -1398,7 +1401,7 @@ const styles = StyleSheet.create({
 //           await fetchVideos();
 //         }
 //       } catch (error) {
-//         console.error('Error getting location:', error);
+//         logger.error('Error getting location:', error);
 //         setLocationError("Failed to get your location. Please try again.");
 //         // Fetch all videos if there's an error
 //         await fetchVideos();
@@ -1422,7 +1425,7 @@ const styles = StyleSheet.create({
 //             await fetchVideos();
 //           }
 //         } catch (error) {
-//           console.error('Error refreshing videos on focus:', error);
+//           logger.error('Error refreshing videos on focus:', error);
 //         }
 //       };
 
@@ -1458,7 +1461,7 @@ const styles = StyleSheet.create({
 //         await fetchVideos(); // Force refresh to get latest data
 //       }
 //     } catch (error) {
-//       console.error('Error refreshing videos:', error);
+//       logger.error('Error refreshing videos:', error);
 //       Alert.alert('Error', 'Failed to refresh videos. Please try again.');
 //     } finally {
 //       setIsRefreshing(false);
@@ -1490,7 +1493,7 @@ const styles = StyleSheet.create({
 //         await fetchVideos();
 //       }
 //     } catch (error) {
-//       console.error('Error requesting location:', error);
+//       logger.error('Error requesting location:', error);
 //       setLocationError("Failed to get your location. Please try again.");
 //       await fetchVideos();
 //     }
@@ -1500,7 +1503,7 @@ const styles = StyleSheet.create({
 //     return (
 //       <View style={styles.videoContainer}>
 //         <VideoPlayer 
-//           uri={item.url} 
+//           uri={item.url}
 //           paused={index !== visibleVideoIndex}
 //           autoplay={true}
 //           taggedUsers={item.taggedUsers}

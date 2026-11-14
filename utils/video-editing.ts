@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { NativeModules, Platform } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 
@@ -323,7 +324,7 @@ class VideoEditService {
         outputSizeBytes,
       };
     } catch (error) {
-      console.warn("[Upload] Compression skipped after FFmpeg failure:", error);
+      logger.warn("[Upload] Compression skipped after FFmpeg failure:", error);
       return {
         uri: localVideoUri,
         didCompress: false,

@@ -6,7 +6,7 @@ insert into events(id,business_id,event_name,start_date,end_date,currency) value
 select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000001',true);
 select public.save_event_table('10000000-0000-0000-0000-000000000001',null,'VIP',4,10,true);
 insert into products(event_id,name,price,currency,available_quantity,type) values ('10000000-0000-0000-0000-000000000001','Entry',20,'CHF',3,'ticket');
-do $$ declare t uuid; p uuid; o orders; o2 orders; n integer; begin
+do $$ declare t uuid; p uuid; o orders; o2 orders; n integer; code text; result record; begin
  select id into t from event_tables;
  select id into p from products;
  -- Mixed cart: price is computed on the server and seats are held, not confirmed.
@@ -31,6 +31,17 @@ do $$ declare t uuid; p uuid; o orders; o2 orders; n integer; begin
  if (select count(*) from event_table_bookings where state='confirmed')<>1 then raise exception 'Confirmation not idempotent'; end if;
  if (select count(*) from ticket_receipts)<>1 then raise exception 'Ticket fulfillment changed'; end if;
  if (select available_quantity from products)<>2 then raise exception 'Wrong stock'; end if;
+ -- Every confirmed table booking has a scannable QR; only the owning event business can consume it once.
+ if (select count(distinct qr_code) from event_table_bookings where order_id=o.id)<>1 then raise exception 'Paid table booking QR is missing or duplicated'; end if;
+ select qr_code into code from event_table_bookings where order_id=o.id and state='confirmed';
+ perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000002',true);
+ begin perform redeem_event_table_booking(code); raise exception 'TEST FAILED: another account checked in the reservation';
+ exception when others then if sqlerrm like 'TEST FAILED:%' then raise; end if; end;
+ perform set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000001',true);
+ select * into result from redeem_event_table_booking(code);
+ if result.receipt_kind<>'reservation' or result.quantity<>3 or result.redeemed_at is null then raise exception 'Table booking check-in did not return its paid pass'; end if;
+ begin perform redeem_event_table_booking(code); raise exception 'TEST FAILED: table QR reused';
+ exception when others then if sqlerrm='TEST FAILED: table QR reused' then raise; elsif sqlerrm<>'Table reservation has already been checked in' then raise; end if; end;
  -- Table-only checkout release is idempotent and cannot later become paid.
  o2:=reserve_event_order(o.event_id,'buyer@example.com','[]',jsonb_build_array(jsonb_build_object('id',t,'quantity',1)));
  perform finish_guest_order(o2.id,false,'');

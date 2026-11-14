@@ -1,3 +1,5 @@
+import AvatarImage from '@/components/AvatarImage';
+import { logger } from '@/lib/logger';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -166,7 +168,7 @@ function DirectChatScreen() {
 
   const otherAvatar =
     otherUser?.avatar_url ||
-    "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61";
+    '';
 
   const isPermissionError = (msg?: string) =>
     (msg || "").toLowerCase().includes("permission denied");
@@ -544,7 +546,7 @@ function DirectChatScreen() {
           ]}
         >
           {!isCurrentUser && (
-            <Image source={{ uri: otherAvatar }} style={styles.messageAvatar} contentFit="cover" />
+            <AvatarImage uri={otherAvatar} style={styles.messageAvatar} contentFit="cover" />
           )}
 
           <TouchableOpacity
@@ -841,7 +843,7 @@ function DirectChatScreen() {
         options={{
           headerTitle: () => (
             <View style={styles.headerTitle}>
-              <Image source={{ uri: otherAvatar }} style={styles.headerAvatar} contentFit="cover" />
+              <AvatarImage uri={otherAvatar} style={styles.headerAvatar} contentFit="cover" />
               <View>
                 <Text style={styles.headerUsername}>{otherDisplayName}</Text>
                 {(resolvingChat || resolvingProfile) && (
@@ -1413,7 +1415,7 @@ const styles = StyleSheet.create({
 
 //   const otherAvatar =
 //     otherUser?.avatar_url ||
-//     "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61";
+//     '';
 
 //   const storeMessages: MessageRow[] = useMemo(() => {
 //     if (!activeChatId) return [];
@@ -1576,7 +1578,7 @@ const styles = StyleSheet.create({
 //     });
 
 //     if (!result.canceled) {
-//       console.log("Selected image:", result.assets[0].uri);
+//       logger.debug("Selected image:", result.assets[0].uri);
 //       Alert.alert("Selected", "Image selected. Add upload logic next.");
 //     }
 //   };
@@ -2104,7 +2106,7 @@ const styles = StyleSheet.create({
 
 //   const otherAvatar =
 //     otherUser?.avatar_url ||
-//     "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61";
+//     '';
 
 //   const formatTime = (dateString: string) => {
 //     const date = new Date(dateString);
@@ -2223,7 +2225,7 @@ const styles = StyleSheet.create({
 //     });
 
 //     if (!result.canceled) {
-//       console.log("Selected image:", result.assets[0].uri);
+//       logger.debug("Selected image:", result.assets[0].uri);
 //       Alert.alert("Selected", "Image selected. Add upload logic next.");
 //     }
 //   };
@@ -2524,7 +2526,7 @@ const styles = StyleSheet.create({
 //       "1": {
 //         id: "1",
 //         displayName: "Club Vibes",
-//         avatar: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61",
+//         avatar: '',
 //       },
 //       "2": {
 //         id: "2",
@@ -2645,7 +2647,7 @@ const styles = StyleSheet.create({
 //       quality: 1,
 //     });
 //     if (!result.canceled) {
-//       console.log("Selected image:", result.assets[0].uri);
+//       logger.debug("Selected image:", result.assets[0].uri);
 //       // Upload/send image logic here
 //     }
 //   };

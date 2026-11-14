@@ -31,7 +31,6 @@ const FLOATING_BACK_ROUTES = new Set([
   'edit-profile',
   'receive-money',
   'scan-qr',
-  'test-auth',
   'vouchers',
 ]);
 

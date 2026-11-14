@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -48,7 +49,7 @@ export default function BusinessCustomersScreen() {
         fetchCustomerStats()
       ]);
     } catch (error) {
-      console.error('Error loading customer data:', error);
+      logger.error('Error loading customer data:', error);
     }
   };
 
@@ -280,7 +281,7 @@ export default function BusinessCustomersScreen() {
             selectedCustomers={selectedCustomers}
             onSelectCustomer={handleSelectCustomer}
             onCustomerPress={(customerId) => {
-              console.log('Customer pressed:', customerId);
+              logger.debug('Customer pressed:', customerId);
               Alert.alert('Customer Details', `Customer ID: ${customerId}`);
             }}
           />

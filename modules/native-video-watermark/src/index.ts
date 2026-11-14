@@ -8,7 +8,8 @@ export type NativeWatermarkPosition =
   | 'center';
 
 type NativeVideoWatermarkModule = {
-  addWatermark(
+  createWatermarkImage(logoUri: string, username: string): Promise<string>;
+  exportBrandedVideo(
     videoUri: string,
     watermarkUri: string,
     position: NativeWatermarkPosition,

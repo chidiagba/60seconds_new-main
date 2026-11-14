@@ -4,7 +4,7 @@ const ts = require('typescript');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const exportsObject = {};
-vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/video-feed.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: exportsObject, console: { warn() {} } });
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/video-feed.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: exportsObject, require: () => ({logger:require('./logger-fixture.cjs')}), console: { warn() {} } });
 function fixture(result) {
   const calls = [];
   const rows = Array.from({length:45}, (_, i) => ({id:`video-${i}`,created_at:`202${i%7}-01-01`}));

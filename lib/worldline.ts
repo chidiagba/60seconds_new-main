@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { Platform } from 'react-native';
 import { trpcClient } from '@/lib/trpc';
 import { WORLDLINE_CONFIG } from '@/lib/worldline-config';
@@ -124,8 +125,9 @@ class WorldlineService {
    * Initialize a payment transaction with Worldline
    */
   async initializePayment(params: WorldlineInitializeParams): Promise<WorldlinePaymentResponse> {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('Initializing Worldline payment:', params);
+      logger.debug('Initializing Worldline payment:', params);
       
       const result = await trpcClient.worldline.initialize.mutate({
         amount: params.amount,
@@ -145,7 +147,7 @@ class WorldlineService {
       
       return result;
     } catch (error: any) {
-      console.error('Worldline initialization error:', error);
+      logger.error('Worldline initialization error:', error);
       throw new Error(error.message || 'Failed to initialize Worldline payment');
     }
   }
@@ -154,8 +156,9 @@ class WorldlineService {
    * Verify a payment transaction
    */
   async verifyPayment(paymentId: string): Promise<WorldlineVerifyResponse> {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('Verifying Worldline payment:', paymentId);
+      logger.debug('Verifying Worldline payment:', paymentId);
       
       const result = await trpcClient.worldline.verify.query({
         paymentId,
@@ -167,7 +170,7 @@ class WorldlineService {
       
       return result;
     } catch (error: any) {
-      console.error('Worldline verification error:', error);
+      logger.error('Worldline verification error:', error);
       throw new Error(error.message || 'Failed to verify Worldline payment');
     }
   }
@@ -176,8 +179,9 @@ class WorldlineService {
    * Create a customer in Worldline system
    */
   async createCustomer(customer: WorldlineCustomer) {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('Creating Worldline customer:', customer.email);
+      logger.debug('Creating Worldline customer:', customer.email);
       
       const result = await trpcClient.worldline.createCustomer.mutate(customer);
       
@@ -187,7 +191,7 @@ class WorldlineService {
       
       return result.data;
     } catch (error: any) {
-      console.error('Worldline customer creation error:', error);
+      logger.error('Worldline customer creation error:', error);
       throw new Error(error.message || 'Failed to create Worldline customer');
     }
   }
@@ -196,8 +200,9 @@ class WorldlineService {
    * Get customer details
    */
   async getCustomer(customerId: string) {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('Getting Worldline customer:', customerId);
+      logger.debug('Getting Worldline customer:', customerId);
       
       const result = await trpcClient.worldline.getCustomer.query({
         customerId,
@@ -209,7 +214,7 @@ class WorldlineService {
       
       return result.data;
     } catch (error: any) {
-      console.error('Worldline get customer error:', error);
+      logger.error('Worldline get customer error:', error);
       throw new Error(error.message || 'Failed to get Worldline customer');
     }
   }
@@ -218,8 +223,9 @@ class WorldlineService {
    * Process direct card payment with Worldline
    */
   async processDirectCardPayment(params: WorldlineDirectCardPaymentParams): Promise<WorldlineDirectCardPaymentResponse> {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('Processing Worldline direct card payment:', {
+      logger.debug('Processing Worldline direct card payment:', {
         email: params.email,
         amount: params.amount,
         currency: params.currency,
@@ -246,17 +252,17 @@ class WorldlineService {
       return result as WorldlineDirectCardPaymentResponse;
 
     } catch (error: any) {
-      console.error('Worldline direct card payment error:', error);
+      logger.error('Worldline direct card payment error:', error);
       
       // Provide helpful error message
       let errorMessage = error.message || 'Payment processing failed';
       if (error.message && error.message.includes('Network request failed')) {
         errorMessage = 'Cannot connect to payment server. Please ensure the backend server is running on port 3001 and EXPO_PUBLIC_RORK_API_BASE_URL is set correctly.';
-        console.error('❌ Backend connection failed!');
-        console.error('💡 Make sure to:');
-        console.error('   1. Start server: yarn start-server');
-        console.error('   2. Set API URL: export EXPO_PUBLIC_RORK_API_BASE_URL=http://192.168.1.6:3001');
-        console.error('   3. Restart Expo app');
+        logger.error('❌ Backend connection failed!');
+        logger.error('💡 Make sure to:');
+        logger.error('   1. Start server: yarn start-server');
+        logger.error('   2. Set API URL: export EXPO_PUBLIC_RORK_API_BASE_URL=http://192.168.1.6:3001');
+        logger.error('   3. Restart Expo app');
       }
       
       return {
@@ -329,8 +335,9 @@ class WorldlineService {
       country_code: string;
     };
   }) {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('💾 Saving Worldline payment method to Supabase...');
+      logger.debug('💾 Saving Worldline payment method to Supabase...');
       
       // Import Supabase client
       const { supabase } = await import('@/lib/supabase');
@@ -338,12 +345,12 @@ class WorldlineService {
       const { data: authData } = await supabase.auth.getUser();
       const authedUserId = authData?.user?.id;
       if (!authedUserId) {
-        console.log('ℹ️ Skipping Supabase save: no authenticated user');
+        logger.debug('ℹ️ Skipping Supabase save: no authenticated user');
         return null;
       }
       const userIdForInsert = authedUserId;
       if (params.userId !== authedUserId) {
-        console.log('ℹ️ Auth user differs from provided user; using authenticated user for insert');
+        logger.debug('ℹ️ Auth user differs from provided user; using authenticated user for insert');
       }
       
       // Map to existing schema columns. Store gateway details in metadata.
@@ -383,14 +390,14 @@ class WorldlineService {
         .single();
 
       if (error) {
-        console.error('❌ Supabase save error:', error);
+        logger.error('❌ Supabase save error:', error);
         throw error;
       }
 
-      console.log('✅ Worldline payment method saved to Supabase:', data);
+      logger.debug('✅ Worldline payment method saved to Supabase:', data);
       return data;
     } catch (error: any) {
-      console.error('❌ Error saving Worldline payment method to Supabase:', error);
+      logger.error('❌ Error saving Worldline payment method to Supabase:', error);
       throw error;
     }
   }
@@ -399,6 +406,7 @@ class WorldlineService {
    * Open Worldline checkout (web only)
    */
   async openCheckout(params: WorldlineInitializeParams): Promise<string> {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     if (Platform.OS !== 'web') {
       throw new Error('Worldline checkout is only available on web platform');
     }
@@ -421,7 +429,7 @@ class WorldlineService {
       // Return a promise that resolves when payment is complete
       return new Promise((resolve, reject) => {
         const checkClosed = setInterval(() => {
-          if (popup.closed) {
+          if (popup?.closed) {
             clearInterval(checkClosed);
             // Check if payment was successful by verifying the payment ID
             this.verifyPayment(paymentData.data.paymentId)
@@ -441,14 +449,14 @@ class WorldlineService {
         // Timeout after 10 minutes
         setTimeout(() => {
           clearInterval(checkClosed);
-          if (!popup.closed) {
-            popup.close();
+          if (!popup?.closed) {
+            popup?.close();
           }
           reject(new Error('Payment timeout'));
         }, 600000);
       });
     } catch (error: any) {
-      console.error('Worldline checkout error:', error);
+      logger.error('Worldline checkout error:', error);
       throw error;
     }
   }
@@ -523,8 +531,9 @@ class WorldlineService {
    * Get user's payment methods
    */
   async getPaymentMethods(userId: string) {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('Getting Worldline payment methods for user:', userId);
+      logger.debug('Getting Worldline payment methods for user:', userId);
       
       const result = await trpcClient.worldline.getPaymentMethods.query({
         userId,
@@ -532,7 +541,7 @@ class WorldlineService {
       
       return result;
     } catch (error: any) {
-      console.error('Worldline get payment methods error:', error);
+      logger.error('Worldline get payment methods error:', error);
       return {
         success: false,
         data: [],
@@ -545,8 +554,9 @@ class WorldlineService {
    * Delete a payment method
    */
   async deletePaymentMethod(paymentMethodId: string, userId: string) {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('Deleting Worldline payment method:', paymentMethodId);
+      logger.debug('Deleting Worldline payment method:', paymentMethodId);
       
       const result = await trpcClient.worldline.deletePaymentMethod.mutate({
         paymentMethodId,
@@ -555,7 +565,7 @@ class WorldlineService {
       
       return result;
     } catch (error: any) {
-      console.error('Worldline delete payment method error:', error);
+      logger.error('Worldline delete payment method error:', error);
       return {
         success: false,
         message: error.message || 'Failed to delete payment method'
@@ -567,8 +577,9 @@ class WorldlineService {
    * Set default payment method
    */
   async setDefaultPaymentMethod(paymentMethodId: string, userId: string) {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('Setting default Worldline payment method:', paymentMethodId);
+      logger.debug('Setting default Worldline payment method:', paymentMethodId);
       
       const result = await trpcClient.worldline.setDefaultPaymentMethod.mutate({
         paymentMethodId,
@@ -577,7 +588,7 @@ class WorldlineService {
       
       return result;
     } catch (error: any) {
-      console.error('Worldline set default payment method error:', error);
+      logger.error('Worldline set default payment method error:', error);
       return {
         success: false,
         message: error.message || 'Failed to set default payment method'
@@ -589,8 +600,9 @@ class WorldlineService {
    * Get payment history
    */
   async getPaymentHistory(userId: string, limit: number = 20, offset: number = 0) {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('Getting Worldline payment history for user:', userId);
+      logger.debug('Getting Worldline payment history for user:', userId);
       
       const result = await trpcClient.worldline.getPaymentHistory.query({
         userId,
@@ -600,7 +612,7 @@ class WorldlineService {
       
       return result;
     } catch (error: any) {
-      console.error('Worldline get payment history error:', error);
+      logger.error('Worldline get payment history error:', error);
       return {
         success: false,
         data: {
@@ -630,14 +642,15 @@ class WorldlineService {
       isRecurring: boolean;
     };
   }) {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('Creating Worldline session...');
+      logger.debug('Creating Worldline session...');
       
       const result = await trpcClient.worldline.createSession.mutate(params);
       
       return result;
     } catch (error: any) {
-      console.error('Worldline session creation error:', error);
+      logger.error('Worldline session creation error:', error);
       return {
         success: false,
         data: null,

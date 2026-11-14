@@ -1,6 +1,11 @@
+import { logger } from '@/lib/logger';
 import { supabase } from "@/lib/supabase";
 
 type PaymentSheetSessionParams = {
+  items?: Array<{productId:string;quantity:number}>;
+  voucherCode?: string;
+  voucherId?: string;
+  requestKey?: string;
   amount: number;
   currency: string;
   platformFeeAmount: number;
@@ -19,6 +24,9 @@ type PaymentSheetSessionResponse = {
   ownerId?: string | null;
   connectedAccountId?: string | null;
   sellerBankAccountId?: string | null;
+  orderId?: string;
+  completed?: boolean;
+  order?: any;
   error?: string;
   message?: string;
 };
@@ -98,11 +106,13 @@ const invokeEdgeFunction = async (
 export const createStripePaymentSheetSession = async (params: PaymentSheetSessionParams) => {
   const primary = await invokeEdgeFunction("stripe-create-checkout", params);
 
-  if (primary.paymentIntentClientSecret && !primary.error) {
+  if ((primary.paymentIntentClientSecret || (primary.completed && primary.order?.payment_status==='paid')) && !primary.error) {
     return primary;
   }
 
-  console.warn("stripe-create-checkout failed, retrying with stripe-create-payment-sheet", primary);
+  if (params.items) throw new Error(primary.error || primary.message || "Server checkout could not be initialized");
+
+  logger.warn("stripe-create-checkout failed, retrying with stripe-create-payment-sheet", primary);
 
   const fallback = await invokeEdgeFunction("stripe-create-payment-sheet", {
     amount: params.amount,

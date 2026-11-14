@@ -16,5 +16,17 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "ios",
+    "android",
+    ".expo-export*/**",
+    "backup-repo.git",
+    "local-private",
+    "supabase/functions",
+    "dev"
   ]
 }

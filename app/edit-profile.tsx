@@ -1,3 +1,5 @@
+import AvatarImage from '@/components/AvatarImage';
+import { logger } from '@/lib/logger';
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -54,11 +56,11 @@ export default function EditProfileScreen() {
 
   // Load real user data from Supabase
   useEffect(() => {
-    console.log('🔍 Edit Profile - Profile data received:', profile);
-    console.log('🔍 Edit Profile - User data received:', user);
+    logger.debug('🔍 Edit Profile - Profile data received:', profile);
+    logger.debug('🔍 Edit Profile - User data received:', user);
     
     if (profile) {
-      console.log('✅ Loading profile data into form fields');
+      logger.debug('✅ Loading profile data into form fields');
       const nextAvatarGender = (profile as any).avatar_gender ?? null;
       setAvatarGender(nextAvatarGender);
       setAvatar(
@@ -77,19 +79,19 @@ export default function EditProfileScreen() {
       setEventCategories(profile.hashtags?.join(", ") || "");
       setHashtags(profile.hashtags?.map(tag => `#${tag}`).join(" ") || "");
       
-      console.log('✅ Form fields set:');
-      console.log('  - Display Name:', profile.full_name);
-      console.log('  - Username:', profile.username);
-      console.log('  - Business Name:', profile.business_name);
-      console.log('  - Business Type:', profile.business_type);
+      logger.debug('✅ Form fields set:');
+      logger.debug('  - Display Name:', profile.full_name);
+      logger.debug('  - Username:', profile.username);
+      logger.debug('  - Business Name:', profile.business_name);
+      logger.debug('  - Business Type:', profile.business_type);
     } else {
-      console.log('❌ No profile data available');
+      logger.debug('❌ No profile data available');
     }
   }, [profile, user]);
 
   const handleSave = async () => {
     if (!user || !profile) {
-      console.error('No user or profile data available');
+      logger.error('No user or profile data available');
       return;
     }
 
@@ -109,10 +111,10 @@ export default function EditProfileScreen() {
           : avatar && avatar !== PLACEHOLDER_AVATAR_URL
             ? avatar
             : null,
-        avatar_gender: avatarGender,
+        avatar_gender: null,
       } as any;
 
-      console.log('Updating profile with data:', updateData);
+      logger.debug('Updating profile with data:', updateData);
 
       const { error } = await updateProfile(updateData);
       if (error) {
@@ -134,7 +136,7 @@ export default function EditProfileScreen() {
 
       router.back();
     } catch (error) {
-      console.error('Error updating profile:', error);
+      logger.error('Error updating profile:', error);
       // You could show an error alert here
     } finally {
       setIsLoading(false);
@@ -185,17 +187,17 @@ export default function EditProfileScreen() {
 
   const uploadImage = async (imageUri: string) => {
     if (!user) {
-      console.error('No user available for image upload');
+      logger.error('No user available for image upload');
       return;
     }
 
     try {
       setIsLoading(true);
-      console.log('🔄 Starting image upload...');
+      logger.debug('🔄 Starting image upload...');
       
       // Upload image to Supabase storage
       const publicUrl = await uploadImageToSupabase(imageUri, user.id, 'avatars');
-      console.log('✅ Image uploaded successfully:', publicUrl);
+      logger.debug('✅ Image uploaded successfully:', publicUrl);
       
       // Update avatar state immediately in the editor screen.
       setAvatar(publicUrl);
@@ -211,7 +213,7 @@ export default function EditProfileScreen() {
       syncUserProfile(user.id, { avatar: publicUrl });
       
     } catch (error) {
-      console.error('❌ Error uploading image:', error);
+      logger.error('❌ Error uploading image:', error);
       alert('Failed to upload image. Please try again.');
     } finally {
       setIsLoading(false);
@@ -251,50 +253,10 @@ export default function EditProfileScreen() {
 
           {/* Avatar */}
           <View style={styles.avatarContainer}>
-            {avatar && avatar !== "https://via.placeholder.com/150" ? (
-              <Image source={{ uri: avatar }} style={styles.avatar} />
-            ) : avatarGender ? (
-              <View style={[
-                styles.avatar,
-                { backgroundColor: avatarGender === 'male' ? '#3B82F6' : '#EC4899', justifyContent: 'center', alignItems: 'center' }
-              ]}>
-                <Text style={{ fontSize: 52 }}>{avatarGender === 'male' ? '👨' : '👩'}</Text>
-              </View>
-            ) : (
-              <Image source={{ uri: PLACEHOLDER_AVATAR_URL }} style={styles.avatar} />
-            )}
+            <AvatarImage uri={avatar} style={styles.avatar} />
             <TouchableOpacity style={styles.cameraButton} onPress={pickImage}>
               <Camera size={18} color={Colors.dark.text} />
             </TouchableOpacity>
-          </View>
-
-          {/* Gender Avatar Picker */}
-          <View style={styles.genderPickerContainer}>
-            <Text style={styles.genderPickerLabel}>Default Avatar (if no photo)</Text>
-            <View style={styles.genderPickerButtons}>
-              <TouchableOpacity
-                style={[styles.genderBtn, avatarGender === 'male' && styles.genderBtnActive]}
-                onPress={() => {
-                  const next = avatarGender === 'male' ? null : 'male';
-                  setAvatarGender(next);
-                  if (next) setAvatar(PLACEHOLDER_AVATAR_URL);
-                }}
-              >
-                <Text style={{ fontSize: 22 }}>👨</Text>
-                <Text style={[styles.genderBtnText, avatarGender === 'male' && styles.genderBtnTextActive]}>Male</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.genderBtn, avatarGender === 'female' && styles.genderBtnActive]}
-                onPress={() => {
-                  const next = avatarGender === 'female' ? null : 'female';
-                  setAvatarGender(next);
-                  if (next) setAvatar(PLACEHOLDER_AVATAR_URL);
-                }}
-              >
-                <Text style={{ fontSize: 22 }}>👩</Text>
-                <Text style={[styles.genderBtnText, avatarGender === 'female' && styles.genderBtnTextActive]}>Female</Text>
-              </TouchableOpacity>
-            </View>
           </View>
 
           {/* Form Fields */}

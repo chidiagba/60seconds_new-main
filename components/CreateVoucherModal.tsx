@@ -32,6 +32,7 @@ export default function CreateVoucherModal({ visible, onClose }: CreateVoucherMo
   const [description, setDescription] = useState('');
   const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
   const [discountValue, setDiscountValue] = useState('');
+  const [currency,setCurrency]=useState('');
   const [minPurchaseAmount, setMinPurchaseAmount] = useState('');
   const [maxDiscountAmount, setMaxDiscountAmount] = useState('');
   const [usageLimit, setUsageLimit] = useState('100');
@@ -116,12 +117,16 @@ export default function CreateVoucherModal({ visible, onClose }: CreateVoucherMo
       }
     }
     
+    if((discountType==='fixed'||Number(minPurchaseAmount)>0||Number(maxDiscountAmount)>0)&&!/^[A-Z]{3}$/.test(currency.trim().toUpperCase())){
+      Alert.alert('Currency required','Enter the currency for this fixed discount or amount limit, such as NGN or USD.');return;
+    }
     // Create voucher object
     const voucherData = {
       name,
       code: code.toUpperCase(),
       description,
       discountType,
+      currency:currency.trim().toUpperCase() || undefined,
       discountValue: discountValueNum,
       minPurchaseAmount: minPurchaseAmountNum,
       maxDiscountAmount: maxDiscountAmountNum,
@@ -259,7 +264,7 @@ export default function CreateVoucherModal({ visible, onClose }: CreateVoucherMo
                   <Text style={[
                     styles.segmentButtonText,
                     discountType === 'fixed' && styles.segmentButtonTextActive
-                  ]}>Fixed Amount ($)</Text>
+                  ]}>Fixed Amount</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -270,7 +275,7 @@ export default function CreateVoucherModal({ visible, onClose }: CreateVoucherMo
               </Text>
               <View style={styles.inputWithPrefix}>
                 <Text style={styles.inputPrefix}>
-                  {discountType === 'percentage' ? '%' : '$'}
+                  {discountType === 'percentage' ? '%' : (currency || 'Amount')}
                 </Text>
                 <TextInput
                   style={styles.prefixedInput}
@@ -283,6 +288,7 @@ export default function CreateVoucherModal({ visible, onClose }: CreateVoucherMo
               </View>
             </View>
             
+            <View style={styles.formGroup}><Text style={styles.label}>Currency for fixed discounts and amount limits</Text><TextInput style={styles.prefixedInput} value={currency} onChangeText={value=>setCurrency(value.toUpperCase())} autoCapitalize="characters" maxLength={3} placeholder="NGN, USD, CHF…" placeholderTextColor={Colors.dark.placeholder}/></View>
             {discountType === 'percentage' && (
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Maximum Discount Amount (Optional)</Text>

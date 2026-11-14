@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useEffect, useMemo, useState } from 'react';
 import { 
   View, 
@@ -126,7 +127,7 @@ export default function BankAccountsScreen() {
 
         setAllCountries(mapped);
       } catch (error) {
-        console.error('Failed to load countries for bank accounts:', error);
+        logger.error('Failed to load countries for bank accounts:', error);
       } finally {
         if (mounted) {
           setIsCountryListLoading(false);
@@ -217,7 +218,7 @@ export default function BankAccountsScreen() {
 
         setSuggestedBanks(banks.length > 0 ? banks : getBanksForCountry('NG'));
       } catch (error) {
-        console.error('Failed to load Paystack bank list:', error);
+        logger.error('Failed to load Paystack bank list:', error);
         if (!mounted) return;
         setSuggestedBanks(getBanksForCountry('NG'));
       } finally {
@@ -378,7 +379,7 @@ export default function BankAccountsScreen() {
     });
     
     const bankAccountData = {
-      accountName: accountName.trim(),
+        accountName: accountName.trim(),
       accountNumber: normalizedAccountNumber,
       routingNumber: bankRequirement.secondaryFieldType === 'routing' ? routingNumber.trim() : '',
       iban: accountIsIban ? normalizedAccountNumber : '',
@@ -885,6 +886,18 @@ export default function BankAccountsScreen() {
 }
 
 const styles = StyleSheet.create({
+  dropdownLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+  },
+  dropdownLoadingText: {
+    color: Colors.dark.subtext,
+    fontSize: 13,
+  },
+
   container: {
     flex: 1,
     backgroundColor: Colors.dark.background,
@@ -947,17 +960,6 @@ const styles = StyleSheet.create({
   bankName: {
     fontSize: 20,
     fontWeight: 'bold',
-  dropdownLoadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-  },
-  dropdownLoadingText: {
-    color: Colors.dark.subtext,
-    fontSize: 13,
-  },
     color: Colors.dark.text,
     marginBottom: 4,
   },

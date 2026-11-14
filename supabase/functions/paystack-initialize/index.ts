@@ -1,11 +1,9 @@
+import {createClient} from 'https://esm.sh/@supabase/supabase-js@2';
 // @ts-nocheck
+import { corsForRequest } from '../_shared/cors.ts';
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+
 
 const PAYSTACK_SECRET_KEY = Deno.env.get('PAYSTACK_SECRET_KEY') || '';
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
@@ -56,6 +54,7 @@ async function toNGN(amount: number, fromCurrency: string): Promise<{ amountNGN:
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsForRequest(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -74,6 +73,16 @@ Deno.serve(async (req) => {
     }
 
     const payload = await req.json().catch(() => ({}));
+    const authClient=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_ANON_KEY')!);
+    const {data:auth,error:authError}=await authClient.auth.getUser((req.headers.get('authorization')||'').replace(/^Bearer\s+/i,''));
+    if(authError||!auth.user)return new Response(JSON.stringify({success:false,error:'Authentication required'}),{status:401,headers:{...corsHeaders,'Content-Type':'application/json'}});
+    const requestedType=String(payload.paymentType||payload.metadata?.paymentType||'order_payment');
+    if(requestedType!=='wallet_funding')return new Response(JSON.stringify({success:false,error:'Use server-priced order checkout',code:'CHECKOUT_UPGRADE_REQUIRED'}),{status:426,headers:{...corsHeaders,'Content-Type':'application/json'}});
+    if(String(payload.currency||'NGN').toUpperCase()!=='NGN')return respond({success:false,error:'Paystack wallet funding requires NGN'});
+    payload.userId=auth.user.id;payload.email=auth.user.email;
+    payload.metadata={...payload.metadata,userId:auth.user.id,paymentType:'wallet_funding'};
+    delete payload.subaccount;delete payload.split_code;delete payload.transaction_charge;
+
 
     const {
       email,
@@ -171,10 +180,10 @@ Deno.serve(async (req) => {
 
     const paystackData = await paystackRes.json();
 
-    if (!paystackRes.ok || !paystackData?.status) {
+    if (!paystackRes.ok || paystackData?.status!==true) {
       return respond({
         success: false,
-        error: paystackData?.message || 'Paystack transaction initialization failed.',
+        error: 'Request could not be completed',
         paystack_status: paystackRes.status,
       });
     }
@@ -195,6 +204,6 @@ Deno.serve(async (req) => {
     });
   } catch (err: any) {
     console.error('paystack-initialize error:', err);
-    return respond({ success: false, error: err?.message || 'Internal error initializing Paystack payment.' });
+    return respond({ success: false, error: 'Request could not be completed' });
   }
 });

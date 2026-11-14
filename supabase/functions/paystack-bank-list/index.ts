@@ -1,11 +1,8 @@
 // @ts-nocheck
+import { corsForRequest } from '../_shared/cors.ts';
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+
 
 const paystackSecretKey = Deno.env.get('PAYSTACK_SECRET_KEY') || '';
 
@@ -41,6 +38,7 @@ const fetchNigeriaBanks = async () => {
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsForRequest(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -90,7 +88,7 @@ Deno.serve(async (req) => {
         banks: [],
         countryCode: 'NG',
         source: 'fallback',
-        error: error?.message || 'Failed to load Paystack bank list',
+        error: 'Request could not be completed',
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

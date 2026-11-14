@@ -1,3 +1,4 @@
+import AvatarImage from '@/components/AvatarImage';
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
@@ -28,8 +29,8 @@ export default function ChatMessage({
       isCurrentUser ? styles.currentUserContainer : styles.otherUserContainer
     ]}>
       {!isCurrentUser && showAvatar && otherUser && (
-        <Image
-          source={{ uri: otherUser.avatar }}
+        <AvatarImage
+          uri={otherUser.avatar} userId={otherUser?.id}
           style={styles.avatar}
           contentFit="cover"
         />

@@ -1,83 +1,33 @@
-import React from "react";
-import { View, StyleSheet } from "react-native";
-import { Image } from "expo-image";
+import React from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
+import { WATERMARK_OPACITY } from '@/utils/watermark-layout';
 
 interface VideoWatermarkProps {
-  position?: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "center";
-  opacity?: number;
-  size?: { width: number; height: number };
+  username: string;
+  seconds: number;
   visible?: boolean;
 }
 
-export default function VideoWatermark({
-  position = "bottom-right",
-  opacity = 0.45,
-  // Make the watermark icon circular by default
-  size = { width: 36, height: 36 },
-  visible = true,
-}: VideoWatermarkProps) {
-  if (!visible) {
-    return null;
-  }
-
-  const getPositionStyle = () => {
-    if (position === "center") {
-      return {
-        position: "absolute" as const,
-        top: "50%",
-        left: "50%",
-        transform: [{ translateX: -size.width / 2 }, { translateY: -size.height / 2 }],
-        zIndex: 10,
-        elevation: 10,
-      };
-    }
-
-    const baseStyle = {
-      position: "absolute" as const,
-      zIndex: 10,
-      elevation: 10,
-    };
-
-    switch (position) {
-      case "top-left":
-        return { ...baseStyle, top: 20, left: 20 };
-      case "top-right":
-        return { ...baseStyle, top: 20, right: 20 };
-      case "bottom-left":
-        return { ...baseStyle, bottom: 20, left: 20 };
-      case "bottom-right":
-        return { ...baseStyle, bottom: 20, right: 20 };
-      default:
-        return { ...baseStyle, bottom: 20, right: 20 };
-    }
-  };
-
-  // Ensure the watermark image is always rendered as a circle
-  const circleSize = Math.min(size.width, size.height);
-  const borderRadius = circleSize / 2;
-
+export default function VideoWatermark({ username, seconds, visible = true }: VideoWatermarkProps) {
+  void seconds;
+  if (!visible || !username) return null;
   return (
-    <View pointerEvents="none" style={getPositionStyle()}>
-      <Image
-        source={require("../assets/images/second.png")}
-        style={[
-          styles.watermarkImage,
-          {
-            width: circleSize,
-            height: circleSize,
-            borderRadius,
-          },
-          { opacity },
-        ]}
-        contentFit="contain"
-      />
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <View style={styles.brand}>
+        <Image source={require('../assets/images/second.png')} style={styles.logo} contentFit="contain" />
+        <View style={styles.text}>
+          <Text style={styles.name}>60Seconds</Text>
+          <Text style={styles.username} numberOfLines={1}>@{username.replace(/^@+/, '')}</Text>
+        </View>
+      </View>
     </View>
   );
 }
-
 const styles = StyleSheet.create({
-  watermarkImage: {
-    width: "100%",
-    height: "100%",
-  },
+  brand: { position: 'absolute', right: 12, bottom: 12, width: 144, height: 44, flexDirection: 'row', alignItems: 'center', opacity: WATERMARK_OPACITY },
+  logo: { width: 32, height: 32, marginRight: 5 },
+  text: { flex: 1 },
+  name: { color: 'white', fontWeight: '800', fontSize: 15, textShadowColor: '#000', textShadowRadius: 3, textShadowOffset: { width: 1, height: 1 } },
+  username: { color: 'white', fontWeight: '600', fontSize: 11, textShadowColor: '#000', textShadowRadius: 3, textShadowOffset: { width: 1, height: 1 } },
 });

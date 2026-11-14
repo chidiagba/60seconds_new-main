@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { supabase, Database } from './supabase';
 
 const PUBLIC_OPEN_EVENT_STATUSES = ['published', 'open'];
@@ -108,14 +109,14 @@ export class EventQueries {
       `);
 
       if (error) {
-        console.warn('Latest events relationship query failed, retrying without joins:', this.formatError(error));
+        logger.warn('Latest events relationship query failed, retrying without joins:', this.formatError(error));
         const fallback = await selectLatestEvents('*');
         events = fallback.data;
         error = fallback.error;
       }
 
       if (error) {
-        console.warn('Unable to fetch latest events:', this.formatError(error));
+        logger.warn('Unable to fetch latest events:', this.formatError(error));
         return { success: false, error: this.formatError(error) };
       }
 
@@ -170,14 +171,14 @@ export class EventQueries {
       `);
 
       if (error) {
-        console.warn('Trending events relationship query failed, retrying without joins:', this.formatError(error));
+        logger.warn('Trending events relationship query failed, retrying without joins:', this.formatError(error));
         const fallback = await selectTrendingEvents('*');
         events = fallback.data;
         error = fallback.error;
       }
 
       if (error) {
-        console.warn('Unable to fetch trending events:', this.formatError(error));
+        logger.warn('Unable to fetch trending events:', this.formatError(error));
         return { success: false, error: this.formatError(error) };
       }
 
@@ -222,7 +223,7 @@ export class EventQueries {
         .range(offset, offset + limit - 1);
 
       if (error) {
-        console.error('Error fetching events for home screen:', error);
+        logger.error('Error fetching events for home screen:', error);
         return { success: false, error: this.formatError(error) };
       }
 
@@ -270,7 +271,7 @@ export class EventQueries {
         .range(offset, offset + limit - 1);
 
       if (eventsError) {
-        console.error('Error fetching events:', eventsError);
+        logger.error('Error fetching events:', eventsError);
         return { success: false, error: this.formatError(eventsError) };
       }
 
@@ -287,7 +288,7 @@ export class EventQueries {
         .eq('is_active', true);
 
       if (productsError) {
-        console.warn('Error fetching product counts:', productsError);
+        logger.warn('Error fetching product counts:', productsError);
         // Continue without product info
       }
 
@@ -339,7 +340,7 @@ export class EventQueries {
         .single();
 
       if (error) {
-        console.error('Error fetching event with products:', error);
+        logger.error('Error fetching event with products:', error);
         return { success: false, error: this.formatError(error) };
       }
 
@@ -383,7 +384,7 @@ export class EventQueries {
         .order('created_at', { ascending: true });
 
       if (error) {
-        console.error('Error fetching event products:', error);
+        logger.error('Error fetching event products:', error);
         return { success: false, error: this.formatError(error) };
       }
 
@@ -424,21 +425,21 @@ export class EventQueries {
       `);
 
       if (error) {
-        console.warn('User events relationship query failed, retrying without joins:', this.formatError(error));
+        logger.warn('User events relationship query failed, retrying without joins:', this.formatError(error));
         const fallback = await selectUserEvents('*');
         data = fallback.data;
         error = fallback.error;
       }
 
       if (error) {
-        console.warn('User events creator query failed, retrying user_id only:', this.formatError(error));
+        logger.warn('User events creator query failed, retrying user_id only:', this.formatError(error));
         const fallback = await selectUserEvents('*', false);
         data = fallback.data;
         error = fallback.error;
       }
 
       if (error) {
-        console.warn('Unable to fetch user events:', this.formatError(error));
+        logger.warn('Unable to fetch user events:', this.formatError(error));
         return { success: false, error: this.formatError(error) };
       }
 
@@ -503,7 +504,7 @@ export class EventQueries {
         .limit(50);
 
       if (eventsError) {
-        console.error('Error searching events:', eventsError);
+        logger.error('Error searching events:', eventsError);
         return { success: false, error: this.formatError(eventsError) };
       }
 

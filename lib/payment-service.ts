@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { supabase } from './supabase';
 import { trpcClient } from './trpc';
 import WorldlineService from './worldline';
@@ -45,7 +46,7 @@ class PaymentService {
    */
   async processPayment(request: PaymentRequest): Promise<PaymentResponse> {
     try {
-      console.log('Processing payment request:', request);
+      if (request.paymentProvider === 'worldline') throw new Error('Payment provider is disabled');
 
       // Get payment method details
       const paymentMethod = await this.getPaymentMethod(request.paymentMethodId);
@@ -78,9 +79,7 @@ class PaymentService {
         case 'paystack':
           paymentResponse = await this.processPaystackPayment(request, paymentRecord.id);
           break;
-        case 'worldline':
-          paymentResponse = await this.processWorldlinePayment(request, paymentRecord.id);
-          break;
+
         default:
           throw new Error(`Unsupported payment provider: ${request.paymentProvider}`);
       }
@@ -95,7 +94,7 @@ class PaymentService {
 
       return paymentResponse;
     } catch (error: any) {
-      console.error('Payment processing error:', error);
+      logger.error('Payment processing error:', error);
       return {
         success: false,
         error: error.message || 'Payment processing failed',
@@ -108,7 +107,7 @@ class PaymentService {
    */
   async verifyPayment(paymentId: string, provider: string): Promise<PaymentVerification> {
     try {
-      console.log('Verifying payment:', paymentId, 'with provider:', provider);
+      logger.debug('Verifying payment:', paymentId, 'with provider:', provider);
 
       let verification: PaymentVerification;
 
@@ -138,7 +137,7 @@ class PaymentService {
 
       return verification;
     } catch (error: any) {
-      console.error('Payment verification error:', error);
+      logger.error('Payment verification error:', error);
       return {
         success: false,
         status: 'failed',
@@ -159,7 +158,7 @@ class PaymentService {
       .single();
 
     if (error) {
-      console.error('Error fetching payment method:', error);
+      logger.error('Error fetching payment method:', error);
       return null;
     }
 
@@ -177,7 +176,7 @@ class PaymentService {
       .single();
 
     if (error) {
-      console.error('Error creating payment record:', error);
+      logger.error('Error creating payment record:', error);
       throw new Error('Failed to create payment record');
     }
 
@@ -194,7 +193,7 @@ class PaymentService {
       .eq('id', paymentId);
 
     if (error) {
-      console.error('Error updating payment record:', error);
+      logger.error('Error updating payment record:', error);
       throw new Error('Failed to update payment record');
     }
   }
@@ -231,7 +230,7 @@ class PaymentService {
    */
   private async processPaystackPayment(request: PaymentRequest, paymentId: string): Promise<PaymentResponse> {
     try {
-      const paystackService = PaystackService.getInstance();
+      const paystackService = PaystackService;
       
       // Get user email from payment method or user profile
       const paymentMethod = await this.getPaymentMethod(request.paymentMethodId);
@@ -257,7 +256,7 @@ class PaymentService {
         redirectUrl: paymentData.data.authorization_url,
       };
     } catch (error: any) {
-      console.error('Paystack payment error:', error);
+      logger.error('Paystack payment error:', error);
       return {
         success: false,
         error: error.message || 'Paystack payment failed',
@@ -270,7 +269,7 @@ class PaymentService {
    */
   private async processWorldlinePayment(request: PaymentRequest, paymentId: string): Promise<PaymentResponse> {
     try {
-      const worldlineService = WorldlineService.getInstance();
+      const worldlineService = WorldlineService;
       
       // Get user email from payment method or user profile
       const paymentMethod = await this.getPaymentMethod(request.paymentMethodId);
@@ -295,7 +294,7 @@ class PaymentService {
         redirectUrl: paymentData.data.redirectUrl,
       };
     } catch (error: any) {
-      console.error('Worldline payment error:', error);
+      logger.error('Worldline payment error:', error);
       return {
         success: false,
         error: error.message || 'Worldline payment failed',
@@ -308,7 +307,7 @@ class PaymentService {
    */
   private async verifyPaystackPayment(paymentId: string): Promise<PaymentVerification> {
     try {
-      const paystackService = PaystackService.getInstance();
+      const paystackService = PaystackService;
       const verification = await paystackService.verifyPayment(paymentId);
 
       return {
@@ -318,7 +317,7 @@ class PaymentService {
         gatewayResponse: verification.data,
       };
     } catch (error: any) {
-      console.error('Paystack verification error:', error);
+      logger.error('Paystack verification error:', error);
       return {
         success: false,
         status: 'failed',
@@ -332,7 +331,7 @@ class PaymentService {
    */
   private async verifyWorldlinePayment(paymentId: string): Promise<PaymentVerification> {
     try {
-      const worldlineService = WorldlineService.getInstance();
+      const worldlineService = WorldlineService;
       const verification = await worldlineService.verifyPayment(paymentId);
 
       return {
@@ -342,7 +341,7 @@ class PaymentService {
         gatewayResponse: verification.data,
       };
     } catch (error: any) {
-      console.error('Worldline verification error:', error);
+      logger.error('Worldline verification error:', error);
       return {
         success: false,
         status: 'failed',
@@ -373,7 +372,7 @@ class PaymentService {
       .range(offset, offset + limit - 1);
 
     if (error) {
-      console.error('Error fetching user payments:', error);
+      logger.error('Error fetching user payments:', error);
       throw error;
     }
 
@@ -393,7 +392,7 @@ class PaymentService {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching user payment methods:', error);
+      logger.error('Error fetching user payment methods:', error);
       throw error;
     }
 
@@ -414,7 +413,7 @@ class PaymentService {
       .single();
 
     if (error) {
-      console.error('Error adding payment method:', error);
+      logger.error('Error adding payment method:', error);
       throw error;
     }
 
@@ -433,7 +432,7 @@ class PaymentService {
       .single();
 
     if (error) {
-      console.error('Error updating payment method:', error);
+      logger.error('Error updating payment method:', error);
       throw error;
     }
 
@@ -450,7 +449,7 @@ class PaymentService {
       .eq('id', paymentMethodId);
 
     if (error) {
-      console.error('Error deleting payment method:', error);
+      logger.error('Error deleting payment method:', error);
       throw error;
     }
   }
@@ -475,7 +474,7 @@ class PaymentService {
       .single();
 
     if (error) {
-      console.error('Error setting default payment method:', error);
+      logger.error('Error setting default payment method:', error);
       throw error;
     }
 

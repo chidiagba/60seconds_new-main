@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, Alert, FlatList, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
@@ -10,6 +11,7 @@ import { resolveCurrencyFromCountry } from '@/utils/country-currency';
 import { EXTENDED_CURRENCY_LIST } from '@/constants/currencies';
 
 interface Product {
+  type: 'ticket' | 'drink' | 'reservation' | 'merchandise';
   name: string;
   price: number;
   available_quantity: number;
@@ -139,6 +141,7 @@ export function ProductCreationModal({
     }
 
     const product: Product = {
+      type: offeringType === 'ticket' ? 'ticket' : offeringType === 'drink' ? 'drink' : 'reservation',
       name: name.trim(),
       price: parseFloat(price),
       available_quantity: parseInt(quantity),
@@ -729,7 +732,7 @@ const styles = StyleSheet.create({
 //       const data = await response.json();
 //       return data.country_name;
 //     } catch (error) {
-//       console.error('Error fetching user country:', error);
+//       logger.error('Error fetching user country:', error);
 //       return 'USA';
 //     }
 //   };
@@ -1220,7 +1223,7 @@ const styles = StyleSheet.create({
 //       const data = await response.json();
 //       return data.country_name; // The country of the user
 //     } catch (error) {
-//       console.error('Error fetching user country:', error);
+//       logger.error('Error fetching user country:', error);
 //       return 'USA'; // Default to 'USA' in case of error
 //     }
 //   };

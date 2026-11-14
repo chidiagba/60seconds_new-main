@@ -1,17 +1,21 @@
-import { voucherDiscount } from '@/utils/commerce-rules';
+import {validatedVoucherSelection, CheckoutItem} from '@/utils/checkout-selection';
 import { create } from 'zustand';
 import { Voucher } from '@/types';
 import { voucherService } from '@/lib/database';
 import { supabase } from '@/lib/supabase';
 import { voucherDiscountFields } from '@/utils/voucher-fields';
 
-const fromRow = (r: any): Voucher => ({ id: r.id, businessId: r.business_id, code: r.code, name: r.name || r.title, description: r.description, productId: r.product_id || undefined, ...voucherDiscountFields(r), minPurchaseAmount: r.min_purchase_amount, maxDiscountAmount: r.max_discount_amount, expiryDate: r.expiry_date, usageLimit: r.usage_limit, usageCount: r.usage_count, isActive: r.is_active, createdAt: r.created_at });
+const fromRow = (r: any): Voucher => ({ id: r.id, businessId: r.business_id, code: r.code, name: r.name || r.title, description: r.description, productId: r.product_id || undefined, currency:r.currency,eventId:r.event_id,allowedUserIds:r.allowed_user_ids,perUserLimit:r.per_user_limit,applicableProducts:r.applicable_products,applicableCategories:r.applicable_categories, ...voucherDiscountFields(r), minPurchaseAmount: r.min_purchase_amount, maxDiscountAmount: r.max_discount_amount, expiryDate: r.expiry_date, usageLimit: r.usage_limit, usageCount: r.usage_count, isActive: r.is_active, createdAt: r.created_at });
 const toRow = (v: Partial<Voucher>): any => Object.fromEntries(Object.entries(v).filter(([k]) => !['id','createdAt','usageCount','businessId'].includes(k)).map(([k,value]) => [k.replace(/[A-Z]/g, c => '_' + c.toLowerCase()), k === 'code' ? String(value).trim().toUpperCase() : value]));
 import { useAuthStore } from './auth-store';
 
 interface VoucherState {
   vouchers: Voucher[];
   activeVoucher: Voucher | null;
+  checkoutQuote: any | null;
+  checkoutVersion: number;
+  setCheckoutQuote: (quote: any) => void;
+  checkoutCompleted: (businessId?:string) => Promise<void>;
   isLoading: boolean;
   error: string | null;
   
@@ -22,13 +26,16 @@ interface VoucherState {
   updateVoucher: (voucherId: string, updates: Partial<Voucher>) => Promise<boolean>;
   deleteVoucher: (voucherId: string) => Promise<boolean>;
   toggleVoucherStatus: (voucherId: string) => Promise<boolean>;
-  validateVoucher: (code: string, amount: number, productId?: string, businessId?: string) => Promise<{
+  validateVoucher: (code: string, amount: number, productId?: string, businessId?: string, items?: Array<{productId:string;quantity:number}>) => Promise<{
     valid: boolean;
     voucher?: Voucher;
     discountAmount?: number;
     errorMessage?: string;
+    quote?: any;
   }>;
   applyVoucher: (code: string) => void;
+  applyValidatedVoucher: (voucher:Voucher,quote:any,items:CheckoutItem[]) => void;
+  resumeCheckoutQuote: (quote:any,items:CheckoutItem[]) => void;
   clearActiveVoucher: () => void;
   incrementUsageCount: (voucherId: string) => Promise<boolean>;
 }
@@ -36,6 +43,10 @@ interface VoucherState {
 export const useVoucherStore = create<VoucherState>((set, get) => ({
   vouchers: [],
   activeVoucher: null,
+  checkoutQuote: null,
+  checkoutVersion: 0,
+  setCheckoutQuote: (checkoutQuote) => set({checkoutQuote}),
+  checkoutCompleted: async (businessId) => { set(state=>({checkoutVersion:state.checkoutVersion+1})); if(businessId) await get().fetchVouchers(businessId); },
   isLoading: false,
   error: null,
   
@@ -200,37 +211,31 @@ export const useVoucherStore = create<VoucherState>((set, get) => ({
     }
   },
   
-  validateVoucher: async (code, amount, productId, businessId) => {
-    set({ isLoading: true, error: null });
+  validateVoucher: async (code, _amount, productId, _businessId, items) => {
+    set({isLoading:true,error:null});
     try {
-      
-      const voucher = await get().getVoucherByCode(code);
-      
-      if (!voucher) {
-        set({ isLoading: false });
-        return { valid: false, errorMessage: 'Voucher not found' };
-      }
-      
-      const discountAmount = voucherDiscount(voucher, amount, productId, businessId);
-      set(state => ({ isLoading: false, vouchers: [...state.vouchers.filter(v => v.id !== voucher.id), voucher] }));
-      return { 
-        valid: true, 
-        voucher, 
-        discountAmount 
-      };
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false });
-      return { valid: false, errorMessage: error.message };
-    }
+      const requested=items || (productId ? [{productId,quantity:1}] : []);
+      const {data:quote,error}=await supabase.rpc('quote_order_checkout',{requested_items:requested,voucher_code:code.trim()});
+      if(error)throw error;
+      if(!quote?.voucher)throw new Error('Voucher not found');
+      const voucher=fromRow(quote.voucher);
+      set(state=>({isLoading:false,vouchers:[...state.vouchers.filter(v=>v.id!==voucher.id),voucher]}));
+      return {valid:true,voucher,quote,discountAmount:Number(quote.discount_amount)};
+    } catch(error:any){set({isLoading:false,error:error.message});return {valid:false,errorMessage:error.message};}
   },
-  
+
+  applyValidatedVoucher:(voucher,quote,items)=>set(validatedVoucherSelection(voucher,quote,items)),
+  resumeCheckoutQuote:(quote,items)=>{
+    if(quote.voucher_id)set(validatedVoucherSelection(fromRow(quote.voucher),quote,items));
+    else set({activeVoucher:null,checkoutQuote:quote});
+  },
   applyVoucher: (code) => {
     const voucher = get().vouchers.find(v => v.code.toUpperCase() === code.trim().toUpperCase() && v.isActive);
     set({ activeVoucher: voucher || null });
   },
   
   clearActiveVoucher: () => {
-    set({ activeVoucher: null });
+    set({ activeVoucher: null, checkoutQuote:null });
   },
   
   incrementUsageCount: async (voucherId) => {

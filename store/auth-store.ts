@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { persist, createJSONStorage } from 'zustand/middleware';
@@ -94,7 +95,7 @@ export const useAuthStore = create<AuthState>()(
               : null,
           }));
         } catch (error) {
-          console.warn('Unable to refresh followed users:', error);
+          logger.warn('Unable to refresh followed users:', error);
         }
       },
 
@@ -123,7 +124,7 @@ export const useAuthStore = create<AuthState>()(
               : null,
           }));
         } catch (error) {
-          console.error('Error following user:', error);
+          logger.error('Error following user:', error);
         }
       },
 
@@ -152,7 +153,7 @@ export const useAuthStore = create<AuthState>()(
               : null,
           }));
         } catch (error) {
-          console.error('Error unfollowing user:', error);
+          logger.error('Error unfollowing user:', error);
         }
       },
       isFollowing: (userId) => {

@@ -1,8 +1,8 @@
 -- Minimal schema for an EMPTY disposable PostgreSQL database only.
 \set ON_ERROR_STOP on
-create role anon;
-create role authenticated;
-create role service_role;
+do $$ begin create role anon; exception when duplicate_object then null; end $$;
+do $$ begin create role authenticated; exception when duplicate_object then null; end $$;
+do $$ begin create role service_role; exception when duplicate_object then null; end $$;
 create schema auth;
 create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz);
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
@@ -17,3 +17,4 @@ grant select on all tables in schema public to authenticated;
 alter default privileges in schema public grant select,insert,update,delete on tables to authenticated,anon,service_role;
 \ir ../supabase/migrations/20261004130000_guest_event_checkout.sql
 \ir ../supabase/migrations/20261014100000_paid_event_tables.sql
+\ir ../supabase/migrations/20261113100000_secure_event_table_checkin.sql

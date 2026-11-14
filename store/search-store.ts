@@ -1,7 +1,10 @@
+import { logger } from '@/lib/logger';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { searchService } from '@/lib/database';
+
+let searchRequestId = 0;
 
 // Search result types
 export interface SearchResults {
@@ -40,9 +43,15 @@ export const useSearchStore = create<SearchState>()(
       isLoading: false,
       error: null,
       
-      setSearchQuery: (query: string) => set({ searchQuery: query }),
+      setSearchQuery: (query: string) => {
+        searchRequestId++;
+        set({ searchQuery: query });
+      },
       
-      clearSearchQuery: () => set({ searchQuery: '' }),
+      clearSearchQuery: () => {
+        searchRequestId++;
+        set({ searchQuery: '', searchResults: null, isLoading: false, error: null });
+      },
       
       addToSearchHistory: (query: string) => {
         if (!query.trim()) return;
@@ -73,8 +82,9 @@ export const useSearchStore = create<SearchState>()(
       setActiveFilter: (filter: string) => set({ activeFilter: filter }),
 
       performSearch: async (query: string, filters?: any) => {
+        const requestId = ++searchRequestId;
         if (!query.trim()) {
-          set({ searchResults: null, error: null });
+          set({ searchResults: null, error: null, isLoading: false });
           return;
         }
 
@@ -82,13 +92,15 @@ export const useSearchStore = create<SearchState>()(
 
         try {
           const results = await searchService.searchAll(query, filters);
+          if (requestId !== searchRequestId) return;
           set({ 
             searchResults: results, 
             isLoading: false,
             error: null 
           });
         } catch (error) {
-          console.error('Search error:', error);
+          if (requestId !== searchRequestId) return;
+          logger.error('Search error:', error);
           set({ 
             error: error instanceof Error ? error.message : 'Search failed',
             isLoading: false,
@@ -97,10 +109,10 @@ export const useSearchStore = create<SearchState>()(
         }
       },
 
-      clearSearchResults: () => set({ 
-        searchResults: null, 
-        error: null 
-      }),
+      clearSearchResults: () => {
+        searchRequestId++;
+        set({ searchResults: null, error: null, isLoading: false });
+      },
     }),
     {
       name: 'search-storage',

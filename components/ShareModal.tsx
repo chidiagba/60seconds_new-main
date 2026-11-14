@@ -1,3 +1,6 @@
+import { videoWatermarkService } from '@/utils/video-watermark';
+import * as MediaLibrary from 'expo-media-library';
+import { logger } from '@/lib/logger';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -13,7 +16,7 @@ import {
   Linking,
 } from 'react-native';
 import ShareOpen from '@/lib/native-share';
-import { Copy, Facebook, Instagram, Link, MessageCircle, Share2, X } from 'lucide-react-native';
+import { Copy, Facebook, Instagram, Link, MessageCircle, Share2, Download, X } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -87,7 +90,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
     if (visible && !video.eventId) {
       void findPublicEventForVideo(supabase, video.id).then(id => {
         if (active && id) setLinkedEvent({ videoId: video.id, eventId: id });
-      }).catch(error => console.warn('Unable to resolve event share link:', error));
+      }).catch(error => logger.warn('Unable to resolve event share link:', error));
     }
     return () => { active = false; };
   }, [visible, video.id, video.eventId]);
@@ -217,7 +220,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
   };
 
   const getVideoUrlCacheToken = () => {
-    const normalizedUrl = videoUrl.trim().toLowerCase();
+    const normalizedUrl = videoUrl.trim();
     let hash = 0;
 
     for (let index = 0; index < normalizedUrl.length; index += 1) {
@@ -272,7 +275,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
     }
 
     const downloadJob = (async () => {
-      console.log('[Share] Downloading original video into stable share cache...');
+      logger.debug('[Share] Downloading original video into stable share cache...');
       const { uri, status } = await FileSystem.downloadAsync(videoUrl, cacheUri);
       if (status !== 200) {
         throw new Error(`Download failed with status ${status}`);
@@ -294,8 +297,21 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
     }
   };
 
-  // Share the original file directly; no watermark export or transcoding.
-  const prepareVideoForShare = ensureOriginalVideoCached;
+  const prepareVideoForShare = async () => {
+    const original = await ensureOriginalVideoCached();
+    if (!original.uri) throw new Error('The source video could not be downloaded');
+    const prepared = await videoWatermarkService.prepareExport(original.uri, video.user?.username || '', video.id);
+    const normalizedUri = prepared.uri.split('?')[0].toLowerCase();
+    if (!prepared.applied || prepared.outputType !== 'mp4' || prepared.mimeType !== 'video/mp4'
+      || !prepared.uri.startsWith('file://') || !normalizedUri.endsWith('.mp4')) {
+      throw new Error('The watermark exporter did not return a local MP4 video');
+    }
+    const info = await FileSystem.getInfoAsync(prepared.uri);
+    if (!info.exists || (typeof info.size === 'number' && info.size <= 1024)) {
+      throw new Error('The exported MP4 is missing or incomplete');
+    }
+    return prepared;
+  };
 
   const beginVideoShare = async (destination: VideoDestination) => {
     if (Platform.OS === 'web') {
@@ -305,7 +321,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
       notifySharePreparing();
       return;
     }
-    console.log(`[VideoShare] Selected destination: ${DESTINATION_LABELS[destination]}`);
+    logger.debug(`[VideoShare] Selected destination: ${DESTINATION_LABELS[destination]}`);
     isCancelRequestedRef.current = false;
     activeShareSession = true;
     updatePreparingState(true);
@@ -329,12 +345,13 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
       const prepared: PreparedVideoShare = { uri: localUri, mimeType, destination, size };
 
       await continuePreparedShare(prepared);
-      console.log('[VideoShare] Original video ready', { uri: localUri, mimeType, size });
+      logger.debug('[VideoShare] Watermarked video ready', { uri: localUri, mimeType, size });
     } catch (error) {
       if (isLikelyShareCancelled(error) || isCancelRequestedRef.current || !isMountedRef.current) return;
-      console.warn('[VideoShare] Preparation/validation failed:', error);
+      logger.warn('[VideoShare] Preparation/validation failed:', error);
 
-      Alert.alert('Video Unavailable', 'Could not prepare the video. Please try again.');
+      const message = error instanceof Error ? error.message : 'Could not prepare the video. Please try again.';
+      Alert.alert('Video Unavailable', message);
     } finally {
       activeShareSession = false;
       updatePreparingState(false);
@@ -364,13 +381,11 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
   const continuePreparedShare = async (prepared: PreparedVideoShare) => {
     if (isCancelRequestedRef.current || !isMountedRef.current) return;
     const socialTarget = resolveShareSocialTarget(prepared.destination);
-    // iOS Instagram expects a Photos asset ID, while Facebook's direct handler
-    // treats local files as images. Their share extensions accept video files.
-    // X and TikTok also receive the attachment through the system share sheet.
-    const useSystemVideoShareSheet = prepared.destination === 'generic'
+    // Route every iOS destination through UIActivityViewController so iOS hands
+    // the local MP4 file to the selected app's share extension.
+    const useSystemVideoShareSheet = Platform.OS === 'ios' || prepared.destination === 'generic'
       || prepared.destination === 'twitter' || prepared.destination === 'tiktok'
-      || (Platform.OS === 'ios' && (prepared.destination === 'instagram'
-        || prepared.destination === 'facebook' || prepared.mimeType !== 'video/mp4'));
+      || prepared.mimeType !== 'video/mp4';
     if (useSystemVideoShareSheet || !socialTarget || typeof ShareOpen.shareSingle !== 'function') {
       await openSystemShareSheet(prepared);
       return;
@@ -393,6 +408,32 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
       if (!isLikelyShareCancelled(response)) finishShare(prepared);
     } catch (error) {
       if (!isLikelyShareCancelled(error)) await openSystemShareSheet(prepared);
+    }
+  };
+
+  const handleSaveVideo = async () => {
+    if (Platform.OS === 'web' || activeShareSession || isPreparingVideo) return;
+    activeShareSession = true;
+    isCancelRequestedRef.current = false;
+    updatePreparingState(true);
+    try {
+      const permission = await MediaLibrary.requestPermissionsAsync(true);
+      if (isCancelRequestedRef.current || !isMountedRef.current) return;
+      if (!permission.granted) {
+        Alert.alert('Photos Permission', 'Allow photo library access to save this video.');
+        return;
+      }
+      const result = await prepareVideoForShare();
+      if (isCancelRequestedRef.current || !isMountedRef.current) return;
+      await MediaLibrary.saveToLibraryAsync(result.uri);
+      Alert.alert('Video saved', 'The watermarked video was saved to your library.');
+    } catch (error) {
+      logger.warn('Watermarked video download failed:', error);
+      const message = error instanceof Error ? error.message : 'The watermarked video could not be prepared. Please try again.';
+      Alert.alert('Export unavailable', message);
+    } finally {
+      activeShareSession = false;
+      updatePreparingState(false);
     }
   };
 
@@ -469,7 +510,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
         onClose();
         return;
       } catch (error) {
-        console.error('Web Share API failed, copying link', error);
+        logger.error('Web Share API failed, copying link', error);
       }
     }
 
@@ -490,7 +531,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
       shareVideo(video.id, 'webpage');
       onClose();
     } catch (error) {
-      console.error('[Share] Share page failed:', error);
+      logger.error('[Share] Share page failed:', error);
     }
   };
 
@@ -541,6 +582,7 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
             </View>
 
             <View style={styles.shareRow}>
+              {Platform.OS !== 'web' && <ShareOption icon={<Download size={28} color={Colors.dark.primary} />} label="Save video" onPress={handleSaveVideo} />}
               <ShareOption icon={<Link size={28} color={Colors.dark.secondary} />} label="Share Page" onPress={handleShareAsWebpage} />
             </View>
 

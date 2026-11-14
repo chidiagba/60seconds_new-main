@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -59,50 +60,6 @@ export default function CleanSigninScreen() {
     let shouldStopLoading = true;
 
     try {
-      const { data: verificationData, error: verificationError } = await supabase.functions.invoke('get-uid-by-email', {
-        body: { email: normalizedEmail },
-      });
-
-      const lookupUserType = verificationData?.user_type === 'business' ? 'business' : 'private';
-      const requiresOtp = lookupUserType === 'business';
-
-      if (!verificationError && verificationData?.uid && requiresOtp && verificationData?.otp_verified !== true) {
-        let pinSent = false;
-        const { data: otpData, error: otpSendError } = await supabase.functions.invoke('send-otp', {
-          body: {
-            email: normalizedEmail,
-            type: 'signup',
-            user_id: verificationData.uid,
-          },
-        });
-
-        if (!otpSendError && otpData?.success) {
-          pinSent = true;
-        }
-
-        if (!pinSent) {
-          const { error: smtpOtpError } = await supabase.auth.signInWithOtp({
-            email: normalizedEmail,
-            options: {
-              shouldCreateUser: false,
-            },
-          });
-          if (!smtpOtpError) {
-            pinSent = true;
-          }
-        }
-
-        if (!pinSent) {
-          const reason = (otpData as any)?.message || otpSendError?.message || 'Failed to send PIN code.';
-          setSignInError(`${reason} Please use Resend on the verification screen.`);
-        } else {
-          setSignInError('A PIN code has been sent to your email. Please verify to continue.');
-        }
-
-        router.replace(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}&user_id=${encodeURIComponent(verificationData.uid)}&pin_sent=${pinSent ? '1' : '0'}`);
-        return;
-      }
-
       // ── Step 1: Authenticate verified account ────────────────────────────
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
@@ -134,7 +91,7 @@ export default function CleanSigninScreen() {
         try {
           await supabase.auth.signOut();
         } catch (signOutError) {
-          console.warn('Failed to clear incomplete-verification session after blocked sign-in:', signOutError);
+          logger.warn('Failed to clear incomplete-verification session after blocked sign-in:', signOutError);
         }
 
         setSignInError('Please complete PIN verification from your email before signing in.');

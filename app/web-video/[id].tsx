@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -76,7 +77,7 @@ export default function WebVideoScreen() {
         url: shareLink,
       });
     } catch (error) {
-      console.error('Share error:', error);
+      logger.error('Share error:', error);
     }
   };
 

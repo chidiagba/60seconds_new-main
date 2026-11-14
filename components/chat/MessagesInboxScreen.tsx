@@ -1,3 +1,5 @@
+import AvatarImage from '@/components/AvatarImage';
+import { logger } from '@/lib/logger';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
@@ -73,7 +75,6 @@ type SectionItem = {
 
 type InboxItem = DirectChatItem | GroupChatItem | SectionItem;
 
-const AVATAR_PLACEHOLDER = require('../../assets/images/avatar-placeholder.png');
 
 function normalizeGroupError(error: any) {
   const message = error?.message || String(error) || 'Unknown error';
@@ -82,7 +83,7 @@ function normalizeGroupError(error: any) {
 
 function logInboxError(source: string, error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? 'Unknown error');
-  console.warn(`[MessagesInboxScreen] ${source}: ${message}`);
+  logger.warn(`[MessagesInboxScreen] ${source}: ${message}`);
 }
 
 export default function MessagesInboxScreen() {
@@ -370,11 +371,9 @@ export default function MessagesInboxScreen() {
           createdBy: currentUserId || '',
           createdAt,
           updatedAt: createdAt,
-          members: [],
           memberCount: createdMemberCount > 0 ? createdMemberCount : 1,
           lastMessage: null,
           unreadCount: 0,
-          role: 'owner',
         }
       : null;
 
@@ -432,15 +431,12 @@ export default function MessagesInboxScreen() {
       }
 
       const displayName = item.otherProfile?.full_name || item.otherProfile?.username || 'Unknown User';
-      const avatarSource =
-        item.otherProfile?.avatar_url && item.otherProfile.avatar_url.trim().length > 0
-          ? { uri: item.otherProfile.avatar_url }
-          : AVATAR_PLACEHOLDER;
+
 
       return (
         <TouchableOpacity style={styles.chatItem} onPress={() => openDirectChat(item)} activeOpacity={0.85}>
           <View style={styles.avatarContainer}>
-            <Image source={avatarSource} style={styles.avatar} contentFit="cover" transition={200} />
+            <AvatarImage uri={item.otherProfile?.avatar_url} userId={item.otherProfile?.id} style={styles.avatar} contentFit="cover" transition={200} />
           </View>
 
           <View style={styles.chatInfo}>

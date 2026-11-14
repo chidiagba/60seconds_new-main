@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { supabase } from './supabase';
 import { Database } from './supabase';
 import { resolveCurrencyFromCountry, resolveEventCurrency } from '@/utils/country-currency';
@@ -80,7 +81,7 @@ export class EventCreationService {
         countryCode: profile?.country_code || user.user_metadata?.country_code,
       });
 
-      console.log('🚀 Starting event creation process for user:', user.id);
+      logger.debug('🚀 Starting event creation process for user:', user.id);
 
       const eventCurrency = resolveEventCurrency(data.products || [], data.event.currency || defaultCurrency);
       // Persist the chosen offer currency rather than the account's default.
@@ -89,17 +90,17 @@ export class EventCreationService {
         throw new Error(`Failed to create event: ${eventResult.error}`);
       }
 
-      console.log('✅ Event created successfully:', eventResult.event.id);
+      logger.debug('✅ Event created successfully:', eventResult.event.id);
 
       // Step 3: Create video if provided
       let videoResult = null;
       if (data.video) {
         videoResult = await this.createVideo(data.video, user.id, eventResult.event.id);
         if (!videoResult.success) {
-          console.warn('⚠️ Video creation failed, but event was created:', videoResult.error);
+          logger.warn('⚠️ Video creation failed, but event was created:', videoResult.error);
           // Continue without video - event is still valid
         } else {
-          console.log('✅ Video created successfully:', videoResult.video?.id);
+          logger.debug('✅ Video created successfully:', videoResult.video?.id);
         }
       }
 
@@ -111,7 +112,7 @@ export class EventCreationService {
           await supabase.from('events').delete().eq('id', eventResult.event.id).eq('user_id', user.id);
           throw new Error(`Products could not be saved: ${productsResult.error}`);
         } else {
-          console.log('✅ Products created successfully:', productsResult.products?.length);
+          logger.debug('✅ Products created successfully:', productsResult.products?.length);
         }
       }
 
@@ -128,7 +129,7 @@ export class EventCreationService {
       };
 
     } catch (error) {
-      console.error('❌ Event creation failed:', error);
+      logger.error('❌ Event creation failed:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred',
@@ -172,7 +173,7 @@ export class EventCreationService {
         .single();
 
       if (error) {
-        console.error('Event creation error:', error);
+        logger.error('Event creation error:', error);
         return { success: false, error: this.formatSupabaseError(error) };
       }
 
@@ -219,7 +220,7 @@ export class EventCreationService {
         .single();
 
       if (error) {
-        console.error('Video creation error:', error);
+        logger.error('Video creation error:', error);
         return { success: false, error: this.formatSupabaseError(error) };
       }
 
@@ -230,7 +231,7 @@ export class EventCreationService {
         .eq('id', eventId);
 
       if (updateError) {
-        console.warn('Failed to link video to event:', updateError);
+        logger.warn('Failed to link video to event:', updateError);
       }
 
       return { success: true, video: data };
@@ -276,7 +277,7 @@ export class EventCreationService {
         .select();
 
       if (error) {
-        console.error('Products creation error:', error);
+        logger.error('Products creation error:', error);
         return { success: false, error: this.formatSupabaseError(error) };
       }
 

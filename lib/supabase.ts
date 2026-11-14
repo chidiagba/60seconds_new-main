@@ -159,7 +159,10 @@ export type Database = {
           business_id?: string;
           event_id?: string;
           video_url: string;
-          watermarked_video_url?: string;
+          duration?: number;
+          file_size?: number;
+          status?: string;
+          watermarked_video_url?: string | null;
           watermark_status: 'pending' | 'processing' | 'ready' | 'failed';
           thumbnail_url?: string;
           title: string;
@@ -186,7 +189,11 @@ export type Database = {
           id?: string;
           user_id: string;
           video_url: string;
-          watermarked_video_url?: string;
+          duration?: number;
+          file_size?: number;
+          business_id?: string;
+          status?: string;
+          watermarked_video_url?: string | null;
           watermark_status?: 'pending' | 'processing' | 'ready' | 'failed';
           thumbnail_url?: string;
           title: string;
@@ -213,7 +220,7 @@ export type Database = {
           id?: string;
           user_id?: string;
           video_url?: string;
-          watermarked_video_url?: string;
+          watermarked_video_url?: string | null;
           watermark_status?: 'pending' | 'processing' | 'ready' | 'failed';
           thumbnail_url?: string;
           title?: string;
@@ -260,6 +267,8 @@ export type Database = {
           expires_at?: string;
           items: {
             product_id: string;
+            type?: string;
+            description?: string;
             quantity: number;
             price: number;
             name: string;
@@ -297,6 +306,8 @@ export type Database = {
           expires_at?: string;
           items: {
             product_id: string;
+            type?: string;
+            description?: string;
             quantity: number;
             price: number;
             name: string;
@@ -334,6 +345,8 @@ export type Database = {
           expires_at?: string;
           items?: {
             product_id: string;
+            type?: string;
+            description?: string;
             quantity: number;
             price: number;
             name: string;

@@ -1,5 +1,8 @@
+import { venueCoordinates } from './venue-location';
+import { logger } from '@/lib/logger';
 import * as Location from 'expo-location';
 import { Alert, Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface GetCurrentLocationOptions {
   requestPermission?: boolean;
@@ -24,50 +27,60 @@ let lastLiveBroadcastLocation: Location.LocationObject | null = null;
 const liveLocationListeners = new Set<LocationListener>();
 let foregroundPermissionRequest: Promise<Location.LocationPermissionResponse> | null = null;
 
-/**
- * Shows the Google Play prominent disclosure immediately before Android's
- * location permission dialog. All location entry points use this function so
- * users receive the same explanation and can decline without losing app access.
- */
-export const requestForegroundLocationPermission = async (
+const LOCATION_PROMPT_SHOWN_KEY = 'location_permission_prompted_v1';
+let locationPromptShown = false;
+
+/** One permission introduction per installation, shared by all location entry points. */
+export const requestForegroundLocationPermission = (
 ): Promise<Location.LocationPermissionResponse> => {
-  const currentPermission = await Location.getForegroundPermissionsAsync();
-  if (currentPermission.status === 'granted' || !currentPermission.canAskAgain) {
-    return currentPermission;
-  }
+  if (foregroundPermissionRequest) return foregroundPermissionRequest;
 
-  if (Platform.OS !== 'android') {
-    return Location.requestForegroundPermissionsAsync();
-  }
+  foregroundPermissionRequest = (async () => {
+    const currentPermission = await Location.getForegroundPermissionsAsync();
+    if (Platform.OS === 'web') return currentPermission;
 
-  if (foregroundPermissionRequest) {
-    return foregroundPermissionRequest;
-  }
-
-  foregroundPermissionRequest = new Promise<Location.LocationPermissionResponse>((resolve) => {
-    Alert.alert(
-      'Allow location while using 60Seconds?',
-      '60Seconds uses your precise location only while the app is in use to show your distance from nearby videos and events, and to let you select your current location for an event. Your location is not accessed in the background. You can use the app without sharing it.',
-      [
-        {
-          text: 'Not now',
-          style: 'cancel',
-          onPress: () => resolve(currentPermission),
-        },
-        {
-          text: 'Continue',
-          onPress: async () => {
-            const permission = await Location.requestForegroundPermissionsAsync();
-            resolve(permission);
-          },
-        },
-      ],
-      {
-        cancelable: true,
-        onDismiss: () => resolve(currentPermission),
+    const rememberPrompt = async () => {
+      locationPromptShown = true;
+      try {
+        await AsyncStorage.setItem(LOCATION_PROMPT_SHOWN_KEY, 'true');
+      } catch {
+        // Keep the in-memory choice if device storage is unavailable.
       }
-    );
-  }).finally(() => {
+    };
+
+    if (currentPermission.status !== 'undetermined' || !currentPermission.canAskAgain) {
+      await rememberPrompt();
+      return currentPermission;
+    }
+
+    let previouslyAccepted = false;
+    try {
+      if (locationPromptShown || await AsyncStorage.getItem(LOCATION_PROMPT_SHOWN_KEY) === 'true') {
+        return currentPermission;
+      }
+      previouslyAccepted = await AsyncStorage.getItem('location_disclosure_accepted_v1') === 'true';
+    } catch {
+      if (locationPromptShown) return currentPermission;
+    }
+
+    // Persist before opening the dialog, including dismissals and app restarts.
+    await rememberPrompt();
+    if (!previouslyAccepted) {
+      const accepted = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          'Allow location while using 60Seconds?',
+          '60Seconds uses your precise location only while the app is in use to show your distance from nearby videos and events, and to let you select your current location for an event. Your location is not accessed in the background. You can use the app without sharing it.',
+          [
+            { text: 'Not now', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Continue', onPress: () => resolve(true) },
+          ],
+          { cancelable: true, onDismiss: () => resolve(false) }
+        );
+      });
+      if (!accepted) return currentPermission;
+    }
+    return Location.requestForegroundPermissionsAsync();
+  })().finally(() => {
     foregroundPermissionRequest = null;
   });
 
@@ -170,12 +183,13 @@ const ensureLiveLocationUpdates = async (
 
       liveLocationSubscription = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.Balanced,
+          accuracy: Location.Accuracy.High,
           timeInterval: minUpdateIntervalMs,
           distanceInterval: minUpdateDistanceMeters,
           mayShowUserSettingsDialog: false,
         },
         (location) => {
+          if (location.coords.accuracy != null && location.coords.accuracy > 100) return;
           cachedLocation = location;
           cachedLocationAt = Date.now();
           notifyLiveLocationListeners(location, {
@@ -197,13 +211,13 @@ const ensureLiveLocationUpdates = async (
 };
 
 /** Returns the last known location from the in-memory cache — synchronous, no permissions needed. */
-export const getCachedLocation = (): Location.LocationObject | null => cachedLocation;
+export const getCachedLocation = (): Location.LocationObject | null => Date.now() - cachedLocationAt <= 15000 ? cachedLocation : null;
 
 export const getCurrentLocation = async (
   options: GetCurrentLocationOptions = {}
 ): Promise<Location.LocationObject | null> => {
   const requestPermission = options.requestPermission ?? true;
-  const maxCacheAgeMs = options.maxCacheAgeMs ?? 120000;
+  const maxCacheAgeMs = options.maxCacheAgeMs ?? 15000;
 
   const now = Date.now();
   if (cachedLocation && now - cachedLocationAt <= maxCacheAgeMs) {
@@ -222,7 +236,7 @@ export const getCurrentLocation = async (
     const { status } = permission;
     
     if (status !== 'granted') {
-      console.log('Location permission not granted');
+      logger.debug('Location permission not granted');
       return null;
     }
 
@@ -235,6 +249,7 @@ export const getCurrentLocation = async (
 
     const lastKnownLocation = await Location.getLastKnownPositionAsync({
       maxAge: maxCacheAgeMs,
+      requiredAccuracy: 100,
     });
     if (lastKnownLocation) {
       cachedLocation = lastKnownLocation;
@@ -244,20 +259,20 @@ export const getCurrentLocation = async (
 
     // Add 3-second timeout so the call never hangs indefinitely
     const positionPromise = Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
+      accuracy: Location.Accuracy.High,
     });
     const timeoutPromise = new Promise<null>((resolve) =>
       setTimeout(() => resolve(null), 3000)
     );
     const location = (await Promise.race([positionPromise, timeoutPromise])) as Location.LocationObject | null;
-    if (!location) return null;
+    if (!location || (location.coords.accuracy != null && location.coords.accuracy > 100)) return null;
 
     cachedLocation = location;
     cachedLocationAt = Date.now();
     
     return location;
   } catch (error: any) {
-    console.log('ℹ️ Error getting location (handled):', error.message || error);
+    logger.debug('ℹ️ Error getting location (handled):', error.message || error);
     return null;
   } finally {
     inFlightLocationRequest = null;
@@ -274,9 +289,10 @@ export const subscribeToLocationUpdates = (
   liveLocationListeners.add(listener);
 
   // Emit cached value immediately so UI can render a distance without waiting.
-  if (cachedLocation) {
+  const freshLocation = getCachedLocation();
+  if (freshLocation) {
     try {
-      listener(cachedLocation);
+      listener(freshLocation);
     } catch {
       // Keep listener failures isolated.
     }
@@ -315,7 +331,7 @@ export const getAddressFromCoordinates = async (
     
     return null;
   } catch (error) {
-    console.error('Error getting address from coordinates:', error);
+    logger.error('Error getting address from coordinates:', error);
     return null;
   }
 };
@@ -379,7 +395,7 @@ export const formatDistance = (distance: number): string => {
     return `${meters} m`;
   }
 
-  return `${Math.round(distance)} km`;
+  return `${distance < 10 ? distance.toFixed(1) : Math.round(distance)} km`;
 };
 
 // In-memory cache: "lat1,lon1,lat2,lon2" → road distance in km
@@ -388,8 +404,7 @@ const roadDistanceCache = new Map<string, number>();
 /**
  * Returns the road/driving distance in km between two coordinates using the
  * OSRM public routing engine (OpenStreetMap data, no API key required).
- * Falls back to Haversine straight-line distance if the route cannot be
- * resolved or the request fails.
+ * Returns NaN when no driving route is available.
  */
 export const calculateRoadDistance = async (
   lat1: number,
@@ -397,14 +412,13 @@ export const calculateRoadDistance = async (
   lat2: number,
   lon2: number
 ): Promise<number> => {
-  const coords = [lat1, lon1, lat2, lon2];
-  if (coords.some((c) => !Number.isFinite(c))) {
+  if (!venueCoordinates({latitude: lat1, longitude: lon1}) || !venueCoordinates({latitude: lat2, longitude: lon2})) {
     return Number.NaN;
   }
 
-  // Round to ~100 m precision for cache key to avoid near-duplicate fetches.
+  // Keep metre-level coordinate precision so nearby venue pins stay distinct.
   const cacheKey = [lat1, lon1, lat2, lon2]
-    .map((v) => v.toFixed(3))
+    .map((v) => v.toFixed(5))
     .join(',');
 
   const cached = roadDistanceCache.get(cacheKey);
@@ -422,7 +436,7 @@ export const calculateRoadDistance = async (
 
     if (response.ok) {
       const data = await response.json();
-      if (data?.code === 'Ok' && typeof data?.routes?.[0]?.distance === 'number') {
+      if (data?.code === 'Ok' && data.waypoints?.length === 2 && data.waypoints.every((point: { distance?: number }) => typeof point.distance === 'number' && point.distance <= 250) && Number.isFinite(data?.routes?.[0]?.distance) && data.routes[0].distance >= 0) {
         const distanceKm = data.routes[0].distance / 1000;
         roadDistanceCache.set(cacheKey, distanceKm);
         return distanceKm;
@@ -432,8 +446,6 @@ export const calculateRoadDistance = async (
     // Network error or timeout — fall through to Haversine fallback.
   }
 
-  // Fallback: straight-line Haversine distance.
-  const fallback = calculateDistance(lat1, lon1, lat2, lon2);
-  roadDistanceCache.set(cacheKey, fallback);
-  return fallback;
+  // A straight-line estimate must not be presented as a driving distance.
+  return Number.NaN;
 };

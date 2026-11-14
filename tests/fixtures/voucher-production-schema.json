@@ -1,0 +1,1191 @@
+{
+  "source": "Authorized 2026-11-11 schema metadata only; no production customers, credentials, orders or QR secrets.",
+  "applied_versions": [
+    "20250214000000",
+    "20250214154616",
+    "20250506120000",
+    "20260506153000",
+    "20260506174000",
+    "20260520103000",
+    "20260523120000",
+    "20260604132900",
+    "20260612140000",
+    "20260613102000",
+    "20260804090000",
+    "20260805120000",
+    "20260806100000",
+    "20260807090000",
+    "20260808100000",
+    "20260811120000",
+    "20260811130000",
+    "20260812100000",
+    "20260812110000",
+    "20260812120000",
+    "20260814120000",
+    "20260817120000",
+    "20260820120000",
+    "20260825120000",
+    "20261004100000",
+    "20261004130000",
+    "20261005100000",
+    "20261014100000",
+    "20261027120000",
+    "20261029140000",
+    "20261029143000",
+    "20261103100000",
+    "20261103110000",
+    "20261103120000",
+    "20261103130000",
+    "20261107090000",
+    "20261107100000",
+    "20261107110000",
+    "20261107120000",
+    "20261107130000"
+  ],
+  "columns": [
+    {
+      "column": "id",
+      "nullable": "NO",
+      "table": "events",
+      "type": "uuid"
+    },
+    {
+      "column": "user_id",
+      "nullable": "NO",
+      "table": "events",
+      "type": "uuid"
+    },
+    {
+      "column": "creator_id",
+      "nullable": "NO",
+      "table": "events",
+      "type": "uuid"
+    },
+    {
+      "column": "event_name",
+      "nullable": "NO",
+      "table": "events",
+      "type": "text"
+    },
+    {
+      "column": "description",
+      "nullable": "YES",
+      "table": "events",
+      "type": "text"
+    },
+    {
+      "column": "start_date",
+      "nullable": "YES",
+      "table": "events",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "end_date",
+      "nullable": "YES",
+      "table": "events",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "location",
+      "nullable": "YES",
+      "table": "events",
+      "type": "text"
+    },
+    {
+      "column": "location_city",
+      "nullable": "YES",
+      "table": "events",
+      "type": "text"
+    },
+    {
+      "column": "location_latitude",
+      "nullable": "YES",
+      "table": "events",
+      "type": "numeric"
+    },
+    {
+      "column": "location_longitude",
+      "nullable": "YES",
+      "table": "events",
+      "type": "numeric"
+    },
+    {
+      "column": "max_attendees",
+      "nullable": "YES",
+      "table": "events",
+      "type": "integer"
+    },
+    {
+      "column": "current_attendees",
+      "nullable": "YES",
+      "table": "events",
+      "type": "integer"
+    },
+    {
+      "column": "ticket_price",
+      "nullable": "YES",
+      "table": "events",
+      "type": "numeric"
+    },
+    {
+      "column": "currency",
+      "nullable": "YES",
+      "table": "events",
+      "type": "text"
+    },
+    {
+      "column": "image_url",
+      "nullable": "YES",
+      "table": "events",
+      "type": "text"
+    },
+    {
+      "column": "category",
+      "nullable": "YES",
+      "table": "events",
+      "type": "text"
+    },
+    {
+      "column": "hashtags",
+      "nullable": "YES",
+      "table": "events",
+      "type": "ARRAY"
+    },
+    {
+      "column": "is_public",
+      "nullable": "YES",
+      "table": "events",
+      "type": "boolean"
+    },
+    {
+      "column": "status",
+      "nullable": "YES",
+      "table": "events",
+      "type": "text"
+    },
+    {
+      "column": "video_id",
+      "nullable": "YES",
+      "table": "events",
+      "type": "uuid"
+    },
+    {
+      "column": "business_id",
+      "nullable": "YES",
+      "table": "events",
+      "type": "uuid"
+    },
+    {
+      "column": "created_at",
+      "nullable": "YES",
+      "table": "events",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "updated_at",
+      "nullable": "YES",
+      "table": "events",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "location_name",
+      "nullable": "YES",
+      "table": "events",
+      "type": "text"
+    },
+    {
+      "column": "location_address",
+      "nullable": "YES",
+      "table": "events",
+      "type": "text"
+    },
+    {
+      "column": "location_state",
+      "nullable": "YES",
+      "table": "events",
+      "type": "text"
+    },
+    {
+      "column": "location_country",
+      "nullable": "YES",
+      "table": "events",
+      "type": "text"
+    },
+    {
+      "column": "tags",
+      "nullable": "YES",
+      "table": "events",
+      "type": "ARRAY"
+    },
+    {
+      "column": "requires_approval",
+      "nullable": "YES",
+      "table": "events",
+      "type": "boolean"
+    },
+    {
+      "column": "organizer_id",
+      "nullable": "YES",
+      "table": "events",
+      "type": "uuid"
+    },
+    {
+      "column": "id",
+      "nullable": "NO",
+      "table": "orders",
+      "type": "uuid"
+    },
+    {
+      "column": "user_id",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "uuid"
+    },
+    {
+      "column": "order_date",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "items",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "jsonb"
+    },
+    {
+      "column": "payment_method",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "text"
+    },
+    {
+      "column": "total_amount",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "numeric"
+    },
+    {
+      "column": "status",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "text"
+    },
+    {
+      "column": "video_id",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "uuid"
+    },
+    {
+      "column": "event_id",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "uuid"
+    },
+    {
+      "column": "business_id",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "uuid"
+    },
+    {
+      "column": "created_at",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "updated_at",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "order_number",
+      "nullable": "NO",
+      "table": "orders",
+      "type": "text"
+    },
+    {
+      "column": "completed_at",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "cancelled_at",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "cancelled_by",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "uuid"
+    },
+    {
+      "column": "cancellation_reason",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "text"
+    },
+    {
+      "column": "refund_status",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "text"
+    },
+    {
+      "column": "currency",
+      "nullable": "NO",
+      "table": "orders",
+      "type": "text"
+    },
+    {
+      "column": "payment_status",
+      "nullable": "NO",
+      "table": "orders",
+      "type": "text"
+    },
+    {
+      "column": "payment_provider",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "text"
+    },
+    {
+      "column": "payment_reference",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "text"
+    },
+    {
+      "column": "payment_transaction_id",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "text"
+    },
+    {
+      "column": "payment_metadata",
+      "nullable": "NO",
+      "table": "orders",
+      "type": "jsonb"
+    },
+    {
+      "column": "subtotal",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "numeric"
+    },
+    {
+      "column": "platform_fee",
+      "nullable": "NO",
+      "table": "orders",
+      "type": "numeric"
+    },
+    {
+      "column": "source",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "text"
+    },
+    {
+      "column": "expires_at",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "guest_email",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "text"
+    },
+    {
+      "column": "payment_gateway_response",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "jsonb"
+    },
+    {
+      "column": "notes",
+      "nullable": "YES",
+      "table": "orders",
+      "type": "text"
+    },
+    {
+      "column": "id",
+      "nullable": "NO",
+      "table": "payments",
+      "type": "uuid"
+    },
+    {
+      "column": "order_id",
+      "nullable": "NO",
+      "table": "payments",
+      "type": "uuid"
+    },
+    {
+      "column": "user_id",
+      "nullable": "NO",
+      "table": "payments",
+      "type": "uuid"
+    },
+    {
+      "column": "organizer_id",
+      "nullable": "YES",
+      "table": "payments",
+      "type": "uuid"
+    },
+    {
+      "column": "payment_provider",
+      "nullable": "NO",
+      "table": "payments",
+      "type": "text"
+    },
+    {
+      "column": "provider_reference",
+      "nullable": "NO",
+      "table": "payments",
+      "type": "text"
+    },
+    {
+      "column": "payment_method_id",
+      "nullable": "YES",
+      "table": "payments",
+      "type": "text"
+    },
+    {
+      "column": "amount",
+      "nullable": "NO",
+      "table": "payments",
+      "type": "numeric"
+    },
+    {
+      "column": "currency",
+      "nullable": "NO",
+      "table": "payments",
+      "type": "text"
+    },
+    {
+      "column": "status",
+      "nullable": "NO",
+      "table": "payments",
+      "type": "text"
+    },
+    {
+      "column": "provider_status",
+      "nullable": "YES",
+      "table": "payments",
+      "type": "text"
+    },
+    {
+      "column": "transaction_id",
+      "nullable": "YES",
+      "table": "payments",
+      "type": "text"
+    },
+    {
+      "column": "gateway_reference",
+      "nullable": "YES",
+      "table": "payments",
+      "type": "text"
+    },
+    {
+      "column": "gateway_response",
+      "nullable": "YES",
+      "table": "payments",
+      "type": "jsonb"
+    },
+    {
+      "column": "authorization_code",
+      "nullable": "YES",
+      "table": "payments",
+      "type": "text"
+    },
+    {
+      "column": "processing_fee",
+      "nullable": "NO",
+      "table": "payments",
+      "type": "numeric"
+    },
+    {
+      "column": "net_amount",
+      "nullable": "YES",
+      "table": "payments",
+      "type": "numeric"
+    },
+    {
+      "column": "metadata",
+      "nullable": "NO",
+      "table": "payments",
+      "type": "jsonb"
+    },
+    {
+      "column": "failure_reason",
+      "nullable": "YES",
+      "table": "payments",
+      "type": "text"
+    },
+    {
+      "column": "completed_at",
+      "nullable": "YES",
+      "table": "payments",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "paid_at",
+      "nullable": "YES",
+      "table": "payments",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "settled_at",
+      "nullable": "YES",
+      "table": "payments",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "created_at",
+      "nullable": "NO",
+      "table": "payments",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "updated_at",
+      "nullable": "NO",
+      "table": "payments",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "id",
+      "nullable": "NO",
+      "table": "products",
+      "type": "uuid"
+    },
+    {
+      "column": "event_id",
+      "nullable": "NO",
+      "table": "products",
+      "type": "uuid"
+    },
+    {
+      "column": "business_id",
+      "nullable": "NO",
+      "table": "products",
+      "type": "uuid"
+    },
+    {
+      "column": "name",
+      "nullable": "NO",
+      "table": "products",
+      "type": "text"
+    },
+    {
+      "column": "description",
+      "nullable": "YES",
+      "table": "products",
+      "type": "text"
+    },
+    {
+      "column": "price",
+      "nullable": "NO",
+      "table": "products",
+      "type": "numeric"
+    },
+    {
+      "column": "currency",
+      "nullable": "YES",
+      "table": "products",
+      "type": "text"
+    },
+    {
+      "column": "type",
+      "nullable": "NO",
+      "table": "products",
+      "type": "text"
+    },
+    {
+      "column": "available_quantity",
+      "nullable": "NO",
+      "table": "products",
+      "type": "integer"
+    },
+    {
+      "column": "sold_quantity",
+      "nullable": "YES",
+      "table": "products",
+      "type": "integer"
+    },
+    {
+      "column": "image_url",
+      "nullable": "YES",
+      "table": "products",
+      "type": "text"
+    },
+    {
+      "column": "is_active",
+      "nullable": "YES",
+      "table": "products",
+      "type": "boolean"
+    },
+    {
+      "column": "created_at",
+      "nullable": "YES",
+      "table": "products",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "updated_at",
+      "nullable": "YES",
+      "table": "products",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "id",
+      "nullable": "NO",
+      "table": "ticket_receipts",
+      "type": "uuid"
+    },
+    {
+      "column": "order_id",
+      "nullable": "NO",
+      "table": "ticket_receipts",
+      "type": "uuid"
+    },
+    {
+      "column": "order_number",
+      "nullable": "NO",
+      "table": "ticket_receipts",
+      "type": "text"
+    },
+    {
+      "column": "buyer_id",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "uuid"
+    },
+    {
+      "column": "owner_id",
+      "nullable": "NO",
+      "table": "ticket_receipts",
+      "type": "uuid"
+    },
+    {
+      "column": "video_id",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "uuid"
+    },
+    {
+      "column": "event_id",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "uuid"
+    },
+    {
+      "column": "product_id",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "uuid"
+    },
+    {
+      "column": "ticket_type",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "text"
+    },
+    {
+      "column": "ticket_title",
+      "nullable": "NO",
+      "table": "ticket_receipts",
+      "type": "text"
+    },
+    {
+      "column": "quantity",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "integer"
+    },
+    {
+      "column": "unit_price",
+      "nullable": "NO",
+      "table": "ticket_receipts",
+      "type": "numeric"
+    },
+    {
+      "column": "total_price",
+      "nullable": "NO",
+      "table": "ticket_receipts",
+      "type": "numeric"
+    },
+    {
+      "column": "currency",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "text"
+    },
+    {
+      "column": "qr_code_data",
+      "nullable": "NO",
+      "table": "ticket_receipts",
+      "type": "text"
+    },
+    {
+      "column": "ticket_image_url",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "text"
+    },
+    {
+      "column": "pdf_url",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "text"
+    },
+    {
+      "column": "seat_no",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "text"
+    },
+    {
+      "column": "event_name",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "text"
+    },
+    {
+      "column": "event_start_date",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "event_end_date",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "location_name",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "text"
+    },
+    {
+      "column": "is_active",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "boolean"
+    },
+    {
+      "column": "issued_at",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "created_at",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "updated_at",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "redeemed_at",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "redeemed_by",
+      "nullable": "YES",
+      "table": "ticket_receipts",
+      "type": "uuid"
+    },
+    {
+      "column": "receipt_kind",
+      "nullable": "NO",
+      "table": "ticket_receipts",
+      "type": "text"
+    },
+    {
+      "column": "id",
+      "nullable": "NO",
+      "table": "vouchers",
+      "type": "uuid"
+    },
+    {
+      "column": "business_id",
+      "nullable": "NO",
+      "table": "vouchers",
+      "type": "uuid"
+    },
+    {
+      "column": "creator_id",
+      "nullable": "NO",
+      "table": "vouchers",
+      "type": "uuid"
+    },
+    {
+      "column": "code",
+      "nullable": "NO",
+      "table": "vouchers",
+      "type": "text"
+    },
+    {
+      "column": "name",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "text"
+    },
+    {
+      "column": "description",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "text"
+    },
+    {
+      "column": "discount_amount",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "numeric"
+    },
+    {
+      "column": "discount_percentage",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "numeric"
+    },
+    {
+      "column": "min_purchase_amount",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "numeric"
+    },
+    {
+      "column": "max_discount_amount",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "numeric"
+    },
+    {
+      "column": "usage_limit",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "integer"
+    },
+    {
+      "column": "usage_count",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "integer"
+    },
+    {
+      "column": "expiry_date",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "is_active",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "boolean"
+    },
+    {
+      "column": "location_city",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "text"
+    },
+    {
+      "column": "hashtags",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "ARRAY"
+    },
+    {
+      "column": "created_at",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "updated_at",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "timestamp with time zone"
+    },
+    {
+      "column": "title",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "text"
+    },
+    {
+      "column": "discount_type",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "text"
+    },
+    {
+      "column": "discount_value",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "numeric"
+    },
+    {
+      "column": "product_id",
+      "nullable": "YES",
+      "table": "vouchers",
+      "type": "uuid"
+    }
+  ],
+  "receipt_policies": [
+    {
+      "check": "(auth.uid() = buyer_id)",
+      "cmd": "INSERT",
+      "name": "Authenticated can insert own tickets",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "ticket_receipts",
+      "type": "PERMISSIVE",
+      "using": null
+    },
+    {
+      "check": null,
+      "cmd": "SELECT",
+      "name": "Owners can read sold tickets",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "ticket_receipts",
+      "type": "PERMISSIVE",
+      "using": "(auth.uid() = owner_id)"
+    },
+    {
+      "check": "(auth.uid() = owner_id)",
+      "cmd": "UPDATE",
+      "name": "Owners can update sold tickets",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "ticket_receipts",
+      "type": "PERMISSIVE",
+      "using": "(auth.uid() = owner_id)"
+    },
+    {
+      "check": null,
+      "cmd": "SELECT",
+      "name": "Users can read their bought tickets",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "ticket_receipts",
+      "type": "PERMISSIVE",
+      "using": "(auth.uid() = buyer_id)"
+    }
+  ],
+  "constraints": [
+    {
+      "definition": "FOREIGN KEY (business_id) REFERENCES profiles(id) ON DELETE SET NULL",
+      "name": "events_business_id_fkey",
+      "table": "events"
+    },
+    {
+      "definition": "FOREIGN KEY (creator_id) REFERENCES profiles(id) ON DELETE CASCADE",
+      "name": "events_creator_id_fkey",
+      "table": "events"
+    },
+    {
+      "definition": "FOREIGN KEY (organizer_id) REFERENCES profiles(id)",
+      "name": "events_organizer_id_fkey",
+      "table": "events"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "events_pkey",
+      "table": "events"
+    },
+    {
+      "definition": "CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'cancelled'::text, 'completed'::text])))",
+      "name": "events_status_check",
+      "table": "events"
+    },
+    {
+      "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE",
+      "name": "events_user_id_fkey",
+      "table": "events"
+    },
+    {
+      "definition": "FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE SET NULL",
+      "name": "events_video_id_fkey",
+      "table": "events"
+    },
+    {
+      "definition": "FOREIGN KEY (business_id) REFERENCES profiles(id) ON DELETE SET NULL",
+      "name": "orders_business_id_fkey",
+      "table": "orders"
+    },
+    {
+      "definition": "FOREIGN KEY (cancelled_by) REFERENCES profiles(id) ON DELETE SET NULL",
+      "name": "orders_cancelled_by_fkey",
+      "table": "orders"
+    },
+    {
+      "definition": "FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE SET NULL",
+      "name": "orders_event_id_fkey",
+      "table": "orders"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "orders_pkey",
+      "table": "orders"
+    },
+    {
+      "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'open'::text, 'completed'::text, 'failed'::text, 'refunded'::text, 'cancelled'::text])))",
+      "name": "orders_status_check",
+      "table": "orders"
+    },
+    {
+      "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE",
+      "name": "orders_user_id_fkey",
+      "table": "orders"
+    },
+    {
+      "definition": "FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE SET NULL",
+      "name": "orders_video_id_fkey",
+      "table": "orders"
+    },
+    {
+      "definition": "CHECK ((amount >= (0)::numeric))",
+      "name": "payments_amount_check",
+      "table": "payments"
+    },
+    {
+      "definition": "FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE RESTRICT",
+      "name": "payments_order_id_fkey",
+      "table": "payments"
+    },
+    {
+      "definition": "FOREIGN KEY (organizer_id) REFERENCES profiles(id) ON DELETE RESTRICT",
+      "name": "payments_organizer_id_fkey",
+      "table": "payments"
+    },
+    {
+      "definition": "UNIQUE (payment_provider, provider_reference)",
+      "name": "payments_payment_provider_provider_reference_key",
+      "table": "payments"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "payments_pkey",
+      "table": "payments"
+    },
+    {
+      "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE RESTRICT",
+      "name": "payments_user_id_fkey",
+      "table": "payments"
+    },
+    {
+      "definition": "FOREIGN KEY (business_id) REFERENCES profiles(id) ON DELETE CASCADE",
+      "name": "products_business_id_fkey",
+      "table": "products"
+    },
+    {
+      "definition": "FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE",
+      "name": "products_event_id_fkey",
+      "table": "products"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "products_pkey",
+      "table": "products"
+    },
+    {
+      "definition": "CHECK ((type = ANY (ARRAY['ticket'::text, 'drink'::text, 'reservation'::text, 'merchandise'::text])))",
+      "name": "products_type_check",
+      "table": "products"
+    },
+    {
+      "definition": "FOREIGN KEY (buyer_id) REFERENCES profiles(id) ON DELETE CASCADE",
+      "name": "ticket_receipts_buyer_id_fkey",
+      "table": "ticket_receipts"
+    },
+    {
+      "definition": "FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE SET NULL",
+      "name": "ticket_receipts_event_id_fkey",
+      "table": "ticket_receipts"
+    },
+    {
+      "definition": "FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE",
+      "name": "ticket_receipts_order_id_fkey",
+      "table": "ticket_receipts"
+    },
+    {
+      "definition": "FOREIGN KEY (owner_id) REFERENCES profiles(id) ON DELETE CASCADE",
+      "name": "ticket_receipts_owner_id_fkey",
+      "table": "ticket_receipts"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "ticket_receipts_pkey",
+      "table": "ticket_receipts"
+    },
+    {
+      "definition": "FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL",
+      "name": "ticket_receipts_product_id_fkey",
+      "table": "ticket_receipts"
+    },
+    {
+      "definition": "CHECK ((receipt_kind = ANY (ARRAY['ticket'::text, 'product'::text])))",
+      "name": "ticket_receipts_receipt_kind_check",
+      "table": "ticket_receipts"
+    },
+    {
+      "definition": "FOREIGN KEY (redeemed_by) REFERENCES profiles(id) ON DELETE SET NULL",
+      "name": "ticket_receipts_redeemed_by_fkey",
+      "table": "ticket_receipts"
+    },
+    {
+      "definition": "FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE SET NULL",
+      "name": "ticket_receipts_video_id_fkey",
+      "table": "ticket_receipts"
+    },
+    {
+      "definition": "FOREIGN KEY (business_id) REFERENCES profiles(id) ON DELETE CASCADE",
+      "name": "vouchers_business_id_fkey",
+      "table": "vouchers"
+    },
+    {
+      "definition": "UNIQUE (code)",
+      "name": "vouchers_code_key",
+      "table": "vouchers"
+    },
+    {
+      "definition": "FOREIGN KEY (creator_id) REFERENCES profiles(id) ON DELETE CASCADE",
+      "name": "vouchers_creator_id_fkey",
+      "table": "vouchers"
+    },
+    {
+      "definition": "PRIMARY KEY (id)",
+      "name": "vouchers_pkey",
+      "table": "vouchers"
+    },
+    {
+      "definition": "FOREIGN KEY (product_id) REFERENCES products(id)",
+      "name": "vouchers_product_id_fkey",
+      "table": "vouchers"
+    }
+  ]
+}

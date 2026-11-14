@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import { updateRecoveredPassword } from '@/lib/password-recovery';
+import { logger } from '@/lib/logger';
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -16,12 +18,27 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, Eye, EyeOff, CheckCircle } from "lucide-react-native";
 import { Image } from "expo-image";
 import Colors from "@/constants/colors";
-import { config } from "@/lib/config";
+import { supabase } from "@/lib/supabase";
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
-    const insets = useSafeAreaInsets();
-  const urlParams = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
+  const recoveryParams = useLocalSearchParams<{ access_token?: string; refresh_token?: string }>();
+  const [hasSession, setHasSession] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      if (recoveryParams.access_token && recoveryParams.refresh_token) {
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: recoveryParams.access_token, refresh_token: recoveryParams.refresh_token,
+        });
+        if (sessionError) return;
+      }
+      const { data } = await supabase.auth.getSession();
+      if (active) setHasSession(Boolean(data.session));
+    })();
+    return () => { active = false; };
+  }, [recoveryParams.access_token, recoveryParams.refresh_token]);
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -31,8 +48,7 @@ export default function ResetPasswordScreen() {
   const [passwordReset, setPasswordReset] = useState(false);
   const [error, setError] = useState("");
 
-  const email = urlParams.email || "";
-  const code = urlParams.code || "";
+
 
   const validatePassword = (password: string) => {
     const minLength = password.length >= 8;
@@ -75,67 +91,15 @@ export default function ResetPasswordScreen() {
       return;
     }
 
-    if (!email || !code) {
-      Alert.alert(
-        "Error",
-        "Invalid reset request. Please start over from the forgot password screen.",
-        [
-          {
-            text: "Go to Forgot Password",
-            onPress: () => router.replace("/forgot-password"),
-          },
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
-        ]
-      );
-      return;
-    }
-
     setIsLoading(true);
 
     try {
-      const { url: supabaseUrl, anonKey } = config.supabase;
-      const res = await fetch(`${supabaseUrl}/functions/v1/update-password-by-uid`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${anonKey}`,
-        },
-        body: JSON.stringify({
-          email: String(email).trim().toLowerCase(),
-          code: String(code).trim(),
-          newPassword: newPassword,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        const errorMsg = (data as any)?.error ||
-          (data as any)?.message ||
-          `Request failed (${res.status}). Check that the password reset function is deployed.`;
-        setError(errorMsg);
-        setIsLoading(false);
-        return;
-      }
-
-      if ((data as any)?.error) {
-        setError((data as any).error);
-        setIsLoading(false);
-        return;
-      }
-
-      if (data?.success || data?.userId) {
-        setPasswordReset(true);
-        setIsLoading(false);
-      } else {
-        setError("Password update did not complete. Please try again.");
-        setIsLoading(false);
-      }
-    } catch (err: any) {
-      console.error("Password reset error:", err);
-      setError(err?.message || "An unexpected error occurred. Please try again.");
+      await updateRecoveredPassword(supabase, newPassword);
+      setPasswordReset(true);
+      setIsLoading(false);
+    } catch (err: unknown) {
+      logger.error("Password reset error:", err);
+      setError("Password update failed. Please request a new code and try again.");
       setIsLoading(false);
     }
   };
@@ -229,7 +193,7 @@ export default function ResetPasswordScreen() {
         <View style={styles.formContainer}>
           <Text style={styles.title}>Reset Your Password</Text>
           <Text style={styles.subtitle}>
-            {email ? `Enter a new password for ${email}` : "Enter your new password below"}
+            Enter your new password below
           </Text>
 
           {error && (
@@ -238,7 +202,7 @@ export default function ResetPasswordScreen() {
             </View>
           )}
 
-          {(!email || !code) && (
+          {!hasSession && (
             <View style={styles.infoBox}>
               <Text style={styles.infoText}>
                 Invalid reset request. Please start over from the forgot password screen.
@@ -365,8 +329,7 @@ export default function ResetPasswordScreen() {
                 newPassword !== confirmPassword ||
                 !newPassword ||
                 !confirmPassword ||
-                !email ||
-                !code) &&
+                !hasSession) &&
                 styles.resetButtonDisabled,
             ]}
             onPress={handleSubmit}
@@ -376,8 +339,7 @@ export default function ResetPasswordScreen() {
               newPassword !== confirmPassword ||
               !newPassword ||
               !confirmPassword ||
-              !email ||
-              !code
+              !hasSession
             }
             activeOpacity={0.7}
           >
@@ -394,8 +356,7 @@ export default function ResetPasswordScreen() {
                     newPassword !== confirmPassword ||
                     !newPassword ||
                     !confirmPassword ||
-                    !email ||
-                    !code) &&
+                    !hasSession) &&
                     styles.resetButtonTextDisabled,
                 ]}
               >

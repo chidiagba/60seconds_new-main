@@ -32,6 +32,7 @@ export default function EditVoucherScreen() {
   const [description, setDescription] = useState('');
   const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
   const [discountValue, setDiscountValue] = useState('');
+  const [currency,setCurrency]=useState('');
   const [minPurchaseAmount, setMinPurchaseAmount] = useState('');
   const [maxDiscountAmount, setMaxDiscountAmount] = useState('');
   const [usageLimit, setUsageLimit] = useState('');
@@ -62,6 +63,7 @@ export default function EditVoucherScreen() {
     setCode(voucher.code);
     setDescription(voucher.description || '');
     setDiscountType(voucher.discountType);
+    setCurrency(voucher.currency || '');
     setDiscountValue(voucher.discountValue.toString());
     setMinPurchaseAmount(voucher.minPurchaseAmount?.toString() || '');
     setMaxDiscountAmount(voucher.maxDiscountAmount?.toString() || '');
@@ -139,12 +141,16 @@ export default function EditVoucherScreen() {
       }
     }
     
+    if((discountType==='fixed'||Number(minPurchaseAmount)>0||Number(maxDiscountAmount)>0)&&!/^[A-Z]{3}$/.test(currency.trim().toUpperCase())){
+      Alert.alert('Currency required','Enter the currency for this fixed discount or amount limit, such as NGN or USD.');return;
+    }
     // Update voucher
     const voucherUpdates = {
       name,
       code: code.toUpperCase(),
       description,
       discountType,
+      currency:currency.trim().toUpperCase() || undefined,
       discountValue: discountValueNum,
       minPurchaseAmount: minPurchaseAmountNum,
       maxDiscountAmount: maxDiscountAmountNum,
@@ -272,7 +278,7 @@ export default function EditVoucherScreen() {
               <Text style={[
                 styles.segmentButtonText,
                 discountType === 'fixed' && styles.segmentButtonTextActive
-              ]}>Fixed Amount ($)</Text>
+              ]}>Fixed Amount</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -283,7 +289,7 @@ export default function EditVoucherScreen() {
           </Text>
           <View style={styles.inputWithPrefix}>
             <Text style={styles.inputPrefix}>
-              {discountType === 'percentage' ? '%' : '$'}
+              {discountType === 'percentage' ? '%' : (currency || 'Amount')}
             </Text>
             <TextInput
               style={styles.prefixedInput}
@@ -296,7 +302,8 @@ export default function EditVoucherScreen() {
           </View>
         </View>
         
-        {discountType === 'percentage' && (
+        <View style={styles.formGroup}><Text style={styles.label}>Currency for fixed discounts and amount limits</Text><TextInput style={styles.prefixedInput} value={currency} onChangeText={value=>setCurrency(value.toUpperCase())} autoCapitalize="characters" maxLength={3} placeholder="NGN, USD, CHF…" placeholderTextColor={Colors.dark.placeholder}/></View>
+            {discountType === 'percentage' && (
           <View style={styles.formGroup}>
             <Text style={styles.label}>Maximum Discount Amount (Optional)</Text>
             <View style={styles.inputWithPrefix}>

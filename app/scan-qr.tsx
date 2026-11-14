@@ -19,7 +19,7 @@ type RedemptionResult = {
   ticket_title: string;
   event_name?: string | null;
   order_status: string;
-  receipt_kind?: "ticket" | "product";
+  receipt_kind?: "ticket" | "product" | "reservation";
   quantity?: number;
   total_price?: number;
   currency?: string;
@@ -198,7 +198,7 @@ export default function ScanQRScreen() {
 
           <Text style={styles.instructions}>
             {isRedemptionMode
-              ? "Scan a customer's ticket or product receipt QR code"
+              ? "Scan a customer's ticket, product, or table reservation QR code"
               : "Align the QR code within the frame to scan"}
           </Text>
 
@@ -213,10 +213,10 @@ export default function ScanQRScreen() {
             <View style={styles.resultCard}>
               <CheckCircle size={52} color="#10B981" />
               <Text style={styles.resultTitle}>
-                {redemption.receipt_kind === "product" ? "Product Verified" : "Ticket Redeemed"}
+                {redemption.receipt_kind === "product" ? "Product Verified" : redemption.receipt_kind === "reservation" ? "Reservation Checked In" : "Ticket Redeemed"}
               </Text>
               <Text style={styles.resultText}>{redemption.ticket_title}</Text>
-              {redemption.receipt_kind === "product" && (
+              {(redemption.receipt_kind === "product" || redemption.receipt_kind === "reservation") && (
                 <Text style={styles.resultText}>
                   Quantity {Math.max(1, Number(redemption.quantity || 1))} · {redemption.currency || ""} {Number(redemption.total_price || 0).toFixed(2)}
                 </Text>

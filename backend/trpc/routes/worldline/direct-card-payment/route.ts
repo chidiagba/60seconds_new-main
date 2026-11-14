@@ -1,5 +1,6 @@
+import { logger } from '../../../../lib/logger';
 import { z } from 'zod';
-import { publicProcedure } from '../../../create-context';
+import { disabledProcedure } from '../../../create-context';
 import { supabase } from '@/backend/lib/supabase';
 import crypto from 'crypto';
 
@@ -7,12 +8,12 @@ import crypto from 'crypto';
 // PSPID is the Merchant ID (Payment Service Provider ID)
 const WORLDLINE_MERCHANT_ID = process.env.WORLDLINE_MERCHANT_ID || '60secondsTechnologies';
 // Secret API Key (this is what you copied from dashboard)
-const WORLDLINE_API_KEY = process.env.WORLDLINE_API_KEY || '43A1D436F54844DB73BF153ECBA9551A27636D945271483D0D0B62D713CDAB5C8B15F5158D9339FCA9EA4BD0C92678F94FC930FF3A3355BB1DC1856530B3D730';
+const WORLDLINE_API_KEY = process.env.WORLDLINE_API_KEY || '';
 // API Key ID (for reference, might be needed for some endpoints)
 const WORLDLINE_API_KEY_ID = process.env.WORLDLINE_API_KEY_ID || '8F142108CB95DFDA64F6';
 const WORLDLINE_BASE_URL = process.env.WORLDLINE_BASE_URL || 'https://payment.direct.worldline-solutions.com/v2';
 
-export const directCardPaymentProcedure = publicProcedure
+export const directCardPaymentProcedure = disabledProcedure
   .input(z.object({
     email: z.string().email(),
     amount: z.number().positive(),
@@ -29,7 +30,7 @@ export const directCardPaymentProcedure = publicProcedure
   }))
   .mutation(async ({ input }) => {
     try {
-      console.log('Processing Worldline direct card payment:', {
+      logger.debug('Processing Worldline direct card payment:', {
         email: input.email,
         amount: input.amount,
         currency: input.currency,
@@ -47,7 +48,7 @@ export const directCardPaymentProcedure = publicProcedure
         WORLDLINE_API_KEY.length > 20
       );
       
-      console.log('🔑 Worldline Configuration:', {
+      logger.debug('🔑 Worldline Configuration:', {
         merchantId: WORLDLINE_MERCHANT_ID,
         apiKeyLength: WORLDLINE_API_KEY?.length,
         baseUrl: WORLDLINE_BASE_URL,
@@ -61,7 +62,7 @@ export const directCardPaymentProcedure = publicProcedure
       }
 
       // Process Worldline payment
-      console.log('💳 Processing Worldline Payment:', {
+      logger.debug('💳 Processing Worldline Payment:', {
         reference: input.reference,
         amount: input.amount,
         currency: input.currency,
@@ -97,11 +98,11 @@ export const directCardPaymentProcedure = publicProcedure
         }
       };
 
-      console.log('📤 Calling Worldline API...');
+      logger.debug('📤 Calling Worldline API...');
       const apiPath = '/payments/directSale';
       const apiUrl = `${WORLDLINE_BASE_URL}${apiPath}`;
-      console.log(`   URL: ${apiUrl}`);
-      console.log(`   Method: POST`);
+      logger.debug(`   URL: ${apiUrl}`);
+      logger.debug(`   Method: POST`);
       
       // Worldline Direct API HMAC-SHA256 Authentication
       const httpMethod = 'POST';
@@ -127,7 +128,7 @@ export const directCardPaymentProcedure = publicProcedure
       // Format Authorization header: GCS v1HMAC:<API Key ID>:<Signature>
       const authorization = `GCS v1HMAC:${WORLDLINE_API_KEY_ID}:${signature}`;
       
-      console.log(`   Auth: GCS v1HMAC with Key ID: ${WORLDLINE_API_KEY_ID.substring(0, 10)}...`);
+      logger.debug(`   Auth: GCS v1HMAC with Key ID: ${WORLDLINE_API_KEY_ID.substring(0, 10)}...`);
       
       const response = await fetch(apiUrl, {
         method: httpMethod,
@@ -140,7 +141,7 @@ export const directCardPaymentProcedure = publicProcedure
         body: bodyString
       });
 
-      console.log(`📥 Worldline API Response Status: ${response.status} ${response.statusText}`);
+      logger.debug(`📥 Worldline API Response Status: ${response.status} ${response.statusText}`);
 
       // Check if response is JSON
       const responseContentType = response.headers.get('content-type');
@@ -159,15 +160,15 @@ export const directCardPaymentProcedure = publicProcedure
         throw new Error(data.message || `Worldline payment failed with status ${response.status}`);
       }
 
-      console.log('✅ Worldline API Success!');
-      console.log(`   Transaction ID: ${data.transaction_id || 'N/A'}`);
-      console.log(`   Status: ${data.status || 'N/A'}`);
-      console.log(`   Reference: ${data.reference || input.reference}`);
-      console.log(`   Authorization URL: ${data.authorization_url ? data.authorization_url.substring(0, 50) + '...' : 'N/A'}`);
-      console.log('');
-      console.log('📊 Payment processed successfully');
-      console.log(`   Search by reference: ${data.reference || input.reference}`);
-      console.log('');
+      logger.debug('✅ Worldline API Success!');
+      logger.debug(`   Transaction ID: ${data.transaction_id || 'N/A'}`);
+      logger.debug(`   Status: ${data.status || 'N/A'}`);
+      logger.debug(`   Reference: ${data.reference || input.reference}`);
+      logger.debug(`   Authorization URL: ${data.authorization_url ? data.authorization_url.substring(0, 50) + '...' : 'N/A'}`);
+      logger.debug('');
+      logger.debug('📊 Payment processed successfully');
+      logger.debug(`   Search by reference: ${data.reference || input.reference}`);
+      logger.debug('');
 
       const result = {
         success: true,
@@ -176,7 +177,7 @@ export const directCardPaymentProcedure = publicProcedure
           status: data.status || 'success',
           authorization_url: data.authorization_url,
           access_code: data.access_code,
-          message: data.message,
+          message: 'Request could not be completed',
           gateway_response: data.gateway_response,
           transaction_id: data.transaction_id,
           amount: input.amount,
@@ -187,27 +188,27 @@ export const directCardPaymentProcedure = publicProcedure
           },
           authorization: data.authorization
         },
-        message: data.message || 'Payment processed successfully'
+        message: 'Request could not be completed'
       };
 
       // Save real payment to database
-      console.log('💾 Saving payment to database...');
+      logger.debug('💾 Saving payment to database...');
       await savePaymentToDatabase({
         ...input,
         response: result.data,
         isMock: false
       });
-      console.log('✅ Payment saved to database!');
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('');
+      logger.debug('✅ Payment saved to database!');
+      logger.debug('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      logger.debug('');
 
       return result;
 
     } catch (error: any) {
       console.error('❌ Worldline direct card payment error:', error);
       console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
+        message: 'Request could not be completed',
+        stack: undefined,
         name: error.name
       });
       
@@ -215,7 +216,7 @@ export const directCardPaymentProcedure = publicProcedure
       try {
         await saveFailedPaymentToDatabase({
           ...input,
-          error: error.message
+          error: 'Request could not be completed'
         });
       } catch (dbError) {
         console.error('Failed to save payment error to database:', dbError);
@@ -233,7 +234,7 @@ export const directCardPaymentProcedure = publicProcedure
             name: input.cardholderName
           }
         },
-        message: error.message || 'Payment processing failed'
+        message: 'Request could not be completed'
       };
     }
   });
@@ -271,7 +272,7 @@ async function savePaymentToDatabase(params: {
   isMock: boolean;
 }) {
   try {
-    console.log('💾 Saving Worldline payment to database...');
+    logger.debug('💾 Saving Worldline payment to database...');
     
     // Create payment record
     const { error: paymentError } = await supabase
@@ -332,7 +333,7 @@ async function savePaymentToDatabase(params: {
       }
     }
 
-    console.log('✅ Worldline payment saved to database successfully');
+    logger.debug('✅ Worldline payment saved to database successfully');
   } catch (error: any) {
     console.error('❌ Error saving Worldline payment to database:', error);
     // Don't throw here, payment processing should continue
@@ -352,7 +353,7 @@ async function saveFailedPaymentToDatabase(params: {
   error: string;
 }) {
   try {
-    console.log('💾 Saving failed Worldline payment to database...');
+    logger.debug('💾 Saving failed Worldline payment to database...');
     
     const { error } = await supabase
       .from('payments')
@@ -364,7 +365,7 @@ async function saveFailedPaymentToDatabase(params: {
         status: 'failed',
         transaction_id: params.reference,
         gateway_reference: params.reference,
-        gateway_response: { error: params.error },
+        gateway_response: { error: 'Request could not be completed' },
         metadata: {
           payment_type: params.paymentType,
           customer_email: params.email,
@@ -377,7 +378,7 @@ async function saveFailedPaymentToDatabase(params: {
     if (error) {
       console.error('❌ Error saving failed payment:', error);
     } else {
-      console.log('✅ Failed Worldline payment saved to database');
+      logger.debug('✅ Failed Worldline payment saved to database');
     }
   } catch (error: any) {
     console.error('❌ Error saving failed Worldline payment to database:', error);

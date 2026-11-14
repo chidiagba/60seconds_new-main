@@ -1,3 +1,5 @@
+import { verifyRecoveryCode } from '@/lib/password-recovery';
+import { logger } from '@/lib/logger';
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import {
   View,
@@ -59,9 +61,8 @@ export default function ForgotPasswordScreen() {
     setError("");
 
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke("send-otp", {
-        body: { email: normalizedEmail, type: "recovery" },
-      });
+      const { error: invokeError } = await supabase.auth.resetPasswordForEmail(normalizedEmail);
+      const data = { success: !invokeError };
 
       if (invokeError) {
         setError((data as any)?.message || invokeError.message || "Failed to send code. Try again.");
@@ -88,9 +89,8 @@ export default function ForgotPasswordScreen() {
     setError("");
 
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke("send-otp", {
-        body: { email: normalizedEmail, type: "recovery" },
-      });
+      const { error: invokeError } = await supabase.auth.resetPasswordForEmail(normalizedEmail);
+      const data = { success: !invokeError };
 
       if (invokeError || !data?.success) {
         setError((data as any)?.message || invokeError?.message || "Failed to resend code.");
@@ -115,26 +115,14 @@ export default function ForgotPasswordScreen() {
     setError("");
 
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke("verify-otp", {
-        body: { email: normalizedEmail, code: otp.trim(), type: "recovery" },
-      });
-
-      if (invokeError) {
-        const rawMessage = (data as any)?.error || (data as any)?.message || invokeError.message || "";
-        const fallback = /non-2xx/i.test(rawMessage)
-          ? "Could not verify code. Please check the code and try again."
-          : "Invalid or expired code. Please request a new one.";
-        setError(rawMessage || fallback);
+      const verified = await verifyRecoveryCode(supabase, normalizedEmail, otp);
+      if (!verified) {
+        setError('Invalid or expired code. Please request a new one.');
         return;
       }
-
-      if (data?.success && data?.code) {
-        router.push(`/reset-password?email=${encodeURIComponent(normalizedEmail)}&code=${encodeURIComponent(data.code)}`);
-      } else {
-        setError((data as any)?.error || "Invalid or expired code. Please request a new one.");
-      }
+      router.push('/reset-password');
     } catch (err) {
-      console.error("PIN verification error:", err);
+      logger.error("PIN verification error:", err);
       setError("Verification failed. Please try again.");
     } finally {
       setVerifyLoading(false);

@@ -1,4 +1,4 @@
-import { toMinorUnits } from '../../../utils/commerce-rules.ts';
+import { toMinorUnits, currencyDigits } from '../../../utils/commerce-rules.ts';
 import QRCode from 'npm:qrcode@1.5.4';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const escape = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
@@ -10,7 +10,11 @@ export async function fulfillGuestSession(session: {id:string;metadata?:Record<s
   try {
     const { data: expected, error: expectedError } = await db.from('orders').select('total_amount,currency').eq('id',id).single();
     if (expectedError || !expected || (paid && (session.amount_total !== toMinorUnits(expected.total_amount,expected.currency) || session.currency !== expected.currency.toLowerCase()))) throw new Error('Payment amount mismatch');
-    const { data: order, error } = await db.rpc('finish_guest_order',{order_key:id,paid,session_key:session.id});
+    const settlement=paid
+      ? db.rpc('settle_verified_guest_payment',{order_key:id,provider:session.id.startsWith('guest_paystack_')?'paystack':'stripe',reference:session.id,
+          paid_amount:Number(session.amount_total)/10**currencyDigits(expected.currency),paid_currency:expected.currency,transaction_key:String((session as any).payment_intent || session.id)})
+      : db.rpc('finish_guest_order',{order_key:id,paid:false,session_key:session.id});
+    const {data:order,error}=await settlement;
     if (error) throw error;
     if (!paid) return new Response('Released');
     const { data: checkout } = await db.from('guest_checkouts').select('state,email_sent_at').eq('order_id',id).single();

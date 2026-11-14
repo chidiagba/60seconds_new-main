@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -36,6 +37,7 @@ import { getAllCountries, FlagType, type Country as PickerCountry } from "react-
 import Colors from "@/constants/colors";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { getCampaignAttribution, getSignupAttribution, normalizeReferralCode } from "@/lib/campaign-attribution";
 
 const BUSINESS_TYPE_OPTIONS = ["Bar", "Event Promotion", "Venue", "Nightclub", "Festivals"] as const;
 const COUNTRY_PAGE_SIZE = 9;
@@ -65,6 +67,8 @@ export default function SignUpScreen() {
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
+  const [referralCode, setReferralCode] = useState("");
+  const [referralDetected, setReferralDetected] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -134,7 +138,7 @@ export default function SignUpScreen() {
           setCountryCode(nigeria.code);
         }
       } catch (loadError) {
-        console.error("Failed to load countries:", loadError);
+        logger.error("Failed to load countries:", loadError);
       } finally {
         if (isMounted) {
           setIsCountryListLoading(false);
@@ -147,6 +151,15 @@ export default function SignUpScreen() {
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    getCampaignAttribution().then((attribution) => {
+      if (attribution && isMountedRef.current) {
+        setReferralCode(attribution.referralCode);
+        setReferralDetected(attribution.source !== "manual_code");
+      }
+    }).catch(() => {});
   }, []);
 
   const filteredCountries = useMemo(() => {
@@ -276,39 +289,6 @@ export default function SignUpScreen() {
         return;
       }
 
-      // Existing account path: guide users to complete verification instead of failing signup.
-      const { data: existingUserData, error: existingUserErr } = await supabase.functions.invoke("get-uid-by-email", {
-        body: { email: normalizedEmail },
-      });
-
-      if (!existingUserErr && existingUserData?.uid) {
-        const existingUid = String(existingUserData.uid);
-        const alreadyOtpVerified = existingUserData.otp_verified === true;
-        const existingUserType =
-          existingUserData.user_type === "business" || existingUserData.user_type === "private"
-            ? existingUserData.user_type
-            : null;
-        const requiresOtp = accountType === "business" || existingUserType === "business";
-
-        if (requiresOtp && !alreadyOtpVerified) {
-          Alert.alert(
-            "PIN verification required",
-            "This email is already registered. Please complete PIN verification before login.",
-            [
-              {
-                text: "Continue",
-                onPress: () =>
-                  router.replace(`/verify-otp?email=${encodeURIComponent(normalizedEmail)}&user_id=${encodeURIComponent(existingUid)}`),
-              },
-            ]
-          );
-          return;
-        }
-
-        setError("This email is already registered. Please sign in with your password.");
-        return;
-      }
-
       const profileData = {
         full_name: normalizedName,
         username: normalizedUsername,
@@ -321,7 +301,13 @@ export default function SignUpScreen() {
         }),
       };
 
-      const signUpResult = await supabaseSignUp(normalizedEmail, password, profileData);
+      const validReferral = referralCode.trim() ? normalizeReferralCode(referralCode) : null;
+      if (referralCode.trim() && !validReferral) {
+        setError("Referral code must be 3–40 letters, numbers, underscores, or hyphens.");
+        return;
+      }
+      const signupAttribution = validReferral ? await getSignupAttribution(validReferral) : null;
+      const signUpResult = await supabaseSignUp(normalizedEmail, password, profileData, undefined, signupAttribution || undefined);
 
       if (!signUpResult.error) {
         if (accountType === "personal") {
@@ -343,7 +329,7 @@ export default function SignUpScreen() {
             router.replace("/(tabs)");
             return;
           } catch (autoSignInErr) {
-            console.warn("Auto sign-in after private signup failed:", autoSignInErr);
+            logger.warn("Auto sign-in after private signup failed:", autoSignInErr);
             Alert.alert(
               "Account Created",
               "Your account has been created and your welcome email is on the way. Please sign in to continue."
@@ -371,18 +357,18 @@ export default function SignUpScreen() {
 
             if (!otpSendError && otpData?.success) {
               pinSent = true;
-              console.log("✅ PIN sent successfully");
+              logger.debug("✅ PIN sent successfully");
               break;
             } else {
               const reason = (otpData as any)?.message || otpSendError?.message || "Failed to send PIN code.";
-              console.warn(`⚠️ PIN send attempt ${pinSendAttempts} failed: ${reason}`);
+              logger.warn(`⚠️ PIN send attempt ${pinSendAttempts} failed: ${reason}`);
               
               if (pinSendAttempts < maxPinRetries) {
                 await new Promise(resolve => setTimeout(resolve, 1000 * pinSendAttempts));
               }
             }
           } catch (sendErr) {
-            console.error(`❌ PIN send attempt ${pinSendAttempts} threw error:`, sendErr);
+            logger.error(`❌ PIN send attempt ${pinSendAttempts} threw error:`, sendErr);
             if (pinSendAttempts < maxPinRetries) {
               await new Promise(resolve => setTimeout(resolve, 1000 * pinSendAttempts));
             }
@@ -405,7 +391,7 @@ export default function SignUpScreen() {
         Alert.alert("Signup Failed", errorMessage);
       }
     } catch (signUpError) {
-      console.error("Signup error:", signUpError);
+      logger.error("Signup error:", signUpError);
       if (isMountedRef.current) {
         Alert.alert("Signup Failed", "An unexpected error occurred. Please try again.");
       }
@@ -593,6 +579,23 @@ export default function SignUpScreen() {
                     autoCorrect={false}
                   />
                 </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Referral Code (optional)</Text>
+                <TouchableOpacity style={styles.inputWrapper} activeOpacity={1} onPress={() => {}}>
+                  <TextInput
+                    style={styles.input}
+                    value={referralCode}
+                    onChangeText={(value) => { setReferralCode(value); setReferralDetected(false); }}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    maxLength={40}
+                    placeholder="Enter referral code"
+                    placeholderTextColor={Colors.dark.subtext}
+                  />
+                </TouchableOpacity>
+                {referralDetected && <Text style={styles.helperText}>Referral code applied</Text>}
               </View>
 
               <View style={styles.inputContainer}>
@@ -1014,6 +1017,11 @@ const styles = StyleSheet.create({
     padding: 16,
     color: Colors.dark.text,
     fontSize: 16,
+  },
+  helperText: {
+    color: Colors.dark.primary,
+    fontSize: 12,
+    marginTop: 6,
   },
   passwordInput: {
     flex: 1,

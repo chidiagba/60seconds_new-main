@@ -15,7 +15,7 @@ export const WORLDLINE_CONFIG = {
   
   // Your Worldline Secret API Key (copied from dashboard - shown only once!)
   // API Key ID: 8F142108CB95DFDA64F6
-  API_KEY: process.env.WORLDLINE_API_KEY || '43A1D436F54844DB73BF153ECBA9551A27636D945271483D0D0B62D713CDAB5C8B15F5158D9339FCA9EA4BD0C92678F94FC930FF3A3355BB1DC1856530B3D730',
+  API_KEY: '', // Disabled provider; credentials must never be bundled
   
   // Worldline API Base URL
   // Sandbox: https://payment.preprod.direct.worldline-solutions.com/v2

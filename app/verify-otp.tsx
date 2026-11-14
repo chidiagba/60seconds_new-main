@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
@@ -16,6 +17,7 @@ import { Image } from "expo-image";
 import Colors from "@/constants/colors";
 import { OtpInput } from "@/components/OtpInput";
 import { supabase } from "@/lib/supabase";
+import { getCampaignAttribution } from "@/lib/campaign-attribution";
 
 const C = Colors.dark;
 
@@ -69,19 +71,14 @@ export default function VerifyOtpScreen() {
 
     setCheckingStatus(true);
     try {
-      const { data, error: statusErr } = await supabase.functions.invoke("get-uid-by-email", {
-        body: { email: normalizedEmail },
-      });
-
-      if (statusErr) {
-        setError(statusErr.message || "Failed to check email verification status.");
-        return false;
+      const { data, error: statusErr } = await supabase.auth.getUser();
+      if (statusErr || !data.user) {
+        // A signed-out user can request and verify an email code without learning account details.
+        setOtpVerified(false);
+        return true;
       }
-
-      const isOtpVerified = data?.otp_verified === true;
-
-      setOtpVerified(isOtpVerified);
-      setStatusUid((data?.uid as string | undefined) || user_id || "");
+      setOtpVerified(Boolean(data.user.app_metadata?.signup_otp_verified_at));
+      setStatusUid(data.user.id);
       setLastStatusCheckAt(new Date().toLocaleTimeString());
 
       setError("");
@@ -163,6 +160,8 @@ export default function VerifyOtpScreen() {
     setVerifyLoading(true);
     try {
       const verifiedUid = statusUid || user_id;
+      const pendingAttribution = await getCampaignAttribution();
+      const referral_code = pendingAttribution?.referralCode;
       let finalized = false;
 
       // Try Supabase SMTP-verified flow first (signup_email_otp)
@@ -178,6 +177,7 @@ export default function VerifyOtpScreen() {
             type: "signup_email_otp",
             user_id: verifiedUid || smtpVerifyData.user?.id || smtpVerifyData.session?.user?.id,
             email: normalizedEmail,
+            referral_code,
           },
           headers: {
             Authorization: `Bearer ${smtpVerifyData.session.access_token}`,
@@ -197,6 +197,7 @@ export default function VerifyOtpScreen() {
             code: otp,
             user_id: verifiedUid,
             email: normalizedEmail,
+            referral_code,
           },
         });
 
@@ -212,12 +213,12 @@ export default function VerifyOtpScreen() {
       try {
         await supabase.auth.signOut();
       } catch (signOutErr) {
-        console.warn("Failed to clear session after PIN verification:", signOutErr);
+        logger.warn("Failed to clear session after PIN verification:", signOutErr);
       }
 
       setShowCongratsModal(true);
     } catch (e) {
-      console.error("Verification error:", e);
+      logger.error("Verification error:", e);
       setError("Verification failed. Try again.");
     } finally {
       setVerifyLoading(false);

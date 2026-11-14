@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
@@ -32,7 +33,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Simple error handler
 const handleSupabaseError = (error: any, context: string) => {
-  console.error(`Error in ${context}:`, error);
+  logger.error(`Error in ${context}:`, error);
   return {
     message: error?.message || error?.toString() || 'An unexpected error occurred'
   };
@@ -51,18 +52,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const initializeAuth = async () => {
       try {
-        console.log('🚀 Initializing auth state...');
+        logger.debug('🚀 Initializing auth state...');
         
         // Get initial session
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error('❌ Error getting session:', error);
+          logger.error('❌ Error getting session:', error);
           if (mounted) {
             setError(error.message);
           }
         } else {
-          console.log('✅ Session retrieved:', session?.user?.id || 'No session');
+          logger.debug('✅ Session retrieved:', session?.user?.id || 'No session');
           if (mounted) {
             setSession(session);
             setUser(session?.user ?? null);
@@ -72,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Set up auth state listener
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
           async (event, session) => {
-            console.log('🔄 Auth state changed:', event, session?.user?.id || 'No user');
+            logger.debug('🔄 Auth state changed:', event, session?.user?.id || 'No user');
             
             if (mounted) {
               setSession(session);
@@ -84,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   const profile = await profileService.getProfile(session.user.id);
                   setProfile(profile);
                 } catch (error) {
-                  console.error('❌ Error loading profile:', error);
+                  logger.error('❌ Error loading profile:', error);
                   setProfile(null);
                 }
               } else {
@@ -98,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           subscription.unsubscribe();
         };
       } catch (error) {
-        console.error('❌ Auth initialization error:', error);
+        logger.error('❌ Auth initialization error:', error);
         if (mounted) {
           setError('Failed to initialize authentication');
         }
@@ -152,9 +153,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       setError(null);
 
-      console.log('🚀 Starting Supabase signup process...');
-      console.log('Email:', email);
-      console.log('Profile data:', profileData);
+      logger.debug('🚀 Starting Supabase signup process...');
+      logger.debug('Email:', email);
+      logger.debug('Profile data:', profileData);
 
       // Step 1: Create user in Supabase Auth
       const { data, error } = await supabase.auth.signUp({
@@ -172,15 +173,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       
       if (error) {
-        console.error('❌ Supabase auth signup error:', error);
+        logger.error('❌ Supabase auth signup error:', error);
         throw error;
       }
       
-      console.log('✅ Supabase auth signup successful:', data.user?.id);
+      logger.debug('✅ Supabase auth signup successful:', data.user?.id);
       
       // Step 2: Create profile in profiles table (if user was created and profile data provided)
       if (data.user && profileData) {
-        console.log('📝 Creating profile for user:', data.user.id);
+        logger.debug('📝 Creating profile for user:', data.user.id);
         
         try {
           const { data: profileResult, error: profileError } = await supabase
@@ -200,22 +201,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .single();
           
           if (profileError) {
-            console.error('❌ Profile creation failed:', profileError);
+            logger.error('❌ Profile creation failed:', profileError);
             // Don't throw error, just log it and continue
-            console.log('⚠️ Continuing without profile creation - trigger may have created it');
+            logger.debug('⚠️ Continuing without profile creation - trigger may have created it');
           } else {
-            console.log('✅ Profile created successfully:', profileResult);
+            logger.debug('✅ Profile created successfully:', profileResult);
           }
         } catch (error) {
-          console.error('❌ Profile creation error:', error);
-          console.log('⚠️ Continuing without profile creation - trigger may have created it');
+          logger.error('❌ Profile creation error:', error);
+          logger.debug('⚠️ Continuing without profile creation - trigger may have created it');
         }
       }
       
-      console.log('✅ Signup process completed successfully');
+      logger.debug('✅ Signup process completed successfully');
       return { success: true };
     } catch (err) {
-      console.error('❌ Signup error:', err);
+      logger.error('❌ Signup error:', err);
       const errorMessage = handleSupabaseError(err, 'signUp').message;
       setError(errorMessage);
       return { success: false, error: errorMessage };

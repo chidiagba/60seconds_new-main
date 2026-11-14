@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
@@ -12,6 +13,7 @@ import { trpc, trpcClient } from "@/lib/trpc";
 import { AppRegistry, Platform, AppState } from "react-native";
 import { AuthProvider } from "@/lib/auth";
 import * as Linking from "expo-linking";
+import { captureReferralUrl } from "@/lib/campaign-attribution";
 import { AppBackButton, AppFloatingBackButton } from "@/components/AppBackButton";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 
@@ -25,10 +27,10 @@ if (!isExpoGo && Platform.OS === "ios") {
     const stripeModule = require("@stripe/stripe-react-native");
     StripeProviderComponent = stripeModule?.StripeProvider || null;
   } catch (error) {
-    console.warn("Stripe native module not available in this build:", error);
+    logger.warn("Stripe native module not available in this build:", error);
   }
 } else {
-  console.log("Stripe native module skipped in Expo Go/web.");
+  logger.debug("Stripe native module skipped in Expo Go/web.");
 }
 
 // Register Stripe's Android headless task at app load so it exists before the native
@@ -74,7 +76,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (error) {
-      console.warn("FontAwesome failed to load; continuing with system fallbacks:", error);
+      logger.warn("FontAwesome failed to load; continuing with system fallbacks:", error);
     }
   }, [error]);
 
@@ -84,7 +86,7 @@ export default function RootLayout() {
     // from ever blocking application startup.
     const frame = requestAnimationFrame(() => {
       SplashScreen.hideAsync().catch((splashError) => {
-        console.warn("Failed to hide the native splash screen:", splashError);
+        logger.warn("Failed to hide the native splash screen:", splashError);
       });
     });
     const fallback = setTimeout(() => {
@@ -126,7 +128,7 @@ function AppContent() {
 
   useEffect(() => {
     applyPlaybackAudioMode().catch((audioModeError) => {
-      console.warn('Failed to configure global audio mode:', audioModeError);
+      logger.warn('Failed to configure global audio mode:', audioModeError);
     });
 
     const appStateSubscription = AppState.addEventListener('change', (nextState) => {
@@ -144,7 +146,7 @@ function AppContent() {
 
   useEffect(() => {
     applyPlaybackAudioMode().catch((audioModeError) => {
-      console.warn('Failed to refresh audio mode on route change:', audioModeError);
+      logger.warn('Failed to refresh audio mode on route change:', audioModeError);
     });
   }, [segments, applyPlaybackAudioMode]);
 
@@ -153,14 +155,16 @@ function AppContent() {
     // Handle initial URL (when app is opened via deep link)
     Linking.getInitialURL().then((url) => {
       if (url) {
+        void captureReferralUrl(url);
         handleDeepLink(url);
       }
     }).catch((error) => {
-      console.warn('Failed to get initial URL:', error);
+      logger.warn('Failed to get initial URL:', error);
     });
 
     // Handle deep links when app is already running
     const subscription = Linking.addEventListener('url', (event) => {
+      void captureReferralUrl(event.url);
       handleDeepLink(event.url);
     });
 
@@ -170,16 +174,16 @@ function AppContent() {
   }, []);
 
   const handleDeepLink = async (url: string) => {
-    console.log('🔗 Deep link received:', url);
+    logger.debug('🔗 Deep link received:', url);
     
     try {
       const parsed = Linking.parse(url);
-      console.log('📋 Parsed deep link:', parsed);
+      logger.debug('📋 Parsed deep link:', parsed);
 
       if (parsed.scheme === 'myapp' && parsed.hostname === 'paystack' && parsed.path === 'callback') {
         const reference = String(parsed.queryParams?.reference || '').trim();
         const orderId = String(parsed.queryParams?.orderId || '').trim();
-        console.log(JSON.stringify({ event: 'paystack_callback_received', orderId, reference }));
+        logger.debug(JSON.stringify({ event: 'paystack_callback_received', orderId, reference }));
         if (reference && orderId) {
           const result = await settleExternalOrderPayment({ orderId, provider: 'paystack', paymentReference: reference });
           router.push({ pathname: '/order/[id]', params: { id: orderId, payment: result.success ? 'confirmed' : 'confirming' } });
@@ -191,7 +195,7 @@ function AppContent() {
 
       // Handle password reset deep link (myapp://reset-password)
       if (parsed.scheme === 'myapp' && parsed.hostname === 'reset-password') {
-        console.log('🔗 Password reset deep link detected');
+        logger.debug('🔗 Password reset deep link detected');
         
         // Extract tokens from query params or hash fragment
         // Supabase passes tokens in hash fragment: myapp://reset-password#access_token=...&refresh_token=...
@@ -208,7 +212,7 @@ function AppContent() {
           type = hashParams.get('type') || '';
         }
 
-        console.log('🔑 Password reset tokens found:', {
+        logger.debug('🔑 Password reset tokens found:', {
           hasAccessToken: !!accessToken,
           hasRefreshToken: !!refreshToken,
           type,
@@ -217,7 +221,7 @@ function AppContent() {
 
         if (accessToken && refreshToken) {
           // Navigate to reset password screen with tokens (type is optional)
-          console.log('✅ Navigating to reset password screen with tokens');
+          logger.debug('✅ Navigating to reset password screen with tokens');
           router.push({
             pathname: '/reset-password',
             params: {
@@ -226,7 +230,7 @@ function AppContent() {
             },
           });
         } else {
-          console.log('⚠️ Deep link received but no tokens found - user may need to click email link again');
+          logger.debug('⚠️ Deep link received but no tokens found - user may need to click email link again');
           // Still navigate to reset password screen - it will show a message to request new link
           router.push({
             pathname: '/reset-password',
@@ -237,7 +241,7 @@ function AppContent() {
       // Handle Supabase verify URLs (https://project.supabase.co/auth/v1/verify)
       // These are password reset links from email that need to be processed
       if (url.includes('supabase.co/auth/v1/verify') || url.includes('/auth/v1/verify')) {
-        console.log('🔗 Supabase verify URL detected');
+        logger.debug('🔗 Supabase verify URL detected');
         
         try {
           const urlObj = new URL(url);
@@ -245,7 +249,7 @@ function AppContent() {
           const type = urlObj.searchParams.get('type') || '';
           const redirectTo = urlObj.searchParams.get('redirect_to') || '';
           
-          console.log('📋 Verify URL params:', { hasToken: !!token, type, redirectTo });
+          logger.debug('📋 Verify URL params:', { hasToken: !!token, type, redirectTo });
           
           // If it's a recovery type and has redirect_to, Supabase will handle the redirect
           // But we can also extract the token and manually navigate
@@ -253,17 +257,17 @@ function AppContent() {
             // The verify URL will redirect to redirect_to with tokens
             // But if the app opened this URL directly, we need to handle it
             // For now, let Supabase handle the redirect to myapp://reset-password
-            console.log('✅ Password reset verify URL detected - will redirect to:', redirectTo);
+            logger.debug('✅ Password reset verify URL detected - will redirect to:', redirectTo);
           }
         } catch (e) {
-          console.error('❌ Error parsing verify URL:', e);
+          logger.error('❌ Error parsing verify URL:', e);
         }
       }
       
       // Handle Supabase callback URLs (https://project.supabase.co/auth/v1/callback)
       // These URLs contain tokens in the hash fragment after Supabase processes verify
       if (url.includes('supabase.co/auth/v1/callback') || url.includes('/auth/v1/callback')) {
-        console.log('🔗 Supabase callback URL detected');
+        logger.debug('🔗 Supabase callback URL detected');
         
         // Extract tokens from hash fragment
         if (url.includes('#')) {
@@ -278,7 +282,7 @@ function AppContent() {
           const redirectTo = urlObj.searchParams.get('redirect_to') || '';
           
           if (accessToken && refreshToken && (type === 'recovery' || redirectTo.includes('reset-password'))) {
-            console.log('🔑 Password reset tokens found in callback URL');
+            logger.debug('🔑 Password reset tokens found in callback URL');
             router.push({
               pathname: '/reset-password',
               params: {
@@ -290,7 +294,7 @@ function AppContent() {
         }
       }
     } catch (error) {
-      console.error('❌ Error handling deep link:', error);
+      logger.error('❌ Error handling deep link:', error);
     }
   };
   
@@ -308,7 +312,7 @@ function AppContent() {
                       fontWeight: "600",
                       fontSize: 18,
                     },
-                    headerBackTitleVisible: false,
+
                     headerBackButtonDisplayMode: "minimal",
                     headerLeft: ({ tintColor }) => (
                       <AppBackButton tintColor={tintColor} variant="header" />
@@ -430,22 +434,6 @@ function AppContent() {
                     animation: "fade",
                   }}
                 />
-                <Stack.Screen
-                  name="reset-password-simple"
-                  options={{
-                    title: "Reset Password",
-                    headerShown: false,
-                    animation: "fade",
-                  }}
-                />
-        <Stack.Screen
-          name="reset-password-test"
-          options={{
-            title: "Reset Password Test",
-            headerShown: false,
-            animation: "fade",
-          }}
-        />
 
                 <Stack.Screen
                   name="transactions"
@@ -520,14 +508,6 @@ function AppContent() {
                   options={{ title: "Order Details", headerShown: false, animation: "slide_from_right" }}
                 />
                 <Stack.Screen
-                  name="test-auth"
-                  options={{
-                    title: "Test Auth",
-                    headerShown: false,
-                    animation: "fade",
-                  }}
-                />
-                <Stack.Screen
                   name="vouchers"
                   options={{
                     title: "vouchers",
@@ -556,7 +536,7 @@ function RootLayoutNav() {
     "merchant.app.sixtyseconds.nightlife";
 
   if (!stripeKey) {
-    console.warn("Stripe publishable key is not set (EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY). Stripe payments will be disabled.");
+    logger.warn("Stripe publishable key is not set (EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY). Stripe payments will be disabled.");
     return (
       <>
         <StatusBar style="light" />

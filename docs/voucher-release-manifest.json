@@ -1,0 +1,3818 @@
+{
+  "generated_at_utc": "2026-11-11T08:32:08.557694+00:00",
+  "decision": "NO GO",
+  "source_commit": "9feeac95e0a43c0a58edb0ae12163b8827525224",
+  "base_commit": "23c2d84f7d48816809a1d99463e04d3f040d359d",
+  "branch": "voucher-production-readiness-20261111",
+  "release_worktree": "/tmp/60seconds-voucher-release",
+  "main_worktree_head_unchanged": true,
+  "note": "Hashes describe the isolated committed source, not unrelated main-worktree modifications. Historical schema fixtures are test-only and MUST NOT be deployed. Documentation commit follows this source commit. No credentials or private business evidence are included.",
+  "release_source_files": [
+    {
+      "path": "app/cart.tsx",
+      "sha256": "3be4a8d8d90a9487fb307a16481500f6ad30032b58a77ea207f8e2f3a8d0a7c9"
+    },
+    {
+      "path": "app/edit-voucher.tsx",
+      "sha256": "85202015cc758f82016e1f56194fa7efcdd5903b58fac3f671de777036887a31"
+    },
+    {
+      "path": "app/order/[id].tsx",
+      "sha256": "039afb10fee9522a1b3b6d859b7f31650f81c35a90b494aa84ba0b954de06b6c"
+    },
+    {
+      "path": "components/ApplyVoucherModal.tsx",
+      "sha256": "8439caf11f151ebfebf036886a8499bf63eab099a86d2c7c5f2f13ee484b4de2"
+    },
+    {
+      "path": "components/BusinessVouchersSection.tsx",
+      "sha256": "1443213e9fe0634130e09439a99569a7c317e1ee5924166aad55640b62d308da"
+    },
+    {
+      "path": "components/CreateVoucherModal.tsx",
+      "sha256": "1b167292b2cf3f0cc4af1884cc65fea71091b5c510b385cbf9e296e3f4d6a0e2"
+    },
+    {
+      "path": "components/PaystackWebView.tsx",
+      "sha256": "5d04805d5f8076d74869535481327ddebe07e22822744a23c38faeef1143bd2f"
+    },
+    {
+      "path": "components/ProductsList.tsx",
+      "sha256": "d61587059b8c477a63f66f214e211e622b5d08264f1cebb077f119ab7574f004"
+    },
+    {
+      "path": "components/VouchersList.tsx",
+      "sha256": "c41d3837471dc7e697d02941814d261f41e74594ef8dc0eaccbcba7375a19252"
+    },
+    {
+      "path": "components/chat/MessageNotificationBridge.tsx",
+      "sha256": "866cf5b1e358ec9898cdde0d1529a0892f97681282e2a248d1c1e510c3590fec"
+    },
+    {
+      "path": "lib/checkout-attempt.ts",
+      "sha256": "f1c23cb1f7d18de71cf3fb060195f564cde3b93b18b943db5a3df3371a9d62d9"
+    },
+    {
+      "path": "lib/database.ts",
+      "sha256": "6ccaa269473f00d25ea6c9617d09ddf0f51e86abadafbe911400f82979604fec"
+    },
+    {
+      "path": "lib/stripe-payment-sheet-session.ts",
+      "sha256": "b94739c718b9b9d19dea700a87685c7aa7b680e80f4a00b82d27abda0a39d0aa"
+    },
+    {
+      "path": "scripts/audit-voucher-production.sql",
+      "sha256": "2853eb7e5699854603fc9550586f9d9e3ff858042628e0ecb3ba42e1315e7a3d"
+    },
+    {
+      "path": "scripts/audit-voucher-redemptions.sql",
+      "sha256": "779117802603d28bd381924c038345342527c4c62ae56370e99300e8b5ec523a"
+    },
+    {
+      "path": "scripts/check-voucher-release-prerequisites.sql",
+      "sha256": "9341eba9864c67b6bbb06af251d1244ebbd592109809111e25d7412bc756b4d2"
+    },
+    {
+      "path": "scripts/classify-historical-orders.py",
+      "sha256": "34aa09209e5f0d0c59f2d4151e99dbd40e61b0ee2bf54cdfb7f86bf41d15210b"
+    },
+    {
+      "path": "scripts/provision-voucher-audit-login.py",
+      "sha256": "c73b8f2b2de3dbcfd42be5567ac69cfd987fd84be32426fefc8c656c2548ae09"
+    },
+    {
+      "path": "scripts/run-readonly-voucher-audit.py",
+      "sha256": "31899ee53874beb143db75fb07900369c3a973b9ae7e4decc00cfad5dfd02ee6"
+    },
+    {
+      "path": "scripts/test-voucher-checkout.py",
+      "sha256": "d97364cb1afb36040b0068182c812463a0b6b216d45cf2bcfd70c58bf2cf216a"
+    },
+    {
+      "path": "scripts/test-voucher-migration-upgrade.py",
+      "sha256": "c9a78d00188d4eb63af84bd1c3c78874d6ddb3cb4e1ad17eafc09358f95c7c64"
+    },
+    {
+      "path": "scripts/test-voucher-production-stage.py",
+      "sha256": "22f969e4efc8186b26148fe7a44d3d7d65bdac0b8b5404e8f6a361f20c9e2873"
+    },
+    {
+      "path": "store/voucher-store.ts",
+      "sha256": "a906ae9c1ac5fa5b116fec563c9c79dcbc1a378d9fc679fe1dc152da0c5a466b"
+    },
+    {
+      "path": "store/wallet-store.ts",
+      "sha256": "c57bd2e0874d0638344830da44e0c74b8caa35ba5f9161e87ce9ed62a4babfa4"
+    },
+    {
+      "path": "supabase/config.toml",
+      "sha256": "705215a55a33af877ede7a0556d7e41db100c07cf231fe8fce1907c8bf74e318"
+    },
+    {
+      "path": "supabase/functions/_shared/checkout-stripe.ts",
+      "sha256": "a19525bffef023022a9b28d4a1497e86815ae88ee33f08678dd0689eeac86fb1"
+    },
+    {
+      "path": "supabase/functions/_shared/cors.ts",
+      "sha256": "50f96abf1077f4917e329c93450fed1efd00302ff89bb3f41c028a5b92692450"
+    },
+    {
+      "path": "supabase/functions/_shared/guest-fulfillment.ts",
+      "sha256": "e34622830454930ffe16a30f5d98f34a956f62fe143ed130b77997f84b434770"
+    },
+    {
+      "path": "supabase/functions/_shared/guest-paystack.ts",
+      "sha256": "2ae677c34bdd1c42b334888cb885a58a6a89b1871b1c5d818117790b0a91472e"
+    },
+    {
+      "path": "supabase/functions/_shared/logger.ts",
+      "sha256": "c7d94a9d90917a6b6717038d1e2903ee275a2b3d9db2c4c63ccccd58c170b45a"
+    },
+    {
+      "path": "supabase/functions/_shared/paystack-verification.ts",
+      "sha256": "bfcfc4dd2209222c1d9deaa6680fcdaa52ab4bd6a5efa7dbf2f0ac160c9c3853"
+    },
+    {
+      "path": "supabase/functions/checkout-reconcile/index.ts",
+      "sha256": "33b32c3bda6b96a62caa790f18236451dd97f8aed5d7e27328fd4bf6e74448ea"
+    },
+    {
+      "path": "supabase/functions/guest-checkout-webhook/index.ts",
+      "sha256": "b049198a6f88ddbefd9f1dcc572e1076559b043c4664db6c73baf650be8f23a4"
+    },
+    {
+      "path": "supabase/functions/paystack-create-order-checkout/index.ts",
+      "sha256": "87adb5360bf179034ef13a94eb274d7a35ad499faad6f01569ed918ad30cbffc"
+    },
+    {
+      "path": "supabase/functions/paystack-initialize/index.ts",
+      "sha256": "45573866eea7d4c14e19f138bfee7ae303e34272dcd863f527874b94d67d3c69"
+    },
+    {
+      "path": "supabase/functions/paystack-verify/index.ts",
+      "sha256": "f7d3d33a693689436e53f9749e1ff50c029a37762fceb6cce89a6b945ec459f1"
+    },
+    {
+      "path": "supabase/functions/paystack-webhook-settlement/index.ts",
+      "sha256": "2b51ead28c9aaf4324c9aa6c5ebcda168d35575fb9a522bf5d654ebba21cb3a0"
+    },
+    {
+      "path": "supabase/functions/settle-external-order-payment/index.ts",
+      "sha256": "66f566ce0cc3abc9ac0595f255f4bde718fbeb9a8aebb107e1115a369fd40f23"
+    },
+    {
+      "path": "supabase/functions/stripe-confirm-and-settle/index.ts",
+      "sha256": "b7c9f2da525eb72fc675be06f97f1c13abdcfbe94eede6a4bd753df23161ee8c"
+    },
+    {
+      "path": "supabase/functions/stripe-create-checkout/index.ts",
+      "sha256": "fa834cbe4412847850049262503f1bdcaadf3b5d232ec8abc21aa4ab4b22f3c9"
+    },
+    {
+      "path": "supabase/functions/stripe-create-payment-sheet/index.ts",
+      "sha256": "e047b581112679a89a86d928943947dba0496b9b45052352f1ae6677c44d42da"
+    },
+    {
+      "path": "supabase/migrations/20261111080000_voucher_production_bridge.sql",
+      "sha256": "3b2189443b787ec7dea4b51fa0cbf973cab9bb01470a891b7ee182a4b91e13f6"
+    },
+    {
+      "path": "supabase/migrations/20261111090000_atomic_voucher_checkout.sql",
+      "sha256": "36387631bab0acf3676743c09afd611c7e85e3642798bf39e38bd510094c8df9"
+    },
+    {
+      "path": "supabase/migrations/20261111100000_verified_fulfillment_boundaries.sql",
+      "sha256": "ff1bed1cc9073739d209a00559138cc182bbdcecbef7a7ac7135a439e0685aab"
+    },
+    {
+      "path": "tests/checkout-selection.test.cjs",
+      "sha256": "e938e1ee4957e707167d3a16db259db861bc784b3b500053c6e6afef4f663cb6"
+    },
+    {
+      "path": "tests/fixtures/production-baseline/20250214000000_core_schema.sql",
+      "sha256": "688939c7babd9c1b28bbd8b5bdfccd744d201f5f601c1279da56e821ba8c64dd"
+    },
+    {
+      "path": "tests/fixtures/production-baseline/20250214154616_spring_shore.sql",
+      "sha256": "243d32167e7d1ce56c955231ddc1b8376d9bdc55de039f7bb0619409d4cf0206"
+    },
+    {
+      "path": "tests/fixtures/production-baseline/20261107090000_secure_signup_otp.sql",
+      "sha256": "22e74b5cb0ab5d600babbc0cdf692ae1931e1510d04d9dbc0bc15e911bb167d4"
+    },
+    {
+      "path": "tests/fixtures/production-baseline/20261107100000_harden_rls.sql",
+      "sha256": "d8175bee6b6a73efe6a4c9301394fcd926f9c848716d0c99ae33f39b5935ffe2"
+    },
+    {
+      "path": "tests/fixtures/production-baseline/20261107110000_core_owner_policies.sql",
+      "sha256": "8c4f9e71835125e556b6e26de2069231eefdce1f8434077a6aa0a76b688b9e3a"
+    },
+    {
+      "path": "tests/fixtures/production-baseline/20261107120000_atomic_wallet_funding.sql",
+      "sha256": "beab4dbba9942e303cd18939c56163082132417876ee8b432e25d90342c87c1f"
+    },
+    {
+      "path": "tests/fixtures/production-baseline/20261107130000_ensure_profile_wallets.sql",
+      "sha256": "d861db22322b1f6a99e7c512a67cb878f48d10308e662966dc11304ede4eef11"
+    },
+    {
+      "path": "tests/fixtures/voucher-production-schema.json",
+      "sha256": "757abf3aed873b500ee8f1d873f5e63da86452a859971822ce2296d686db78f2"
+    },
+    {
+      "path": "tests/guest-paystack-booking.test.cjs",
+      "sha256": "a6c864c921de3d05af58850cc56df96fa8e9db8155230cea78c254900d5ddcc6"
+    },
+    {
+      "path": "tests/review-bootstrap.sql",
+      "sha256": "bdf4dc94d340deeb78e1c115825c4c729213686b16f5adf1d242acf42ea74076"
+    },
+    {
+      "path": "tests/test_readonly_voucher_audit.py",
+      "sha256": "67743c661caf117673f3eee33766e7a3afb02ce754899a5e1b1dbad49a580c7c"
+    },
+    {
+      "path": "tests/verified-fulfillment.sql",
+      "sha256": "f3420f95e8115d343695ad5f8837e1a5bb5c69a4769fc85435fc8515cdc25ca2"
+    },
+    {
+      "path": "tests/voucher-checkout.sql",
+      "sha256": "6183b13ab67acedd9d4688ab1fa4e839389421d8424cbef15e982fffc8bbedc6"
+    },
+    {
+      "path": "tests/voucher-payment-handlers.test.cjs",
+      "sha256": "142f120e5fd5c743cdb0a64e2a12819bfb8fdc2e085e6807902a8d107d805e56"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "c080dd0aba770cb4fd9579be22d067a50c7291029e141830a181eb3666f35b25"
+    },
+    {
+      "path": "types/index.ts",
+      "sha256": "cc81ad6520e30b4dbb20bbdb9cd08361f7b717aa3a677e6f37f4bd7566ea9a17"
+    },
+    {
+      "path": "utils/checkout-selection.ts",
+      "sha256": "4cb9c1584e1b3836c37f5d82e992e2f9b9cf9eafacb84ded62e22b5bcb258802"
+    },
+    {
+      "path": "utils/voucher-expiry.ts",
+      "sha256": "40fe927205d51252c7d503f98455f7e8213f32e980a38a590d9c67fdedda6fe2"
+    }
+  ],
+  "main_worktree_uncommitted_path_count": 644,
+  "main_worktree_uncommitted_paths": [
+    {
+      "git_status": " D",
+      "path": ".DS_Store",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/_expo/static/js/android/entry-3544e7aa030234f2abcb7a0c7bf186f3.hbc",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/017bc6ba3fc25503e5eb5e53826d48a8",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/02bc1fa7c0313217bde2d65ccbff40c9",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/0584e2fdca8c88b4537281b17cf91e2c",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/069d99eb1fa6712c0b9034a58c6b57dd",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/0747a1317bbe9c6fc340b889ef8ab3ae",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/0a328cd9c1afd0afe8e3b1ec5165b1b4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/0dc8a49d999a851497c910bbb0afbba2",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/1190ab078c57159f4245a328118fcd9a",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/12466ff36f23f268e95685369ab6883b",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/140c53a7643ea949007aa9a282153849",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/1681f34aaca71b8dfb70756bca331eb2",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/19eeb73b9593a38f8e9f418337fc7d10",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/1f77739ca9ff2188b539c36f30ffa2be",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/20e71bdf79e3a97bf55fd9e164041578",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/286d67d3f74808a60a78d3ebf1a5fb57",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/31b5ffea3daddc69dd01a1f3d6cf63c5",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/35ba0eaec5a4f5ed12ca16fabeae451d",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/370dd5af19f8364907b6e2c41f45dbbf",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/3b89dd103490708d19a95adcae52210e",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/3cd68ccdb8938e3711da2e8831b85493",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/3f78af31cca60105799838a1a7a59fbd",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/412dd9275b6b48ad28f5e3d81bb1f626",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/4403c6117ec30c859bc95d70ce4a71d3",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/492a415166776d046430edd7f2d16726",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/4e85bc9ebe07e0340c9c4fc2f6c38908",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/547bb214953d1a038b7cb078e38a65fd",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/56c8d80832e37783f12c05db7c8849e2",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/605ed7926cf39a2ad5ec2d1f9d391d3d",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/61ca7e64b7d605716c57706cef640b9a",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/6e435534bd35da5fef04168860a9b8fa",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/778ffc9fe8773a878e9c30a6304784de",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/78c625386b4d0690b421eb0fc78f7b9c",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/871378c6eab492a3e689a9385dc45a12",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/ab19f4cbc543357183a20571f68380a3",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/adec7d6f310bc577f05e8fe06a5daccf",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/aff2c65b39a296d4f7e96d0f58169170",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/b06871f281fee6b241d60582ae9369b9",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/b49ae8ab2dbccb02c4d11caaacf09eab",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/b4eb097d35f44ed943676fd56f6bdc51",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/c3273c9e5321f20d1e42c2efae2578c4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/c79c3606a1cf168006ad3979763c7e0c",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/ca4b48e04dc1ce10bfbddb262c8b835f",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/d1ea1496f9057eb392d5bbf3732a61b7",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/d2285965fe34b05465047401b8595dd0",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/d84e297c3b3e49a614248143d53e40ca",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/d8b800c443b8972542883e0b9de2bdc6",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/d8e7601e3df962f83c62371ac14964d8",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/assets/e20945d7c929279ef7a6f1db184a4470",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/index.html",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/metadata.json",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/mock-payment-success.html",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/reset-password.html",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/verify-email.html",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/0875a137-66d1-489b-8bbb-5cf80f39f5a0.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/0c424d07-4bbb-49fd-a952-de8173341bc6.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/1317ff13-1080-43c1-9f28-b1cee188471f.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/20e670f7-9786-4c8a-bbfa-e232593457c8.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/2d86884e-00d6-4afa-af97-3bdf9120a1a2.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/357527e3-6e1b-40ea-923e-915e9d01ae08.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/3b20aa88-f5d1-4270-9668-a0d648c0c944.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/3fb2e8e4-ca46-457f-b662-9955a53d5809.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/462f3489-eedc-4afd-8bd3-be5bbe5f2d16.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/5af5e0fe-afad-4d9a-93bc-d22c7fc7f98f.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/715a9a53-19c4-4e1a-9c82-cfa92e69cfc3.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/71fbfc91-e26e-4336-b35e-da44fa4e4ff0.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/a5eeb52a-7afa-4320-a82c-c3f7f5e91a12.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/b5eec6a7-5f23-4738-aa71-e5df9554c139.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/b858f41c-199b-40d9-a176-d4c90984eab9.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/ba1ebec9-f565-44f4-9706-707ba0f253c0.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/c1a50bac-6c74-4418-90d0-4f35d03e31e7.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/cf38e0b6-cd96-436b-b30d-1a2b0c46cdba.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/e104d6cf-70ad-40ae-850c-08227880517f.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/e89c9b75-5192-4ec4-af2b-72b2df9939b7.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/f2728f06-4a90-4ede-be5e-d1f73ac1048f.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-android-check/watermarked-videos/febe2d0a-dc98-418f-a0f8-2dbaebef548b_upload_in.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/_expo/static/js/ios/entry-73e8ce491f9d364db71c90806b9af539.hbc",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/017bc6ba3fc25503e5eb5e53826d48a8",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/0584e2fdca8c88b4537281b17cf91e2c",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/0747a1317bbe9c6fc340b889ef8ab3ae",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/0a328cd9c1afd0afe8e3b1ec5165b1b4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/0dc8a49d999a851497c910bbb0afbba2",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/0ea69b5077e7c4696db85dbcba75b0e1",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/1190ab078c57159f4245a328118fcd9a",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/12466ff36f23f268e95685369ab6883b",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/140c53a7643ea949007aa9a282153849",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/1681f34aaca71b8dfb70756bca331eb2",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/19eeb73b9593a38f8e9f418337fc7d10",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/1f77739ca9ff2188b539c36f30ffa2be",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/20e71bdf79e3a97bf55fd9e164041578",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/2d0a9133e39524f138be6d4db9f4851f",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/31b5ffea3daddc69dd01a1f3d6cf63c5",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/370dd5af19f8364907b6e2c41f45dbbf",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/3b89dd103490708d19a95adcae52210e",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/3cd68ccdb8938e3711da2e8831b85493",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/3f78af31cca60105799838a1a7a59fbd",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/412dd9275b6b48ad28f5e3d81bb1f626",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/492a415166776d046430edd7f2d16726",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/4e85bc9ebe07e0340c9c4fc2f6c38908",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/547bb214953d1a038b7cb078e38a65fd",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/56c8d80832e37783f12c05db7c8849e2",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/605ed7926cf39a2ad5ec2d1f9d391d3d",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/61ca7e64b7d605716c57706cef640b9a",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/6e435534bd35da5fef04168860a9b8fa",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/78c625386b4d0690b421eb0fc78f7b9c",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/7d40544b395c5949f4646f5e150fe020",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/871378c6eab492a3e689a9385dc45a12",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/a132ecc4ba5c1517ff83c0fb321bc7fc",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/ab19f4cbc543357183a20571f68380a3",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/adec7d6f310bc577f05e8fe06a5daccf",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/aff2c65b39a296d4f7e96d0f58169170",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/b06871f281fee6b241d60582ae9369b9",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/b49ae8ab2dbccb02c4d11caaacf09eab",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/b4eb097d35f44ed943676fd56f6bdc51",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/ca4b48e04dc1ce10bfbddb262c8b835f",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/d1ea1496f9057eb392d5bbf3732a61b7",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/d2285965fe34b05465047401b8595dd0",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/d62ddc38b69aff346c20a28774933d6a",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/d84e297c3b3e49a614248143d53e40ca",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/d8b800c443b8972542883e0b9de2bdc6",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/d8e7601e3df962f83c62371ac14964d8",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/dad2fa9f4394a630f0f9a0d6dabd44bc",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/e20945d7c929279ef7a6f1db184a4470",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/assets/f3a81967828232c893d547162e922764",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/index.html",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/metadata.json",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/mock-payment-success.html",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/reset-password.html",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/verify-email.html",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/0875a137-66d1-489b-8bbb-5cf80f39f5a0.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/0c424d07-4bbb-49fd-a952-de8173341bc6.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/1317ff13-1080-43c1-9f28-b1cee188471f.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/20e670f7-9786-4c8a-bbfa-e232593457c8.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/2d86884e-00d6-4afa-af97-3bdf9120a1a2.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/357527e3-6e1b-40ea-923e-915e9d01ae08.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/3b20aa88-f5d1-4270-9668-a0d648c0c944.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/3fb2e8e4-ca46-457f-b662-9955a53d5809.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/462f3489-eedc-4afd-8bd3-be5bbe5f2d16.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/5af5e0fe-afad-4d9a-93bc-d22c7fc7f98f.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/715a9a53-19c4-4e1a-9c82-cfa92e69cfc3.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/71fbfc91-e26e-4336-b35e-da44fa4e4ff0.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/a5eeb52a-7afa-4320-a82c-c3f7f5e91a12.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/b5eec6a7-5f23-4738-aa71-e5df9554c139.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/b858f41c-199b-40d9-a176-d4c90984eab9.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/ba1ebec9-f565-44f4-9706-707ba0f253c0.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/c1a50bac-6c74-4418-90d0-4f35d03e31e7.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/cf38e0b6-cd96-436b-b30d-1a2b0c46cdba.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/e104d6cf-70ad-40ae-850c-08227880517f.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/e89c9b75-5192-4ec4-af2b-72b2df9939b7.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/f2728f06-4a90-4ede-be5e-d1f73ac1048f.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": ".expo-export-check/watermarked-videos/febe2d0a-dc98-418f-a0f8-2dbaebef548b_upload_in.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": ".gitignore",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": ".vscode/settings.json",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "AVATAR_SYNC_IMPLEMENTATION.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "COMPLETION_SUMMARY.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "DEPLOYMENT_CHECKLIST_PIN_FIX.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "DEPLOYMENT_READY_FINAL.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "EMAIL_CONFIRMATION_DEEP_DIVE.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "EMAIL_CONFIRMATION_FINAL_SUMMARY.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "EMAIL_CONFIRMATION_GUIDE.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "EMAIL_CONFIRMATION_QUICK_REF.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "EMAIL_CONFIRMATION_TESTING.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "IMPLEMENTATION_SUMMARY.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "LIVE_DEPLOYMENT_MANUAL.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "PAYSTACK_SPLIT_INSOMNIA_TESTING.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "PAYSTACK_WEBHOOK_DEPLOY_AND_BACKFILL.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "PIN_VERIFICATION_QUICK_REF.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "PRODUCTION_DEPLOYMENT_FINAL.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "README.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "SET_POSTMARK_SECRET.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "SIGNUP_PIN_VERIFICATION_FIXES.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "SUPABASE_EMAIL_SETUP.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "SUPABASE_PRODUCTION_DEPLOYMENT.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "SUPABASE_WELCOME_EMAIL_SETUP.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "TWINT_TESTING_GUIDE.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "VERIFICATION_CHECKLIST.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "android/app/build.gradle",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "android/app/keystore.jks",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "android/app/src/main/AndroidManifest.xml",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "android/applepay.key",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "android/gradle.properties",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app.json",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/(tabs)/_layout.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/(tabs)/index.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/(tabs)/profile.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/(tabs)/search.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/(tabs)/upload.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/(tabsbusiness)/_layout.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/(tabsbusiness)/index.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/(tabsbusiness)/profile.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/(tabsbusiness)/search.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/(tabsbusiness)/upload.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/(tabsbusiness)/wallet.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/ProfileUserScreen.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/_layout.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/add-payment-method.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/bank-accounts.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/business/analytics.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/business/customers.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/cart.tsx",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "app/chat/[chatId].tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/chat/create-group.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/comments.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/direct-card-payment.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/edit-profile.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/edit-voucher.tsx",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "app/email-confirmed.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/event/[id].tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/followers.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/following.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/forgot-password.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/guest-list-management.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/location.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "app/mock-payment-success.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/order/[id].tsx",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "app/payment-methods.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/receive-money.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/reset-password.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/send-money.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/settings.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/signin.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/signup-clean.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/signup-fixed.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/signup.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "app/test-auth.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "app/test-payment.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "app/test-worldline.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/verify-otp.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "app/web-video/[id].tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/hono.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/lib/supabase.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/lib/supabaseClient.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/create-context.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/account/delete/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/datatrans/direct-card-payment/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/datatrans/initialize/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/datatrans/verify/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/emails/send-guest-order/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/emails/send-welcome/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/orders/generate-pdf/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/orders/get-user-pdfs/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/paystack/customers/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/paystack/initialize/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/paystack/verify/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/paystack/webhook/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/worldline/create-customer/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/worldline/create-session/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/worldline/delete-payment-method/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/worldline/direct-card-payment/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/worldline/get-customer/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/worldline/get-payment-history/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/worldline/get-payment-methods/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/worldline/initialize/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/worldline/set-default-payment-method/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/worldline/verify/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "backend/trpc/routes/worldline/webhook/route.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/HEAD",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/config",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/description",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/hooks/applypatch-msg.sample",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/hooks/commit-msg.sample",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/hooks/fsmonitor-watchman.sample",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/hooks/post-update.sample",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/hooks/pre-applypatch.sample",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/hooks/pre-commit.sample",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/hooks/pre-merge-commit.sample",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/hooks/pre-push.sample",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/hooks/pre-rebase.sample",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/hooks/pre-receive.sample",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/hooks/prepare-commit-msg.sample",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/hooks/push-to-checkout.sample",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/hooks/sendemail-validate.sample",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/hooks/update.sample",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/info/exclude",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/objects/pack/pack-dec7fd7682e22baf08ebd301db44abe5651cfc1e.idx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/objects/pack/pack-dec7fd7682e22baf08ebd301db44abe5651cfc1e.pack",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/objects/pack/pack-dec7fd7682e22baf08ebd301db44abe5651cfc1e.rev",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "backup-repo.git/packed-refs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "check-new-keys.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/AddFundsModal.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/AppBackButton.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/AppErrorBoundary.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/ApplyVoucherModal.tsx",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "components/AttendeesList.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/AvatarImage.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/BulkActionModal.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/BusinessCustomerList.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/BusinessVouchersSection.tsx",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "components/ChatMessage.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/CommentItem.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/CreateVoucherModal.tsx",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "components/EmailVerificationGuard.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/EventCreationForm.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/EventListWithShop.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/GuestListModal.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/GuestListNotifications.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/MessageButton.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/PaystackWebView.tsx",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "components/ProductCreationModal.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/ProductsList.tsx",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "components/SearchResultItem.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/ShareModal.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/SupabaseExample.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/TrendingEventsDiscoverScreen.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/UserSearchModal.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/UserTagItem.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/VideoInfo.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/VideoPlayer.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/VideoWatermark.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/VouchersList.tsx",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " D",
+      "path": "components/WorldlinePaymentTest.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/chat/GroupChatScreen.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "components/chat/MessageNotificationBridge.tsx",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "components/chat/MessagesInboxScreen.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "create-products-table.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "eval _$(ssh-agent -s)_",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "fix-auth-system.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "hooks/useAvatarSync.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "ios/60Seconds/AppDelegate.swift",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "ios/60Seconds/Info.plist",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "keystore.jks",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/auth-provider.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/auth.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/config.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/database.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/datatrans-config.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/datatrans.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/event-creation-service.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/event-queries.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/group-chat-service.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/payment-service.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/paystack-config.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/paystack.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/stripe-payment-handler.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/stripe-payment-sheet-session.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/supabase.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/trpc.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/video-feed.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/worldline-config.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "lib/worldline.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "logs/startup-full-log-latest.txt",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "logs/startup-full-log-postfix-2.txt",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "logs/startup-log-latest.txt",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "logs/startup-postfix-check-2.txt",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "logs/startup-postfix-check-3.txt",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "logs/startup-postfix-check.txt",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "logs/startup-success-signal.txt",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "mocks/products.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "modules/native-video-watermark/android/src/main/java/app/sixtyseconds/watermark/NativeVideoWatermarkModule.kt",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "modules/native-video-watermark/ios/NativeVideoWatermarkModule.swift",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "modules/native-video-watermark/src/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "my-release-key.keystore",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "package.json",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "public/reset-password.html",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "public/verify-email.html",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/0875a137-66d1-489b-8bbb-5cf80f39f5a0.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/0c424d07-4bbb-49fd-a952-de8173341bc6.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/1317ff13-1080-43c1-9f28-b1cee188471f.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/20e670f7-9786-4c8a-bbfa-e232593457c8.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/2d86884e-00d6-4afa-af97-3bdf9120a1a2.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/357527e3-6e1b-40ea-923e-915e9d01ae08.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/3b20aa88-f5d1-4270-9668-a0d648c0c944.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/3fb2e8e4-ca46-457f-b662-9955a53d5809.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/462f3489-eedc-4afd-8bd3-be5bbe5f2d16.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/5af5e0fe-afad-4d9a-93bc-d22c7fc7f98f.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/715a9a53-19c4-4e1a-9c82-cfa92e69cfc3.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/71fbfc91-e26e-4336-b35e-da44fa4e4ff0.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/a5eeb52a-7afa-4320-a82c-c3f7f5e91a12.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/b5eec6a7-5f23-4738-aa71-e5df9554c139.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/b858f41c-199b-40d9-a176-d4c90984eab9.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/ba1ebec9-f565-44f4-9706-707ba0f253c0.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/c1a50bac-6c74-4418-90d0-4f35d03e31e7.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/cf38e0b6-cd96-436b-b30d-1a2b0c46cdba.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/e104d6cf-70ad-40ae-850c-08227880517f.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/e89c9b75-5192-4ec4-af2b-72b2df9939b7.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/f2728f06-4a90-4ede-be5e-d1f73ac1048f.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "public/watermarked-videos/febe2d0a-dc98-418f-a0f8-2dbaebef548b_upload_in.mp4",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/DATABASE_SCHEMA.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/TICKET_RECEIPTS.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/add-avatar-gender-column.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/add-events-table-columns.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/add-profile-country-columns.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/add-profile-fields.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/add-video-stats-columns.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/add-wallet-creation-trigger.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/add-welcome-email-sent-column.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/add_product_id_to_vouchers.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/check-products-table-status.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/complete-events-table-fix.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/create-follows-table.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/create-group-chat-tables.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/create-hidden-videos-table.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/create-images-bucket.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/create-products-table-manual.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/create-video-comments-ratings-tables.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/create-video-likes-shares-tables.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/create-wallet-tables.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/create_otp_codes_table.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/create_products_table.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/debug-database-relationships.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/delete-user-function.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/disable-products-rls.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/enable-chat-message-edit-delete.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/enhance-orders-table-for-payments.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/fix-events-constraint-complete.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/fix-events-creator-id.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/fix-events-status-constraint-safe.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/fix-events-status-constraint.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/fix-missing-profiles-backfill.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/fix-products-permissions-complete.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/fix-products-rls-policies-safe.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/fix-products-table-safe.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/fix-rls-policies.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/fix-video-comments-ratings-permissions.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/fix-video-permanent-delete.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "sql_commands_for_supabase_tables/sequential_numeric_order_numbers.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "store/auth-store.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "store/business-customer-store.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "store/content-moderation-store.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "store/product-store.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "store/search-store.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "store/video-store.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "store/voucher-store.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "store/wallet-store.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/config.toml",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/_shared/guest-fulfillment.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/_shared/guest-paystack.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/backfill-external-settlements/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/backfill-ticket-receipts/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/create-signup-user/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/datatrans-payment/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/get-uid-by-email/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/guest-checkout-webhook/index.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/guest-event/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/payment-audit-summary/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/paystack-bank-list/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/paystack-create-order-checkout/index.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/paystack-direct-transfer/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/paystack-initialize/index.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/paystack-reconcile-business-sales/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/paystack-reconcile-subaccount-settlements/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/paystack-reconcile-withdrawals/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/paystack-resolve-routing/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/paystack-routing-audit/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/paystack-verify-business-bank-account/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/paystack-verify/index.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/paystack-webhook-settlement/index.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/paystack-withdraw-business-bank-account/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/reconcile-product-stock-from-receipts/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/repair-single-external-settlement/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/send-otp/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/send-password-reset/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/send-welcome-email/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/settle-external-order-payment/index.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/stripe-confirm-and-settle/index.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " D",
+      "path": "supabase/functions/stripe-create-checkout/Untitled",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/stripe-create-checkout/index.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/stripe-create-payment-sheet/index.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/stripe-verify-business-bank-account/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/stripe-withdraw-business-bank-account/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/update-password-by-uid/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/functions/verify-otp/index.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "supabase/migrations/20250214154616_spring_shore.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "test-datatrans-edge-function.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "test-edge-function-call.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "test-paystack-key.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "test-worldline-fix.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "test-worldline-payment.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "test-worldline-simple.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "tests/booking-availability.test.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "tests/event-currency.test.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "tests/guest-paystack-booking.test.cjs",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "tests/notification-routing.test.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "tests/profile-event-sharing.test.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "tests/upload-submit.test.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "tests/video-feed.test.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "tests/video-sharing-playback.test.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "tsconfig.json",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "types/index.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": " M",
+      "path": "types/wallet.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "utils/avatar.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "utils/event-thumbnail.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "utils/image-upload.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "utils/location.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "utils/video-editing.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "utils/video-watermark-processing.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " M",
+      "path": "utils/video-watermark.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "yes",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": " D",
+      "path": "yes.pub",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": ".env.example",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": ".github/workflows/ci.yml",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "app.config.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "backend/lib/env.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "backend/lib/logger.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "backend/lib/paystack-signature.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "components/SharedTabs.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/README.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/DATABASE_SCHEMA.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/TICKET_RECEIPTS.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/add-avatar-gender-column.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/add-events-table-columns.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/add-profile-country-columns.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/add-profile-fields.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/add-video-stats-columns.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/add-wallet-creation-trigger.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/add-welcome-email-sent-column.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/add_product_id_to_vouchers.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/check-products-table-status.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/complete-events-table-fix.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/create-follows-table.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/create-group-chat-tables.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/create-hidden-videos-table.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/create-images-bucket.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/create-products-table-manual.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/create-video-comments-ratings-tables.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/create-video-likes-shares-tables.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/create-wallet-tables.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/create_otp_codes_table.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/create_products_table.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/debug-database-relationships.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/delete-user-function.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/disable-products-rls.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/enable-chat-message-edit-delete.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/enhance-orders-table-for-payments.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/fix-events-constraint-complete.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/fix-events-creator-id.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/fix-events-status-constraint-safe.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/fix-events-status-constraint.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/fix-missing-profiles-backfill.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/fix-products-permissions-complete.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/fix-products-rls-policies-safe.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/fix-products-table-safe.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/fix-rls-policies.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/fix-video-comments-ratings-permissions.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/fix-video-permanent-delete.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/legacy-sql/sequential_numeric_order_numbers.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/screens/WorldlinePaymentTest.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/screens/mock-payment-success.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/screens/test-auth.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/screens/test-payment.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/screens/test-worldline.tsx",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/scripts/check-new-keys.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/scripts/create-products-table.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/scripts/fix-auth-system.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/scripts/test-datatrans-edge-function.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/scripts/test-edge-function-call.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/scripts/test-paystack-key.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/scripts/test-worldline-fix.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/scripts/test-worldline-payment.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/scripts/test-worldline-simple.js",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "dev/stripe-create-checkout-Untitled",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/AVATAR_SYNC_IMPLEMENTATION.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/COMPLETION_SUMMARY.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/DEPLOYMENT_CHECKLIST_PIN_FIX.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/DEPLOYMENT_READY_FINAL.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/EMAIL_CONFIRMATION_DEEP_DIVE.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/EMAIL_CONFIRMATION_FINAL_SUMMARY.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/EMAIL_CONFIRMATION_GUIDE.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/EMAIL_CONFIRMATION_QUICK_REF.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/EMAIL_CONFIRMATION_TESTING.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/IMPLEMENTATION_SUMMARY.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/LIVE_DEPLOYMENT_MANUAL.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/PAYSTACK_SPLIT_INSOMNIA_TESTING.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/PAYSTACK_WEBHOOK_DEPLOY_AND_BACKFILL.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/PIN_VERIFICATION_QUICK_REF.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/PRODUCTION_DEPLOYMENT_FINAL.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/SET_POSTMARK_SECRET.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/SIGNUP_PIN_VERIFICATION_FIXES.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/SUPABASE_EMAIL_SETUP.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/SUPABASE_PRODUCTION_DEPLOYMENT.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/SUPABASE_WELCOME_EMAIL_SETUP.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/TWINT_TESTING_GUIDE.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/archive/VERIFICATION_CHECKLIST.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/code-review-status.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/video-watermark.md",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/voucher-checkout-fix.md",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/voucher-production-readiness.md",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/voucher-release-manifest.json",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/voucher-release-procedure.md",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "docs/voucher-release-scope.md",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "lib/checkout-attempt.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "lib/logger.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "lib/password-recovery.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "lib/profile-search.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/assert-voucher-release.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/audit-checkout-orders.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/audit-voucher-production.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/audit-voucher-redemptions.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/check-voucher-release-prerequisites.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/classify-historical-orders.py",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/lint-source.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/provision-voucher-audit-login.py",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/purge-exposed-history.sh",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/run-readonly-voucher-audit.py",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/scan-secrets.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/test-database.py",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/test-voucher-checkout.py",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/test-voucher-migration-upgrade.py",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/test-voucher-production-stage.py",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/verify-watermark-export.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "scripts/write-public-config.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/functions/_shared/checkout-stripe.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/functions/_shared/cors.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/functions/_shared/logger.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/functions/_shared/paystack-verification.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/functions/checkout-reconcile/index.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/migrations/20250214000000_core_schema.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/migrations/20261107090000_secure_signup_otp.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/migrations/20261107100000_harden_rls.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/migrations/20261107110000_core_owner_policies.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/migrations/20261107120000_atomic_wallet_funding.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/migrations/20261107130000_ensure_profile_wallets.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/migrations/20261111080000_voucher_production_bridge.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/migrations/20261111090000_atomic_voucher_checkout.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/migrations/20261111100000_verified_fulfillment_boundaries.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "supabase/templates/recovery.html",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/avatar-distance.test.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/checkout-selection.test.cjs",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/fixtures/production-baseline/20250214000000_core_schema.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/fixtures/production-baseline/20250214154616_spring_shore.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/fixtures/production-baseline/20261107090000_secure_signup_otp.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/fixtures/production-baseline/20261107100000_harden_rls.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/fixtures/production-baseline/20261107110000_core_owner_policies.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/fixtures/production-baseline/20261107120000_atomic_wallet_funding.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/fixtures/production-baseline/20261107130000_ensure_profile_wallets.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/fixtures/voucher-production-schema.json",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/location-permission.test.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/logger-fixture.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/password-reset.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/profile-search.test.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/review-bootstrap.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/review-security.sql",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/security-auth.test.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/test_readonly_voucher_audit.py",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/verified-fulfillment.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/video-details.test.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/video-watermark.test.cjs",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/voucher-checkout.sql",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "tests/voucher-payment-handlers.test.cjs",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "utils/checkout-selection.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "utils/venue-location.ts",
+      "scope": "excluded from focused voucher source commit"
+    },
+    {
+      "git_status": "??",
+      "path": "utils/voucher-expiry.ts",
+      "scope": "voucher source/documentation overlap; mixed-file unrelated hunks preserved"
+    },
+    {
+      "git_status": "??",
+      "path": "utils/watermark-layout.ts",
+      "scope": "excluded from focused voucher source commit"
+    }
+  ],
+  "prior_manifest_review": [
+    {
+      "path": "app/cart.tsx",
+      "decision": "focused source included"
+    },
+    {
+      "path": "app/order/[id].tsx",
+      "decision": "focused source included"
+    },
+    {
+      "path": "components/ProductsList.tsx",
+      "decision": "focused source included"
+    },
+    {
+      "path": "components/PaystackWebView.tsx",
+      "decision": "focused source included"
+    },
+    {
+      "path": "components/ApplyVoucherModal.tsx",
+      "decision": "focused source included"
+    },
+    {
+      "path": "components/VouchersList.tsx",
+      "decision": "focused source included"
+    },
+    {
+      "path": "components/BusinessVouchersSection.tsx",
+      "decision": "focused source included"
+    },
+    {
+      "path": "components/chat/MessageNotificationBridge.tsx",
+      "decision": "focused source included"
+    },
+    {
+      "path": "store/voucher-store.ts",
+      "decision": "focused source included"
+    },
+    {
+      "path": "types/index.ts",
+      "decision": "focused source included"
+    },
+    {
+      "path": "lib/stripe-payment-sheet-session.ts",
+      "decision": "focused source included"
+    },
+    {
+      "path": "supabase/config.toml",
+      "decision": "focused source included"
+    },
+    {
+      "path": "supabase/functions/paystack-create-order-checkout/index.ts",
+      "decision": "focused source included"
+    },
+    {
+      "path": "supabase/functions/paystack-webhook-settlement/index.ts",
+      "decision": "focused source included"
+    },
+    {
+      "path": "supabase/functions/settle-external-order-payment/index.ts",
+      "decision": "focused source included"
+    },
+    {
+      "path": "supabase/functions/stripe-create-checkout/index.ts",
+      "decision": "focused source included"
+    },
+    {
+      "path": "supabase/functions/stripe-confirm-and-settle/index.ts",
+      "decision": "focused source included"
+    },
+    {
+      "path": "supabase/functions/_shared/checkout-stripe.ts",
+      "decision": "focused source included"
+    },
+    {
+      "path": "supabase/functions/guest-checkout-webhook/index.ts",
+      "decision": "focused source included"
+    },
+    {
+      "path": "supabase/functions/checkout-reconcile/index.ts",
+      "decision": "focused source included"
+    },
+    {
+      "path": "scripts/audit-checkout-orders.ts",
+      "decision": "excluded; not required by focused implementation"
+    },
+    {
+      "path": "scripts/audit-voucher-production.sql",
+      "decision": "focused source included"
+    },
+    {
+      "path": "scripts/audit-voucher-redemptions.sql",
+      "decision": "focused source included"
+    },
+    {
+      "path": "scripts/run-readonly-voucher-audit.py",
+      "decision": "focused source included"
+    },
+    {
+      "path": "scripts/provision-voucher-audit-login.py",
+      "decision": "focused source included"
+    },
+    {
+      "path": "scripts/check-voucher-release-prerequisites.sql",
+      "decision": "focused source included"
+    },
+    {
+      "path": "scripts/test-voucher-checkout.py",
+      "decision": "focused source included"
+    },
+    {
+      "path": "scripts/test-voucher-migration-upgrade.py",
+      "decision": "focused source included"
+    },
+    {
+      "path": "tests/test_readonly_voucher_audit.py",
+      "decision": "focused source included"
+    },
+    {
+      "path": "tests/voucher-checkout.sql",
+      "decision": "focused source included"
+    },
+    {
+      "path": "tests/voucher-payment-handlers.test.cjs",
+      "decision": "focused source included"
+    },
+    {
+      "path": "tests/notification-routing.test.cjs",
+      "decision": "excluded; not required by focused implementation"
+    },
+    {
+      "path": "docs/voucher-checkout-fix.md",
+      "decision": "documentation updated separately"
+    },
+    {
+      "path": "docs/voucher-production-readiness.md",
+      "decision": "documentation updated separately"
+    },
+    {
+      "path": "docs/code-review-status.md",
+      "decision": "excluded; not required by focused implementation"
+    },
+    {
+      "path": "supabase/migrations/20250214000000_core_schema.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20250214154616_spring_shore.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20250506120000_add_welcome_email_sent_at.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260506153000_business_bank_verification.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260506174000_backfill_stripe_connected_account_id.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260520103000_business_bank_primary_flag.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260523120000_business_bank_paystack_support.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260604132900_backfill_business_wallet_owner_credits.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260612140000_create_withdrawal_requests.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260613102000_add_paystack_reconciliation_columns.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260804090000_atomic_product_inventory.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260805120000_ticket_redemption.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260806100000_product_receipts.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260807090000_repair_business_transaction_history.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260808100000_backfill_paid_payment_owner_ledger.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260811120000_enable_wallet_transaction_realtime.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260811130000_add_paystack_subaccount_routing.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260812100000_owner_purchase_ledger_and_balance.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260812110000_clamp_owner_wallet_balance.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260812120000_completed_payments_drive_owner_ledger.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260814120000_complete_order_management.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260817120000_video_watermark_assets.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260820120000_reliable_paystack_orders.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260825120000_paid_orders_remain_open_until_scan.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20260908120000_preserve_sales_after_historical_settlements.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261004100000_random_video_feed.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261004110000_partial_redemption.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261004120000_push_notifications.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261004130000_guest_event_checkout.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261004135000_voucher_schema.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261004140000_voucher_redemption.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261005100000_table_reservations.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261014100000_paid_event_tables.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261027120000_business_event_media.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261029140000_event_currency_voucher_compatibility.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261029143000_sync_event_offer_currency.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261103100000_paid_venue_reservations.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261103110000_exclusive_event_tables.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261103120000_guest_paystack_tables.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261103130000_paystack_guest_ledger.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261107090000_secure_signup_otp.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261107100000_harden_rls.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261107110000_core_owner_policies.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261107120000_atomic_wallet_funding.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261107130000_ensure_profile_wallets.sql",
+      "decision": "historical schema: test fixture only; no production replay"
+    },
+    {
+      "path": "supabase/migrations/20261111090000_atomic_voucher_checkout.sql",
+      "decision": "focused source included"
+    }
+  ],
+  "release_postcondition_file": {
+    "path": "scripts/assert-voucher-release.sql",
+    "sha256": "cda66fe0b2f8c8005de9642297abc6e5b3354ac73063a74569a6a99411dc1283",
+    "commit": "release documentation follow-up"
+  }
+}

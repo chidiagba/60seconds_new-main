@@ -1,3 +1,6 @@
+import { venueCoordinates } from '@/utils/venue-location';
+import AvatarImage from '@/components/AvatarImage';
+import { logger } from '@/lib/logger';
 import EventTableManager from '@/features/event-tables/EventTableManager';
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -11,8 +14,6 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
-  Modal,
-  Linking,
 } from "react-native";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -40,8 +41,7 @@ import VideoPlayer from "@/components/VideoPlayer";
 import ProductsList from "@/components/ProductsList";
 import ShareModal from "@/components/ShareModal";
 import BusinessVouchersSection from "@/components/BusinessVouchersSection";
-import * as Location from "expo-location";
-import { calculateDistance, calculateRoadDistance, formatDistance } from "@/utils/location";
+import { getCurrentLocation, calculateRoadDistance, formatDistance } from "@/utils/location";
 import { useAuthStore } from "@/store/auth-store";
 import { useContentModerationStore } from "@/store/content-moderation-store";
 import { useProductStore } from "@/store/product-store";
@@ -52,12 +52,10 @@ import GuestListButton from "@/components/GuestListButton";
 import AppThemeDialog from "@/components/AppThemeDialog";
 import { AttendanceStatus } from "@/types";
 import { TRANSACTION_FEE_PERCENTAGE } from "@/types/wallet";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getEventLifecycleStatus } from '@/utils/event-status';
 
 const { width } = Dimensions.get("window");
 
-const LOCATION_DISCLOSURE_ACCEPTED_KEY = "location_disclosure_accepted_v1";
 
 export default function EventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -105,11 +103,7 @@ export default function EventScreen() {
   const [showFeeInfo, setShowFeeInfo] = useState(false);
   const [showNoEventDialog, setShowNoEventDialog] = useState(false);
 
-  // --- Location disclosure states ---
-  const [showLocationDisclosure, setShowLocationDisclosure] = useState(false);
   const [pendingDistanceCalc, setPendingDistanceCalc] = useState(false);
-  const [locationDisclosureAccepted, setLocationDisclosureAccepted] =
-    useState(false);
 
   const eventLifecycleStatus = useMemo(() => {
     if (!video) {
@@ -130,20 +124,6 @@ export default function EventScreen() {
   const isVideoLiked = (videoId: string): boolean => {
     return liked;
   };
-
-  // Load stored disclosure preference once
-  useEffect(() => {
-    (async () => {
-      try {
-        const stored = await AsyncStorage.getItem(
-          LOCATION_DISCLOSURE_ACCEPTED_KEY
-        );
-        setLocationDisclosureAccepted(stored === "true");
-      } catch {
-        setLocationDisclosureAccepted(false);
-      }
-    })();
-  }, []);
 
   useEffect(() => {
     if (id) {
@@ -166,7 +146,7 @@ export default function EventScreen() {
         // Get attendees
         setAttendees(getEventAttendees(foundVideo.id));
 
-        // Calculate distance from user to event location (with disclosure first)
+        // Calculate distance using the shared permission flow.
         if (Platform.OS !== "web") {
           setPendingDistanceCalc(true);
         }
@@ -175,56 +155,23 @@ export default function EventScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, user, isAttending, videos]);
 
-  // When we want to calculate distance:
-  // 1) Show disclosure if not accepted
-  // 2) After accepted, request permission & calculate
   useEffect(() => {
-    if (!pendingDistanceCalc) return;
-    if (!video) return;
-    if (Platform.OS === "web") {
-      setPendingDistanceCalc(false);
-      return;
-    }
-
-    (async () => {
-      try {
-        if (!locationDisclosureAccepted) {
-          setShowLocationDisclosure(true);
-          return; // wait for user action
-        }
-
-        await requestPermissionAndCalculateDistance(video);
-      } catch (e) {
-        console.error("Distance calc flow error:", e);
-        setPendingDistanceCalc(false);
-      }
-    })();
+    if (!pendingDistanceCalc || !video || Platform.OS === "web") return;
+    void requestPermissionAndCalculateDistance(video);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingDistanceCalc, locationDisclosureAccepted, video?.id]);
+  }, [pendingDistanceCalc, video?.id]);
 
   const requestPermissionAndCalculateDistance = async (targetVideo: any) => {
     try {
-      // Do NOT request permission until disclosure is accepted
-      const { status } = await Location.requestForegroundPermissionsAsync();
-
-      if (status !== "granted") {
+      const location = await getCurrentLocation();
+      if (!location) {
         setUserDistance(null);
-        setPendingDistanceCalc(false);
         return;
       }
-
-      const location = await Promise.race([
-        Location.getCurrentPositionAsync({}),
-        new Promise<any>((_, reject) =>
-          setTimeout(() => reject(new Error("Location timeout")), 3000)
-        ),
-      ]);
       const { latitude, longitude } = location.coords;
 
-      const targetLatitude = Number(targetVideo?.location?.latitude);
-      const targetLongitude = Number(targetVideo?.location?.longitude);
-
-      if (!Number.isFinite(targetLatitude) || !Number.isFinite(targetLongitude)) {
+      const target = venueCoordinates(targetVideo?.location);
+      if (!target) {
         setUserDistance(null);
         return;
       }
@@ -232,41 +179,17 @@ export default function EventScreen() {
       const distance = await calculateRoadDistance(
         latitude,
         longitude,
-        targetLatitude,
-        targetLongitude
+        target.latitude,
+        target.longitude
       );
 
       const formattedDistance = formatDistance(distance);
       setUserDistance(formattedDistance || null);
     } catch (error) {
-      console.error("Error calculating distance:", error);
+      logger.error("Error calculating distance:", error);
     } finally {
       setPendingDistanceCalc(false);
     }
-  };
-
-  const onAcceptLocationDisclosure = async () => {
-    try {
-      await AsyncStorage.setItem(LOCATION_DISCLOSURE_ACCEPTED_KEY, "true");
-    } catch {
-      // ignore
-    }
-    setLocationDisclosureAccepted(true);
-    setShowLocationDisclosure(false);
-
-    // After user accepts, the permission prompt should be visible to user (system prompt)
-    // Continue the pending distance calc
-    if (video) {
-      await requestPermissionAndCalculateDistance(video);
-    } else {
-      setPendingDistanceCalc(false);
-    }
-  };
-
-  const onDeclineLocationDisclosure = () => {
-    setShowLocationDisclosure(false);
-    setPendingDistanceCalc(false);
-    setUserDistance(null);
   };
 
   const handleLike = () => {
@@ -519,77 +442,6 @@ export default function EventScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* PROMINENT DISCLOSURE MODAL (Shown BEFORE permission request) */}
-      <Modal
-        visible={showLocationDisclosure}
-        transparent
-        animationType="fade"
-        onRequestClose={onDeclineLocationDisclosure}
-      >
-        <View style={styles.disclosureOverlay}>
-          <View style={styles.disclosureCard}>
-            <View style={styles.disclosureHeader}>
-              <Text style={styles.disclosureTitle}>Location Disclosure</Text>
-              <TouchableOpacity
-                style={styles.disclosureClose}
-                onPress={onDeclineLocationDisclosure}
-              >
-                <X size={18} color={Colors.dark.text} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.disclosureText}>
-              60Seconds uses your device location to:
-            </Text>
-
-            <View style={styles.disclosureBulletWrap}>
-              <Text style={styles.disclosureBullet}>• Show how far you are from an event</Text>
-              <Text style={styles.disclosureBullet}>• Help you open accurate directions to the venue</Text>
-            </View>
-
-            <Text style={styles.disclosureText}>
-              We only access location after your consent. If you allow, the next
-              step will show the system permission prompt.
-            </Text>
-
-            {/* If your app truly needs background location, keep this line.
-               If you do NOT need background, remove BACKGROUND_LOCATION from manifest and you can edit text accordingly. */}
-            <Text style={styles.disclosureSmall}>
-              Note: If background location is enabled in your app build, it may
-              be used to support location-based features while the app is not in
-              active use.
-            </Text>
-
-            <TouchableOpacity
-              style={styles.disclosurePrimaryBtn}
-              onPress={onAcceptLocationDisclosure}
-            >
-              <Text style={styles.disclosurePrimaryText}>
-                Continue to Permission
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.disclosureSecondaryBtn}
-              onPress={onDeclineLocationDisclosure}
-            >
-              <Text style={styles.disclosureSecondaryText}>Not Now</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.disclosureLinkBtn}
-              onPress={() => {
-                // Optional: link to your privacy policy
-                // Replace with your own URL
-                Linking.openURL("https://www.enterprise.com");
-              }}
-            >
-              <Text style={styles.disclosureLinkText}>View Privacy Policy</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
       {showAttendeesList ? (
         <View style={styles.attendeesListContainer}>
           <View style={styles.attendeesHeader}>
@@ -660,6 +512,7 @@ export default function EventScreen() {
           <View style={styles.videoContainer}>
             <VideoPlayer
               uri={video.url}
+              creatorUsername={video.user?.username}
               paused={isVideoPaused}
               autoplay={true}
               onPress={() => setIsVideoPaused(value => !value)}
@@ -679,7 +532,7 @@ export default function EventScreen() {
               <View style={styles.locationTextContainer}>
                 <Text style={styles.locationText}>{video.location.name}</Text>
                 {userDistance && (
-                  <Text style={styles.distanceText}>{userDistance} away</Text>
+                  <Text style={styles.distanceText}>{userDistance} driving</Text>
                 )}
               </View>
               <Navigation size={16} color={Colors.dark.primary} />
@@ -786,8 +639,8 @@ export default function EventScreen() {
                 })
               }
             >
-              <Image
-                source={{ uri: video.user.avatar }}
+              <AvatarImage
+                uri={video.user.avatar} userId={video.user?.id}
                 style={styles.hostImage}
                 contentFit="cover"
                 transition={300}
@@ -1321,91 +1174,7 @@ const styles = StyleSheet.create({
     width: 40,
   },
 
-  // --- Disclosure styles ---
-  disclosureOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    padding: 18,
-  },
-  disclosureCard: {
-    backgroundColor: Colors.dark.card,
-    borderRadius: 14,
-    padding: 16,
-  },
-  disclosureHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 10,
-  },
-  disclosureTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: Colors.dark.text,
-  },
-  disclosureClose: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  disclosureText: {
-    color: Colors.dark.text,
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 10,
-  },
-  disclosureSmall: {
-    color: Colors.dark.subtext,
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 14,
-  },
-  disclosureBulletWrap: {
-    marginBottom: 10,
-  },
-  disclosureBullet: {
-    color: Colors.dark.text,
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 6,
-  },
-  disclosurePrimaryBtn: {
-    backgroundColor: Colors.dark.primary,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  disclosurePrimaryText: {
-    color: Colors.dark.text,
-    fontWeight: "bold",
-    fontSize: 14,
-  },
-  disclosureSecondaryBtn: {
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  disclosureSecondaryText: {
-    color: Colors.dark.text,
-    fontWeight: "600",
-    fontSize: 14,
-  },
-  disclosureLinkBtn: {
-    alignItems: "center",
-    paddingVertical: 6,
-  },
-  disclosureLinkText: {
-    color: Colors.dark.primary,
-    fontSize: 13,
-    textDecorationLine: "underline",
-  },
+
 });
 
 
@@ -1461,8 +1230,7 @@ const styles = StyleSheet.create({
 // import ProductsList from "@/components/ProductsList";
 // import ShareModal from "@/components/ShareModal";
 // import BusinessVouchersSection from "@/components/BusinessVouchersSection";
-// import * as Location from "expo-location";
-// import { formatDistance } from "@/utils/location";
+// // import { formatDistance } from "@/utils/location";
 // import { useAuthStore } from "@/store/auth-store";
 // import UserTagItem from "@/components/UserTagItem";
 // import AttendeesList from "@/components/AttendeesList";
@@ -1551,7 +1319,7 @@ const styles = StyleSheet.create({
 //               setUserDistance(formatDistance(distance));
 //             }
 //           } catch (error) {
-//             console.error("Error calculating distance:", error);
+//             logger.error("Error calculating distance:", error);
 //           }
 //         })();
 //       }
@@ -1790,7 +1558,7 @@ const styles = StyleSheet.create({
 //               <View style={styles.locationTextContainer}>
 //                 <Text style={styles.locationText}>{video.location.name}</Text>
 //                 {userDistance && (
-//                   <Text style={styles.distanceText}>{userDistance} away</Text>
+//                   <Text style={styles.distanceText}>{userDistance} driving</Text>
 //                 )}
 //               </View>
 //               <Navigation size={16} color={Colors.dark.primary} />

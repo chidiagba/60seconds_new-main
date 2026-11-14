@@ -15,7 +15,7 @@ export const DATATRANS_CONFIG = {
   
   // Your Datatrans Password (API Password)
   // This is used for authentication with Datatrans API
-  PASSWORD: process.env.DATATRANS_PASSWORD || '',
+  PASSWORD: '', // Disabled provider; credentials must never be bundled
   
   // Datatrans API Base URL
   // Sandbox: https://api.sandbox.datatrans.com

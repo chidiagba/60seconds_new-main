@@ -1,3 +1,5 @@
+import AvatarImage from '@/components/AvatarImage';
+import { logger } from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -155,7 +157,7 @@ export default function SendMoneyScreen() {
                 );
               }
             }).catch(err => {
-              console.error('An error occurred', err);
+              logger.error('An error occurred', err);
               Alert.alert('Error', 'Could not open Twint app. Please try another payment method.');
             });
           }
@@ -298,8 +300,8 @@ export default function SendMoneyScreen() {
           
           {selectedUser ? (
             <View style={styles.selectedUserContainer}>
-              <Image
-                source={{ uri: selectedUser.avatar }}
+              <AvatarImage
+                uri={selectedUser.avatar} userId={selectedUser?.id}
                 style={styles.userAvatar}
                 contentFit="cover"
                 transition={300}
@@ -339,8 +341,8 @@ export default function SendMoneyScreen() {
                     style={styles.userItem}
                     onPress={() => handleUserSelect(user)}
                   >
-                    <Image
-                      source={{ uri: user.avatar }}
+                    <AvatarImage
+                      uri={user.avatar} userId={user?.id}
                       style={styles.userAvatar}
                       contentFit="cover"
                       transition={300}

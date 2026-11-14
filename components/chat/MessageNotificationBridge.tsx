@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { setCurrentPushToken } from '@/utils/push-device';
 import React, { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
@@ -90,7 +91,7 @@ export default function MessageNotificationBridge() {
       if (error) throw error;
       registeredToken.current = token;
       await setCurrentPushToken(token);
-    })().catch(error => console.warn('Push registration failed:', error));
+    })().catch(error => logger.warn('Push registration failed:', error));
     return () => {
       cancelled = true;
       registeredToken.current = null;
@@ -107,6 +108,7 @@ export default function MessageNotificationBridge() {
 
     let active = true;
     const handleNotificationRoute = (data: any) => {
+      if(data?.kind==='order'&&data.orderId){router.push({pathname:'/order/[id]',params:{id:String(data.orderId)}});return;}
       if (!data) {
         return;
       }
@@ -146,7 +148,7 @@ export default function MessageNotificationBridge() {
       handleNotificationRoute(request.content?.data);
       NotificationsModule.clearLastNotificationResponse?.();
     };
-    NotificationsModule.getLastNotificationResponseAsync?.().then(routeResponse).catch((error: any) => console.warn('Unable to read notification:', error));
+    NotificationsModule.getLastNotificationResponseAsync?.().then(routeResponse).catch((error: any) => logger.warn('Unable to read notification:', error));
     const responseSub = NotificationsModule.addNotificationResponseReceivedListener(routeResponse);
 
     return () => {

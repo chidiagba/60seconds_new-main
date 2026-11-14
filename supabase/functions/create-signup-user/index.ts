@@ -1,10 +1,8 @@
+import { corsForRequest } from '../_shared/cors.ts';
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+
 
 type SignupBody = {
   email?: string;
@@ -18,6 +16,12 @@ type SignupBody = {
     country?: string;
     country_code?: string;
     currency?: string;
+  };
+  attribution?: {
+    referral_code?: string;
+    source?: string;
+    platform?: string;
+    first_open_at?: string;
   };
 };
 
@@ -39,6 +43,7 @@ const resolveSignupCurrency = (profileData: SignupBody['profileData']): string =
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsForRequest(req);
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -55,6 +60,13 @@ Deno.serve(async (req) => {
     const email = String(body?.email || "").trim().toLowerCase();
     const password = String(body?.password || "");
     const profileData = body?.profileData || {};
+    const referralCode = String(body?.attribution?.referral_code || '').trim().toLowerCase();
+    if (referralCode && !/^[a-z0-9][a-z0-9_-]{2,39}$/.test(referralCode)) {
+      return new Response(JSON.stringify({ success: false, error: 'Invalid referral code' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     if (!email || !password) {
       return new Response(JSON.stringify({ success: false, error: "email and password are required" }), {
@@ -79,6 +91,39 @@ Deno.serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
+    let validatedCampaign: { campaign_id: string; referral_code: string } | null = null;
+    if (referralCode) {
+      const { data: campaign, error: campaignError } = await admin
+        .from('influencer_campaigns')
+        .select('campaign_id,referral_code')
+        .eq('referral_code', referralCode)
+        .eq('active', true)
+        .maybeSingle();
+      if (campaignError) {
+        console.error('Campaign validation unavailable:', campaignError.code || 'database_error');
+        return new Response(JSON.stringify({ success: false, error: 'Referral validation is temporarily unavailable' }), {
+          status: 503,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (!campaign) {
+        return new Response(JSON.stringify({ success: false, error: 'Referral code is not recognized' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      validatedCampaign = campaign;
+    }
+    const allowedSources = ['android_install_referrer', 'ios_deferred_deeplink', 'direct_deeplink', 'manual_code', 'organic'];
+    const attributionSource = allowedSources.includes(String(body?.attribution?.source || ''))
+      ? String(body?.attribution?.source)
+      : 'manual_code';
+    const requestedPlatform = String(body?.attribution?.platform || '').toLowerCase();
+    const attributionPlatform = ['android', 'ios', 'web'].includes(requestedPlatform) ? requestedPlatform : 'unknown';
+    const firstOpenCandidate = body?.attribution?.first_open_at;
+    const firstOpenDate = typeof firstOpenCandidate === 'string' ? new Date(firstOpenCandidate) : null;
+    const firstOpenAt = firstOpenDate && !Number.isNaN(firstOpenDate.getTime()) ? firstOpenDate.toISOString() : null;
+
     const { data: staleProfile } = await admin
       .from('profiles')
       .select('id,email,username,full_name')
@@ -93,7 +138,7 @@ Deno.serve(async (req) => {
       while (!authUserExists && page <= 10) {
         const { data, error } = await admin.auth.admin.listUsers({ page, per_page: perPage });
         if (error) {
-          return new Response(JSON.stringify({ success: false, error: error.message || 'Failed to inspect existing users' }), {
+          return new Response(JSON.stringify({ success: false, error: 'Request could not be completed' }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
@@ -111,14 +156,14 @@ Deno.serve(async (req) => {
       if (!authUserExists) {
         const { error: deleteErr } = await admin.from('profiles').delete().eq('email', email);
         if (deleteErr) {
-          return new Response(JSON.stringify({ success: false, error: deleteErr.message || 'Failed to clear stale profile' }), {
+          return new Response(JSON.stringify({ success: false, error: 'Request could not be completed' }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
       } else {
         return new Response(
-          JSON.stringify({ success: false, code: 'existing_user', error: 'User already exists', user_id: staleProfile.id }),
+          JSON.stringify({ success: false, code: 'existing_user', error: 'User already exists' }),
           {
             status: 409,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -134,7 +179,7 @@ Deno.serve(async (req) => {
     while (!existingUserId && page <= 10) {
       const { data, error } = await admin.auth.admin.listUsers({ page, per_page: perPage });
       if (error) {
-        return new Response(JSON.stringify({ success: false, error: error.message || "Failed to inspect existing users" }), {
+        return new Response(JSON.stringify({ success: false, error: 'Request could not be completed' }), {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -155,7 +200,7 @@ Deno.serve(async (req) => {
 
     if (existingUserId) {
       return new Response(
-        JSON.stringify({ success: false, code: "existing_user", error: "User already exists", user_id: existingUserId }),
+        JSON.stringify({ success: false, code: "existing_user", error: "User already exists" }),
         {
           status: 409,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -181,7 +226,18 @@ Deno.serve(async (req) => {
       email,
       password,
       email_confirm: true,
-      user_metadata: userMetadata,
+      user_metadata: {
+        ...userMetadata,
+        signup_otp_verified_at: otpVerifiedAt,
+        ...(validatedCampaign ? {
+          campaign_attribution: {
+            referral_code: validatedCampaign.referral_code,
+            source: attributionSource,
+            platform: attributionPlatform,
+            first_open_at: firstOpenAt,
+          },
+        } : {}),
+      },
       app_metadata: {
         signup_otp_verified: !isBusinessSignup,
         otp_verified: !isBusinessSignup,
@@ -191,10 +247,24 @@ Deno.serve(async (req) => {
     });
 
     if (createErr || !created?.user?.id) {
-      return new Response(JSON.stringify({ success: false, error: createErr?.message || "Failed to create user" }), {
+      return new Response(JSON.stringify({ success: false, error: 'Request could not be completed' }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    const createdUserId = created.user.id;
+    if (validatedCampaign) {
+      const { error: attributionError } = await admin.rpc('attach_campaign_attribution', {
+        p_user_id: createdUserId,
+        p_referral_code: referralCode,
+        p_source: attributionSource,
+        p_platform: attributionPlatform,
+        p_first_open_at: firstOpenAt,
+      });
+      if (attributionError) {
+        console.error('Campaign attribution attachment failed:', attributionError.code || 'database_error');
+      }
     }
 
     let welcomeEmailTriggered = false;
@@ -207,7 +277,7 @@ Deno.serve(async (req) => {
       try {
         const { data: welcomeData, error: welcomeErr } = await admin.functions.invoke("send-welcome-email", {
           body: {
-            user_id: created.user.id,
+            user_id: createdUserId,
             email,
             name: fallbackName,
             trigger: "post_private_signup_autoverified",
@@ -225,7 +295,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        user_id: created.user.id,
+        user_id: createdUserId,
         email,
         user_type: profileData.user_type,
         needs_verification: isBusinessSignup,

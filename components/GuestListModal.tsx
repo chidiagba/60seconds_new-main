@@ -1,3 +1,4 @@
+import AvatarImage from '@/components/AvatarImage';
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -152,8 +153,8 @@ export default function GuestListModal({
 
   const renderGuestListItem = (entry: GuestListEntry) => (
     <View key={entry.id} style={styles.listItem}>
-      <Image
-        source={{ uri: entry.user.avatar }}
+      <AvatarImage
+        uri={entry.user.avatar} userId={entry.user?.id}
         style={styles.avatar}
         contentFit="cover"
         transition={300}
@@ -185,8 +186,8 @@ export default function GuestListModal({
 
   const renderRequestItem = (request: GuestListRequest) => (
     <View key={request.id} style={styles.listItem}>
-      <Image
-        source={{ uri: request.user.avatar }}
+      <AvatarImage
+        uri={request.user.avatar} userId={request.user?.id}
         style={styles.avatar}
         contentFit="cover"
         transition={300}
@@ -223,8 +224,8 @@ export default function GuestListModal({
 
   const renderSearchResultItem = (user: User) => (
     <View key={user.id} style={styles.listItem}>
-      <Image
-        source={{ uri: user.avatar }}
+      <AvatarImage
+        uri={user.avatar} userId={user?.id}
         style={styles.avatar}
         contentFit="cover"
         transition={300}

@@ -1,12 +1,9 @@
 // @ts-nocheck
+import { corsForRequest } from '../_shared/cors.ts';
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+
 
 const paystackSecretKey = Deno.env.get('PAYSTACK_SECRET_KEY') || '';
 const supabaseUrl =
@@ -207,6 +204,7 @@ const resolveAccount = async (bankCode: string, accountNumber: string) => {
 const namesMatch = (left: string, right: string) => normalize(left) === normalize(right);
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsForRequest(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

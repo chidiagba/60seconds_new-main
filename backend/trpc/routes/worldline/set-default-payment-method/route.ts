@@ -1,15 +1,16 @@
+import { logger } from '../../../../lib/logger';
 import { z } from 'zod';
-import { publicProcedure } from '../../../create-context';
+import { disabledProcedure } from '../../../create-context';
 import { supabase } from '@/backend/lib/supabase';
 
-export const setDefaultPaymentMethodProcedure = publicProcedure
+export const setDefaultPaymentMethodProcedure = disabledProcedure
   .input(z.object({
     paymentMethodId: z.string(),
     userId: z.string(),
   }))
   .mutation(async ({ input }) => {
     try {
-      console.log('Setting default Worldline payment method:', input.paymentMethodId);
+      logger.debug('Setting default Worldline payment method:', input.paymentMethodId);
       
       // First, verify the payment method belongs to the user
       const { data: paymentMethod, error: fetchError } = await supabase
@@ -49,7 +50,7 @@ export const setDefaultPaymentMethodProcedure = publicProcedure
         throw new Error('Failed to set default payment method');
       }
 
-      console.log('✅ Default payment method set successfully');
+      logger.debug('✅ Default payment method set successfully');
       
       return {
         success: true,
@@ -59,7 +60,7 @@ export const setDefaultPaymentMethodProcedure = publicProcedure
       console.error('Set default payment method error:', error);
       return {
         success: false,
-        message: error.message || 'Failed to set default payment method'
+        message: 'Request could not be completed'
       };
     }
   });

@@ -1,8 +1,10 @@
+import { supabase } from '@/backend/lib/supabase';
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { publicProcedure } from '@/backend/trpc/create-context';
+import { protectedProcedure } from '@/backend/trpc/create-context';
 import type { OrderPDFData } from '@/types';
 
-export const generateOrderPDFProcedure = publicProcedure
+export const generateOrderPDFProcedure = protectedProcedure
   .input(z.object({
     orderNumber: z.string(),
     customerName: z.string(),
@@ -25,7 +27,9 @@ export const generateOrderPDFProcedure = publicProcedure
     orderDate: z.string(),
     notes: z.string().optional()
   }))
-  .mutation(async ({ input }) => {
+  .mutation(async ({ input, ctx }) => {
+    const { data: order, error } = await supabase.from('orders').select('user_id').eq('order_number', input.orderNumber).single();
+    if (error || !order || order.user_id !== ctx.user.id) throw new TRPCError({ code: 'FORBIDDEN', message: 'Order is unavailable' });
     try {
       // Generate unique QR code data
       const qrCodeData = `ORDER:${input.orderNumber}:${Date.now()}`;

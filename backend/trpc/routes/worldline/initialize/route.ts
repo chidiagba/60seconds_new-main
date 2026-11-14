@@ -1,20 +1,20 @@
+import { logger } from '../../../../lib/logger';
 import { z } from "zod";
-import { publicProcedure } from "../../../create-context";
+import { disabledProcedure } from "../../../create-context";
 import { supabase } from "@/backend/lib/supabase";
 
 // Worldline API Configuration - PSPID is the Merchant ID
 const WORLDLINE_MERCHANT_ID =
   process.env.WORLDLINE_MERCHANT_ID || "60secondsTechnologies";
 const WORLDLINE_API_KEY =
-  process.env.WORLDLINE_API_KEY ||
-  "43A1D436F54844DB73BF153ECBA9551A27636D945271483D0D0B62D713CDAB5C8B15F5158D9339FCA9EA4BD0C92678F94FC930FF3A3355BB1DC1856530B3D730";
+  '';
 const WORLDLINE_BASE_URL =
   process.env.WORLDLINE_BASE_URL ||
   "https://payment.direct.worldline-solutions.com/v2";
 
 const APP_BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "myapp://payment";
 
-export const initializePaymentProcedure = publicProcedure
+export const initializePaymentProcedure = disabledProcedure
   .input(
     z.object({
       amount: z.number().positive(), // Amount in dollars
@@ -114,7 +114,7 @@ export const initializePaymentProcedure = publicProcedure
 
       // For development/testing, return mock data
       if (process.env.NODE_ENV === "development") {
-        console.log("Returning mock Worldline payment data for development");
+        logger.debug("Returning mock Worldline payment data for development");
         return {
           success: true,
           data: {

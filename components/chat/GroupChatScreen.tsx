@@ -1,3 +1,4 @@
+import AvatarImage from '@/components/AvatarImage';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -776,13 +777,7 @@ export default function GroupChatScreen({ groupId }: { groupId: string }) {
 
                 <View style={[styles.messageRow, isCurrentUser ? styles.messageRowCurrent : styles.messageRowOther]}>
                   {!isCurrentUser ? (
-                    item.sender.avatarUrl ? (
-                      <Image source={{ uri: item.sender.avatarUrl }} style={styles.senderAvatar} contentFit="cover" />
-                    ) : (
-                      <View style={styles.senderFallback}>
-                        <Text style={styles.senderFallbackText}>{item.sender.fullName.charAt(0).toUpperCase()}</Text>
-                      </View>
-                    )
+                    <AvatarImage uri={item.sender.avatarUrl} userId={item.sender?.id} style={styles.senderAvatar} contentFit="cover" />
                   ) : null}
 
                   <TouchableOpacity
@@ -977,13 +972,7 @@ export default function GroupChatScreen({ groupId }: { groupId: string }) {
                   contentContainerStyle={styles.memberResultsContent}
                   renderItem={({ item }) => (
                     <TouchableOpacity style={styles.resultRow} onPress={() => handleAddPendingMember(item)}>
-                      {item.avatarUrl ? (
-                        <Image source={{ uri: item.avatarUrl }} style={styles.resultAvatar} contentFit="cover" />
-                      ) : (
-                        <View style={styles.resultAvatarFallback}>
-                          <Text style={styles.resultAvatarFallbackText}>{item.fullName.charAt(0).toUpperCase()}</Text>
-                        </View>
-                      )}
+                      {<AvatarImage uri={item.avatarUrl} userId={item?.id} style={styles.resultAvatar} contentFit="cover" />}
                       <View style={styles.resultInfo}>
                         <Text style={styles.resultName}>{item.fullName}</Text>
                         <Text style={styles.resultHandle}>@{item.username}</Text>
@@ -1173,13 +1162,7 @@ export default function GroupChatScreen({ groupId }: { groupId: string }) {
 
                 return (
                   <View style={styles.memberRow}>
-                    {item.avatarUrl ? (
-                      <Image source={{ uri: item.avatarUrl }} style={styles.resultAvatar} contentFit="cover" />
-                    ) : (
-                      <View style={styles.resultAvatarFallback}>
-                        <Text style={styles.resultAvatarFallbackText}>{item.fullName.charAt(0).toUpperCase()}</Text>
-                      </View>
-                    )}
+                    {<AvatarImage uri={item.avatarUrl} userId={item?.id} style={styles.resultAvatar} contentFit="cover" />}
                     <View style={styles.resultInfo}>
                       <Text style={styles.resultName}>{item.fullName}{isSelf ? ' (you)' : ''}</Text>
                       <Text style={styles.resultHandle}>{(item as GroupChatMember).role ?? 'member'}</Text>

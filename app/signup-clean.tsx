@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState } from 'react';
 import {
   View,
@@ -28,7 +29,7 @@ export default function CleanSignupScreen() {
   const [businessName, setBusinessName] = useState('');
   const [businessType, setBusinessType] = useState('');
   const [country, setCountry] = useState('Nigeria');
-  const [countryCode, setCountryCode] = useState('NG');
+  const [countryCode, setCountryCode] = useState<import('react-native-country-picker-modal').CountryCode>('NG');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -70,11 +71,11 @@ export default function CleanSignupScreen() {
     setIsLoading(true);
 
     try {
-      console.log('🚀 Starting signup process...');
-      console.log('Email:', email);
-      console.log('Account Type:', accountType);
-      console.log('Full Name:', fullName);
-      console.log('Username:', username);
+      logger.debug('🚀 Starting signup process...');
+      logger.debug('Email:', email);
+      logger.debug('Account Type:', accountType);
+      logger.debug('Full Name:', fullName);
+      logger.debug('Username:', username);
 
       // Step 1: Create auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -83,7 +84,7 @@ export default function CleanSignupScreen() {
       });
 
       if (authError) {
-        console.error('❌ Auth signup failed:', authError.message);
+        logger.error('❌ Auth signup failed:', authError.message);
         Alert.alert('Signup Failed', authError.message);
         return;
       }
@@ -93,7 +94,7 @@ export default function CleanSignupScreen() {
         return;
       }
 
-      console.log('✅ Auth user created:', authData.user.id);
+      logger.debug('✅ Auth user created:', authData.user.id);
 
       // Step 2: Create profile
       const signupCurrency = resolveCurrencyFromCountry({
@@ -119,7 +120,7 @@ export default function CleanSignupScreen() {
         }),
       };
 
-      console.log('📝 Creating profile with data:', profileData);
+      logger.debug('📝 Creating profile with data:', profileData);
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
@@ -128,12 +129,12 @@ export default function CleanSignupScreen() {
         .single();
 
       if (profileError) {
-        console.error('❌ Profile creation failed:', profileError.message);
+        logger.error('❌ Profile creation failed:', profileError.message);
         Alert.alert('Profile Creation Failed', profileError.message);
         return;
       }
 
-      console.log('✅ Profile created successfully:', profile.id);
+      logger.debug('✅ Profile created successfully:', profile.id);
 
       // Success
       Alert.alert(
@@ -148,7 +149,7 @@ export default function CleanSignupScreen() {
       );
 
     } catch (error) {
-      console.error('❌ Signup error:', error);
+      logger.error('❌ Signup error:', error);
       Alert.alert('Signup Failed', 'An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
@@ -275,17 +276,10 @@ export default function CleanSignupScreen() {
                 withAlphaFilter
                 countryCode={countryCode}
                 onSelect={(selectedCountry) => {
-                  setCountry(selectedCountry.name);
+                  setCountry(typeof selectedCountry.name === 'string' ? selectedCountry.name : selectedCountry.name.common);
                   setCountryCode(selectedCountry.cca2);
                 }}
-              >
-                <TouchableOpacity style={styles.countryPickerButton} activeOpacity={0.8}>
-                  <Text style={[styles.countryPickerText, !country && styles.countryPickerPlaceholder]}>
-                    {country ? `${getFlagEmoji(countryCode)}  Select Country` : '🌍  Select Country'}
-                  </Text>
-                  <ChevronDown size={20} color={Colors.dark.subtext} />
-                </TouchableOpacity>
-              </CountryPicker>
+              />
               {country ? (
                 <View style={styles.selectedCountryRow}>
                   <Text style={styles.selectedCountryText}>

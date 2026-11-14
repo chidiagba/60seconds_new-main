@@ -1,3 +1,4 @@
+import AvatarImage from '@/components/AvatarImage';
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -185,8 +186,8 @@ export default function GuestListManagementScreen() {
                 
                 {pendingRequests.map(request => (
                   <View key={request.id} style={styles.requestCard}>
-                    <Image
-                      source={{ uri: request.user.avatar }}
+                    <AvatarImage
+                      uri={request.user.avatar} userId={request.user?.id}
                       style={styles.userAvatar}
                       contentFit="cover"
                       transition={300}
@@ -263,8 +264,8 @@ export default function GuestListManagementScreen() {
               ) : (
                 guestList.map(entry => (
                   <View key={entry.id} style={styles.guestCard}>
-                    <Image
-                      source={{ uri: entry.user.avatar }}
+                    <AvatarImage
+                      uri={entry.user.avatar} userId={entry.user?.id}
                       style={styles.userAvatar}
                       contentFit="cover"
                       transition={300}

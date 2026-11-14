@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -19,8 +19,9 @@ import * as Haptics from 'expo-haptics';
 interface ApplyVoucherModalProps {
   visible: boolean;
   onClose: () => void;
-  onApply: (discountAmount: number, voucher?: Voucher) => void;
+  onApply: (discountAmount: number, voucher?: Voucher, quote?: any) => void;
   totalAmount: number;
+  items?: Array<{productId:string;quantity:number}>;
   productId?: string;
   businessId?: string;
 }
@@ -31,6 +32,7 @@ export default function ApplyVoucherModal({
   onApply,
   totalAmount,
   productId,
+  items,
   businessId
 }: ApplyVoucherModalProps) {
   const { validateVoucher, isLoading } = useVoucherStore();
@@ -41,8 +43,13 @@ export default function ApplyVoucherModal({
     voucher?: Voucher;
     discountAmount?: number;
     errorMessage?: string;
+    quote?: any;
   } | null>(null);
   
+  const selectionKey=JSON.stringify(items || [{productId,quantity:1}]);
+  const selection=useRef(selectionKey);
+  selection.current=`${selectionKey}|${voucherCode.trim().toUpperCase()}|${visible}`;
+  useEffect(()=>{setValidationResult(null);},[selectionKey,visible]);
   const handleHapticFeedback = () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -57,7 +64,9 @@ export default function ApplyVoucherModal({
     
     handleHapticFeedback();
     
-    const result = await validateVoucher(voucherCode.trim(), totalAmount, productId, businessId);
+    const selected=selection.current;
+    const result = await validateVoucher(voucherCode.trim(), totalAmount, productId, businessId, items);
+    if(selected!==selection.current)return;
     setValidationResult(result);
     
     if (result.valid && result.discountAmount) {
@@ -69,7 +78,7 @@ export default function ApplyVoucherModal({
   
   const handleApplyVoucher = () => {
     if (validationResult?.valid && validationResult.discountAmount) {
-      onApply(validationResult.discountAmount, validationResult.voucher);
+      onApply(validationResult.discountAmount, validationResult.voucher,validationResult.quote);
       handleClose();
     }
   };
@@ -101,7 +110,7 @@ export default function ApplyVoucherModal({
               <TextInput
                 style={styles.input}
                 value={voucherCode}
-                onChangeText={(text) => setVoucherCode(text.toUpperCase())}
+                onChangeText={(text) => {setVoucherCode(text.toUpperCase());setValidationResult(null);}}
                 placeholder="Enter voucher code"
                 placeholderTextColor={Colors.dark.placeholder}
                 autoCapitalize="characters"
@@ -133,7 +142,7 @@ export default function ApplyVoucherModal({
                     <View style={styles.resultTextContainer}>
                       <Text style={styles.validText}>Valid voucher</Text>
                       <Text style={styles.discountText}>
-                        Discount: ${validationResult.discountAmount?.toFixed(2)}
+                        Discount: {useVoucherStore.getState().checkoutQuote?.currency} {validationResult.discountAmount?.toFixed(2)}
                       </Text>
                     </View>
                   </>

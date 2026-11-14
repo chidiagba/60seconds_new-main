@@ -1,8 +1,9 @@
+import { logger } from '../../../../lib/logger';
 import { z } from 'zod';
-import { publicProcedure } from '../../../create-context';
+import { disabledProcedure } from '../../../create-context';
 import { supabase } from '@/backend/lib/supabase';
 
-export const getPaymentHistoryProcedure = publicProcedure
+export const getPaymentHistoryProcedure = disabledProcedure
   .input(z.object({
     userId: z.string(),
     limit: z.number().min(1).max(100).default(20),
@@ -10,7 +11,7 @@ export const getPaymentHistoryProcedure = publicProcedure
   }))
   .query(async ({ input }) => {
     try {
-      console.log('Getting Worldline payment history for user:', input.userId);
+      logger.debug('Getting Worldline payment history for user:', input.userId);
       
       const { data: payments, error } = await supabase
         .from('payments')
@@ -58,7 +59,7 @@ export const getPaymentHistoryProcedure = publicProcedure
           offset: input.offset,
           hasMore: false
         },
-        message: error.message || 'Failed to retrieve payment history'
+        message: 'Request could not be completed'
       };
     }
   });

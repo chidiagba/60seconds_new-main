@@ -1,29 +1,28 @@
 // @ts-nocheck
+import { corsForRequest } from '../_shared/cors.ts';
 import { calculateOwnerWalletBalance } from '../_shared/owner-wallet-balance.ts';
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
 const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const paystackKey = Deno.env.get('PAYSTACK_SECRET_KEY') || '';
 const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 
-const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
-  status,
-  headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-});
+
 
 const completed = (value: unknown) => ['success', 'successful', 'completed', 'paid'].includes(String(value || '').toLowerCase());
 const pending = (value: unknown) => ['pending', 'processing', 'in_progress'].includes(String(value || '').toLowerCase());
 const money = (kobo: unknown) => Number((Number(kobo || 0) / 100).toFixed(2));
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsForRequest(req);
+  const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
     if (!supabaseUrl || !serviceKey || !paystackKey) throw new Error('Settlement reconciliation is not configured');
@@ -137,6 +136,6 @@ Deno.serve(async (req) => {
     console.error('paystack-reconcile-subaccount-settlements:', error);
     // Return a readable reconciliation result so the client can report the
     // provider/schema issue while continuing to load the wallet screen.
-    return reply({ success: false, error: error?.message || 'Settlement reconciliation failed' });
+    return reply({ success: false, error: 'Request could not be completed' });
   }
 });

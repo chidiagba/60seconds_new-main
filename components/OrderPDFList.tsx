@@ -1,3 +1,4 @@
+import {TicketSeller} from '@/lib/ticket-seller';
 import { Image } from 'expo-image';
 import React from 'react';
 import {
@@ -23,6 +24,7 @@ import Colors from '@/constants/colors';
 import { ticketReceiptService } from '@/lib/database';
 
 type TicketRow = {
+  seller?:TicketSeller;
   id: string;
   order_number: string;
   qr_code_data: string;
@@ -276,14 +278,15 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
               <Text style={styles.brandText}>60seconds</Text>
               <Text style={styles.receiptKindText}>{isProductReceipt ? 'PRODUCT RECEIPT' : 'EVENT TICKET'}</Text>
 
-              <View style={styles.qrPanel}>
+              {!!item.qr_code_data&&<View style={styles.qrPanel}>
                 <QRCode
-                  value={item.qr_code_data || item.order_number}
+                  value={item.qr_code_data}
                   size={168}
                   backgroundColor="#ffffff"
                   color="#0A1733"
                 />
-              </View>
+              </View>}
+              <View style={styles.locationSection}><Text style={styles.sectionLabel}>SOLD BY</Text><Text style={styles.locationTitle}>{item.seller?.name||'Business details unavailable'}</Text>{!!item.seller?.username&&<Text style={styles.locationSubtitle}>@{item.seller.username}</Text>}{[item.seller?.address,item.seller?.phone,item.seller?.website].filter(Boolean).map((detail,index)=><Text key={index} style={styles.locationSubtitle}>{detail}</Text>)}</View>
 
               <View style={styles.dateRow}>
                 <View>
@@ -300,7 +303,8 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
 
               <View style={styles.locationSection}>
                 <Text style={styles.sectionLabel}>LOCATION</Text>
-                <Text style={styles.locationTitle}>{item.event_name || '60seconds Event'}</Text>
+                <Text style={styles.locationTitle}>{item.event_name || item.ticket_title}</Text>
+                {!!item.event_start_date&&<Text style={styles.locationSubtitle}>{new Date(item.event_start_date).toLocaleString()}</Text>}
                 <Text style={styles.locationSubtitle}>{item.location_name || 'Location not specified'}</Text>
               </View>
 

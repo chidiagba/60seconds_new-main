@@ -3,6 +3,7 @@ import { Product } from '@/types';
 export const mockProducts: Product[] = [
   {
     id: '1',
+    createdAt: '2026-01-01T00:00:00Z',
     videoId: '1',
     name: 'VIP Entry Ticket',
     description: 'Skip the line and enjoy VIP access to Saturday Night Fever',
@@ -14,6 +15,7 @@ export const mockProducts: Product[] = [
   },
   {
     id: '2',
+    createdAt: '2026-01-01T00:00:00Z',
     videoId: '1',
     name: 'Premium Bottle Service',
     description: 'Includes 1 premium bottle and VIP table for up to 4 people',
@@ -25,6 +27,7 @@ export const mockProducts: Product[] = [
   },
   {
     id: '3',
+    createdAt: '2026-01-01T00:00:00Z',
     videoId: '3',
     name: 'Techno Thursdays Ticket',
     description: 'General admission to Techno Thursdays featuring DJ Max',
@@ -36,6 +39,7 @@ export const mockProducts: Product[] = [
   },
   {
     id: '4',
+    createdAt: '2026-01-01T00:00:00Z',
     videoId: '3',
     name: 'Cocktail Package',
     description: '4 premium cocktails of your choice',
@@ -47,6 +51,7 @@ export const mockProducts: Product[] = [
   },
   {
     id: '5',
+    createdAt: '2026-01-01T00:00:00Z',
     videoId: '5',
     name: 'Neon Dreams Tour T-Shirt',
     description: 'Official tour merchandise - limited edition',

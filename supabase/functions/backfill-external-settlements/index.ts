@@ -1,12 +1,9 @@
 // @ts-nocheck
+import { corsForRequest } from '../_shared/cors.ts';
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+
 
 const supabaseUrl =
   Deno.env.get("SUPABASE_URL") ||
@@ -450,6 +447,7 @@ const settleOrder = async (order: any, provider: Provider) => {
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsForRequest(req);
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -532,7 +530,7 @@ Deno.serve(async (req) => {
   } catch (error: any) {
     console.error("backfill-external-settlements error:", error);
     return new Response(
-      JSON.stringify({ error: error?.message || "Unknown backfill error" }),
+      JSON.stringify({ error: 'Request could not be completed' }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

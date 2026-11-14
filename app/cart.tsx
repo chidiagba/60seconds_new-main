@@ -1,5 +1,10 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {loadCheckoutAttempt} from '@/lib/checkout-attempt';
+import {checkoutVoucherRequest,checkoutItemsKey} from '@/utils/checkout-selection';
+import { currencyDigits, markedPrice } from '@/utils/commerce-rules';
+import { logger } from '@/lib/logger';
 import { ensureStripeInitialized } from "@/lib/stripe-initialization";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -62,7 +67,7 @@ try {
   const stripeModule = require('@stripe/stripe-react-native');
   stripeUseHook = stripeModule?.useStripe || null;
 } catch (error) {
-  console.warn('Stripe native module unavailable in Cart screen:', error);
+  logger.warn('Stripe native module unavailable in Cart screen:', error);
 }
 
 const normalizeCurrencyCode = (currency?: string | null, fallbackCurrency: string = DEFAULT_CURRENCY): string => {
@@ -133,6 +138,10 @@ export default function CartScreen() {
   const generatePDFMutation = trpc.orders.generatePDF.useMutation();
 
   const [showVoucherModal, setShowVoucherModal] = useState(false);
+  const checkoutQuote = useVoucherStore(state=>state.checkoutQuote);
+  const checkoutRequestKey = useRef<string | null>(null);
+  const checkoutStorageKey = useRef<string | null>(null);
+  const checkoutInFlight=useRef(false);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [processingPayment, setProcessingPayment] = useState(false);
 
@@ -157,7 +166,7 @@ export default function CartScreen() {
 
   const getMarkedUnitPrice = (basePrice: number) => {
     // keep cents
-    return basePrice * (1 + PRICE_MARKUP_RATE);
+    return markedPrice(basePrice, cartCurrency);
   };
 
   const baseSubtotal = cart.reduce(
@@ -181,12 +190,16 @@ export default function CartScreen() {
   }, 0);
 
   useEffect(() => {
-    clearActiveVoucher();
-    setDiscountAmount(0);
+    const saved=useVoucherStore.getState().checkoutQuote;
+    const same=saved && checkoutItemsKey(cart.map(item=>({productId:item.product.id,quantity:item.quantity})))===checkoutItemsKey((saved.items||[]).map((item:any)=>({productId:item.product_id,quantity:Number(item.quantity)})));
+    if(!same)useVoucherStore.getState().setCheckoutQuote(null);
+    setDiscountAmount(same?Number(saved.discount_amount):0);
+    checkoutRequestKey.current=null;
   }, [cartSubtotal, cart.map(item => `${item.product.id}:${item.quantity}`).join('|')]);
 
   const discountedSubtotal = Math.max(0, cartSubtotal - discountAmount);
-  const finalTotal = discountedSubtotal; // ✅ no separate platform fee anymore
+  const appliedQuote = checkoutQuote && (!checkoutQuote.voucher_id || checkoutQuote.voucher_id === activeVoucher?.id) ? checkoutQuote : null;
+  const finalTotal = appliedQuote ? Number(appliedQuote.total_amount) : discountedSubtotal;
 
   const isLoggedInNigerianUser =
     !!(currentUser?.id || authUser?.id) &&
@@ -262,7 +275,7 @@ export default function CartScreen() {
       const order = await orderService.createOrder(orderData);
       return order;
     } catch (error) {
-      console.error("Error creating order:", error);
+      logger.error("Error creating order:", error);
       throw error;
     }
   };
@@ -375,11 +388,11 @@ export default function CartScreen() {
     updateCartItemQuantity(productId, quantity);
   };
 
-  const handleApplyVoucher = (amount: number, voucher?: { code: string }) => {
+  const handleApplyVoucher = (amount: number, voucher?: any, quote?: any) => {
+    if(!voucher||!quote)throw new Error('Validate this voucher before applying it');
+    useVoucherStore.getState().applyValidatedVoucher(voucher,quote,cart.map(item=>({productId:item.product.id,quantity:item.quantity})));
     setDiscountAmount(amount);
-    if (voucher?.code) {
-      applyVoucher(voucher.code);
-    }
+    checkoutRequestKey.current=null;
   };
 
   const handleClearVoucher = () => {
@@ -480,7 +493,7 @@ export default function CartScreen() {
         [{ text: "OK", onPress: () => router.push("/") }]
       );
     } catch (error) {
-      console.error("Twint payment error:", error);
+      logger.error("Twint payment error:", error);
       showPaymentNotProcessedAlert(
         "Twint",
         error instanceof Error ? error.message : "Unknown error"
@@ -515,7 +528,7 @@ export default function CartScreen() {
         );
       }
     } catch (error) {
-      console.error('Twint app open error:', error);
+      logger.error('Twint app open error:', error);
       Alert.alert('Twint Error', 'Could not launch Twint app. Please use Twint Web Checkout.');
       setShowTwintPaymentModal(false);
       setShowTwintWebViewModal(true);
@@ -566,7 +579,7 @@ export default function CartScreen() {
               setTwintCheckoutUrl(initialized.data.redirectUrl);
               setTwintOrderId(order.id);
             } catch (error) {
-              console.error("Twint initialization error:", error);
+              logger.error("Twint initialization error:", error);
               Alert.alert(
                 "Twint Initialization Failed",
                 error instanceof Error ? error.message : "Unable to initialize Twint payment."
@@ -656,7 +669,7 @@ export default function CartScreen() {
                   })
                   .finally(() => setProcessingPayment(false));
               } catch (error) {
-                console.error(`${method} payment error:`, error);
+                logger.error(`${method} payment error:`, error);
                 showPaymentNotProcessedAlert(
                   method,
                   error instanceof Error ? error.message : "Unknown error"
@@ -670,176 +683,75 @@ export default function CartScreen() {
     );
   };
 
+  const finishCheckout = async (orderId:string) => {
+    await refreshWalletAfterPurchase();
+    await useVoucherStore.getState().checkoutCompleted(cartOwnerId || undefined);
+    if(checkoutStorageKey.current)await AsyncStorage.removeItem(checkoutStorageKey.current);
+    checkoutStorageKey.current=null;
+    clearCart(); clearActiveVoucher(); setDiscountAmount(0); checkoutRequestKey.current=null;
+    Alert.alert('Purchase completed','Your tickets and purchase receipts are ready.');
+    router.push({pathname:'/order/[id]',params:{id:orderId}});
+  };
+
   const handleCheckout = async () => {
-    if (cart.length === 0) {
-      Alert.alert("Cart Empty", "Please add items to your cart before checking out.");
-      return;
-    }
-
-    if (!ensureSingleOwnerCart("This")) {
-      return;
-    }
-
-    if (activeVoucher) {
-      const check = await useVoucherStore.getState().validateVoucher(activeVoucher.code, cartSubtotal, cart.length === 1 ? cart[0].product.id : undefined, cartOwnerId || undefined);
-      if (!check.valid || Math.abs((check.discountAmount || 0) - discountAmount) > 0.01) {
-        clearActiveVoucher(); setDiscountAmount(0);
-        Alert.alert('Voucher unavailable', check.errorMessage || 'Please apply the voucher again.');
-        return;
-      }
-    }
-
-    if (paymentMethod === "twint") {
-      handleTwintPayment();
-      return;
-    }
-
-    if (paymentMethod === "paystack") {
-      try {
-        setProcessingPayment(true);
-        setShowPaystackModal(true);
-      } catch (error) {
-        console.error("Paystack order initialization error:", error);
-        Alert.alert(
-          "Paystack Initialization Failed",
-          error instanceof Error ? error.message : "Unable to initialize Paystack checkout."
-        );
-      } finally {
-        setProcessingPayment(false);
-      }
-      return;
-    }
-
+    if(checkoutInFlight.current || processingPayment || !cart.length || !ensureSingleOwnerCart('This'))return;
+    checkoutInFlight.current=true;setProcessingPayment(true);
     try {
-      setProcessingPayment(true);
-
-      if (!currentUser?.id) {
-        throw new Error("Please sign in before starting a Stripe checkout.");
+      const items=cart.map(item=>({productId:item.product.id,quantity:item.quantity}));
+      let selectedVoucher=activeVoucher;
+      const attempt=await loadCheckoutAttempt(AsyncStorage,String(authUser?.id||currentUser?.id||''),items,()=>`${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      checkoutRequestKey.current=attempt.requestKey;checkoutStorageKey.current=attempt.storageKey;
+      let quote:any=null;
+      const {data:hold,error:holdError}=await supabase.rpc('get_checkout_attempt',{p_request_key:attempt.requestKey});
+      if(holdError)throw holdError;
+      if(hold?.state==='fulfilled'){await finishCheckout(hold.order_id);return;}
+      if(hold?.state==='released'){
+        await AsyncStorage.removeItem(attempt.storageKey);checkoutRequestKey.current=null;
+        throw new Error('The previous payment was cancelled. Tap Checkout to start a new attempt.');
       }
-
-      const firstItem = cart[0];
-      const currencyCode = resolveProductCurrency(firstItem?.product?.currency);
-      const currency = currencyCode.toLowerCase();
-      const platformFeeCents = Math.max(0, Math.round(platformFee * 100));
-      const amountCents = Math.max(0, Math.round(finalTotal * 100));
-
-      // mimic logic from product list for connected account
-      const connectedAccountId =
-        (firstItem.product as any).ownerStripeAccountId ||
-        (firstItem.product as any).stripeConnectedAccountId ||
-        (firstItem.product as any).connectedAccountId ||
-        null;
-
-      const data = await createStripePaymentSheetSession({
-        amount: amountCents,
-        platformFeeAmount: platformFeeCents,
-        currency,
-        customerEmail: currentUser?.email,
-        productId: firstItem?.product.id,
-        productName: firstItem?.product.name,
-        paymentMethod,
-        connectedAccountId,
-      });
-
-      const {
-        paymentIntentClientSecret,
-        customerId,
-        ephemeralKeySecret,
-        totalAmount,
-      } = data;
-
-      const initOptions: any = {
-        paymentIntentClientSecret,
-        merchantDisplayName: "60Seconds",
-        allowsDelayedPaymentMethods: true,
-        style: "automatic",
-      };
-
-      if (customerId && ephemeralKeySecret) {
-        initOptions.customerId = customerId;
-        initOptions.customerEphemeralKeySecret = ephemeralKeySecret;
+      if(hold?.state==='reserved'){
+        quote=hold.quote;
+        if(selectedVoucher&&selectedVoucher.id!==quote.voucher_id)throw new Error('An existing checkout uses different voucher terms. Check its payment status in Orders before changing it.');
+        useVoucherStore.getState().resumeCheckoutQuote(quote,items);
+        selectedVoucher=useVoucherStore.getState().activeVoucher;
       }
-
-      if (Platform.OS === "android") {
-        initOptions.googlePay = { merchantCountryCode: "US", testEnv: false };
+      const voucherCode=selectedVoucher?.code || null;
+      if(!quote){
+        const result=await supabase.rpc('quote_order_checkout',{requested_items:items,voucher_code:voucherCode});
+        if(result.error)throw result.error;
+        quote=result.data;
       }
-
-      // Initialize and present native Stripe payment sheet with Apple Pay (iOS) and Google Pay (Android)
-      const { error: setupError } = await initPaymentSheet(initOptions);
-      if (setupError) throw setupError;
-
-      const { error: paymentError } = await presentPaymentSheet();
-      if (paymentError) throw paymentError;
-
-      // record payment, similar to products list
-      try {
-        const order = await createOrder("stripe", "pending");
-        await makePayment(
-          finalTotal,
-          `Purchase of ${cart.length} items via Stripe`,
-          {
-            cartItems: cart.map((item) => ({
-              productId: item.product.id,
-              quantity: item.quantity,
-            })),
-            discountApplied: discountAmount > 0,
-            voucherId: activeVoucher?.id,
-            recipientId: cartOwnerId,
-            paymentProvider: "stripe",
-            paymentMethodId: undefined,
-            orderId: order.id,
-            stripePaymentIntentClientSecret: paymentIntentClientSecret,
-          }
-        );
-
-        const settlement = await settleStripePayment({
-          paymentIntentClientSecret,
-          orderId: order.id,
-          recipientId: cartOwnerId,
-          grossAmountCents: amountCents,
-          platformFeeAmountCents: platformFeeCents,
-          currency,
-          videoId: cart[0]?.product?.videoId,
-          items: cart.map((item) => ({
-            productId: item.product.id,
-            quantity: item.quantity,
-            unitPrice: getMarkedUnitPrice(item.product.price),
-            currency: resolveProductCurrency(item.product.currency),
-            ownerId: resolveProductOwnerId(item.product),
-          })),
-        });
-
-        if (!settlement.success) {
-          throw new Error(settlement.error || 'Stripe settlement failed.');
-        }
-
-        await refreshWalletAfterPurchase();
-
-        await issueTicketsForOrder(order);
-      } catch (recordErr) {
-        console.warn("Payment succeeded but recording failed:", recordErr);
-        throw recordErr;
+      if(Math.abs(Number(quote.total_amount)-finalTotal)>0.001 || quote.currency!==cartCurrency){
+        useVoucherStore.getState().setCheckoutQuote(quote);setDiscountAmount(Number(quote.discount_amount));
+        Alert.alert('Checkout updated','The server verified the current prices and voucher. Review the updated total and tap Checkout again.');return;
       }
-
-      Alert.alert(
-        "Payment Successful",
-        `Payment has been done successfully. Total charged: ${formatCartAmount((totalAmount || amountCents) / 100, currencyCode)}`
-      );
-
-      if (activeVoucher && discountAmount > 0) {
-        incrementUsageCount(activeVoucher.id);
+      const appliedVoucher=checkoutVoucherRequest(selectedVoucher,quote);
+      const requestKey=checkoutRequestKey.current || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      checkoutRequestKey.current=requestKey;
+      if(Number(quote.total_amount)===0){
+        const {data:order,error}=await supabase.rpc('create_order_checkout',{requested_items:items,voucher_code:voucherCode,request_key:requestKey,provider:isLoggedInNigerianUser?'paystack':'stripe'});
+        if(error)throw error;
+        if(order.payment_status!=='paid')throw new Error('The order was not fulfilled');
+        await finishCheckout(order.id);return;
       }
-      clearCart();
-      clearActiveVoucher();
-      setDiscountAmount(0);
-      router.push("/");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unexpected error";
-      console.error("Checkout Error:", err);
-      showPaymentNotProcessedAlert(paymentMethod, message);
-    } finally {
-      setProcessingPayment(false);
-    }
+      if(isLoggedInNigerianUser){setShowPaystackModal(true);return;}
+      const session=await createStripePaymentSheetSession({items,voucherCode:appliedVoucher.voucherCode||undefined,voucherId:appliedVoucher.voucherId||undefined,requestKey,amount:0,platformFeeAmount:0,currency:quote.currency.toLowerCase()});
+      if(session.completed && session.order){await finishCheckout(session.order.id);return;}
+      if(!session.orderId || !session.paymentIntentClientSecret)throw new Error('Payment initialization failed');
+      const initialized=await initPaymentSheet({paymentIntentClientSecret:session.paymentIntentClientSecret,merchantDisplayName:'60Seconds',customerId:session.customerId,customerEphemeralKeySecret:session.ephemeralKeySecret,allowsDelayedPaymentMethods:true});
+      if(initialized.error)throw initialized.error;
+      const payment=await presentPaymentSheet();
+      if(payment.error){
+        const {data:reconciled}=await supabase.functions.invoke('checkout-reconcile',{body:{orderId:session.orderId,action:'cancel'}});
+        if(reconciled?.success){await finishCheckout(session.orderId);return;}
+        if(reconciled?.cancelled){checkoutRequestKey.current=null;if(checkoutStorageKey.current)await AsyncStorage.removeItem(checkoutStorageKey.current);}
+        throw payment.error;
+      }
+      const settlement=await settleStripePayment({orderId:session.orderId,paymentIntentClientSecret:session.paymentIntentClientSecret});
+      if(!settlement.success)throw new Error(settlement.error||'Payment is awaiting verified fulfillment');
+      await finishCheckout(session.orderId);
+    }catch(error:any){Alert.alert('Checkout unavailable',error?.message||'Unable to complete checkout safely.');}
+    finally{checkoutInFlight.current=false;setProcessingPayment(false);}
   };
 
   const renderCartItem = ({ item }: { item: any }) => {
@@ -972,16 +884,16 @@ export default function CartScreen() {
             )}
 
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Subtotal</Text>
+              <Text style={styles.summaryLabel}>Original price</Text>
               <Text style={styles.summaryValue}>
-                {formatCartAmount(cartSubtotal)}
+                {formatCartAmount(appliedQuote ? Number(appliedQuote.original_subtotal) : baseSubtotal)}
               </Text>
             </View>
 
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Platform Fee</Text>
+              <Text style={styles.summaryLabel}>Service markup (4%)</Text>
               <Text style={styles.summaryValue}>
-                {formatCartAmount(platformFee)}
+                {formatCartAmount(appliedQuote ? Number(appliedQuote.markup_amount) : cartSubtotal - baseSubtotal)}
               </Text>
             </View>
 
@@ -1107,6 +1019,7 @@ export default function CartScreen() {
         visible={showVoucherModal}
         onClose={() => setShowVoucherModal(false)}
         onApply={handleApplyVoucher}
+        items={cart.map(item=>({productId:item.product.id,quantity:item.quantity}))}
         totalAmount={cartSubtotal} // ✅ voucher applies on marked subtotal
         businessId={cartOwnerId || undefined}
         productId={cart.length === 1 ? cart[0].product.id : undefined}
@@ -1118,83 +1031,16 @@ export default function CartScreen() {
           setShowPaystackModal(false);
           setPaystackOrderId(null);
         }}
-        onSuccess={async (reference: string, verifiedOrderId?: string) => {
-          setShowPaystackModal(false);
+        onSuccess={async (_reference: string, verifiedOrderId?: string) => {
+          setShowPaystackModal(false);setProcessingPayment(true);
           try {
-            if (!ensureSingleOwnerCart("Paystack")) {
-              return;
-            }
-            setProcessingPayment(true);
-            const effectiveOrderId = verifiedOrderId || paystackOrderId;
-            if (!effectiveOrderId) {
-              throw new Error('Missing Paystack order ID for settlement. Please retry checkout.');
-            }
-
-            const { data: order, error: orderFetchError } = await supabase
-              .from('orders')
-              .select('id')
-              .eq('id', effectiveOrderId)
-              .single();
-
-            if (orderFetchError || !order) {
-              throw new Error('Order not found for verified Paystack payment.');
-            }
-
-            const settlement = await settleExternalOrderPayment({
-              orderId: effectiveOrderId,
-              provider: 'paystack',
-              paymentReference: reference,
-              paymentTransactionId: reference,
-              recipientId: cartOwnerId,
-              grossAmount: finalTotal,
-              netAmount: getBusinessNetAmount(finalTotal),
-              currency: cartCurrency,
-              videoId: cart[0]?.product?.videoId,
-              items: cart.map((item) => ({
-                productId: item.product.id,
-                quantity: item.quantity,
-                unitPrice: item.product.price,
-                currency: resolveProductCurrency(item.product.currency),
-                ownerId: resolveProductOwnerId(item.product),
-              })),
-              metadata: {
-                discountApplied: discountAmount > 0,
-                discountAmount,
-                voucherId: activeVoucher?.id,
-                cartItems: cart.map((item) => ({
-                  productId: item.product.id,
-                  quantity: item.quantity,
-                })),
-              },
-            });
-
-            if (!settlement.success) {
-              throw new Error(settlement.error || 'Paystack settlement failed.');
-            }
-
-            await refreshWalletAfterPurchase();
-
-            if (activeVoucher && discountAmount > 0) {
-              incrementUsageCount(activeVoucher.id);
-            }
-            clearCart();
-            clearActiveVoucher();
-            setDiscountAmount(0);
-            setPaystackOrderId(null);
-            Alert.alert(
-              'Payment Successful',
-              `Payment has been completed via Paystack.\nReference: ${reference}`,
-              [{ text: 'OK', onPress: () => router.push('/') }]
-            );
-          } catch (err) {
-            console.warn('Paystack post-payment recording failed:', err);
-            Alert.alert(
-              'Payment Recorded, Settlement Pending',
-              'Your payment was received, but we could not complete wallet settlement yet. Please contact support with your payment reference so we can finalize owner credit safely.'
-            );
-          } finally {
-            setProcessingPayment(false);
-          }
+            const id=verifiedOrderId||paystackOrderId;
+            if(!id)throw new Error('Missing checkout order');
+            const {data,error}=await supabase.functions.invoke('checkout-reconcile',{body:{orderId:id}});
+            if(error||!data?.success)throw new Error(data?.error||'Payment verification is still pending');
+            await finishCheckout(id);
+          }catch(error:any){Alert.alert('Payment verification pending',error.message||'Open the order to check its status.');}
+          finally{setProcessingPayment(false);}
         }}
         onCancel={() => {
           setShowPaystackModal(false);
@@ -1216,6 +1062,8 @@ export default function CartScreen() {
           currency: cartCurrency,
           cartItems: cart.map((i) => ({ productId: i.product.id, quantity: i.quantity })),
           voucherId: activeVoucher?.id,
+          voucherCode: activeVoucher?.code,
+          checkoutRequestKey: checkoutRequestKey.current,
           videoId: cart[0]?.product?.videoId,
         }}
         paystackSubaccount={
@@ -1747,7 +1595,7 @@ const styles = StyleSheet.create({
 //       const order = await orderService.createOrder(orderData);
 //       return order;
 //     } catch (error) {
-//       console.error("Error creating order:", error);
+//       logger.error("Error creating order:", error);
 //       throw error;
 //     }
 //   };
@@ -1853,7 +1701,7 @@ const styles = StyleSheet.create({
 //                         })
 //                         .finally(() => setProcessingPayment(false));
 //                     } catch (error) {
-//                       console.error("Twint payment error:", error);
+//                       logger.error("Twint payment error:", error);
 //                       Alert.alert(
 //                         "Error",
 //                         `There was a problem processing your Twint payment: ${
@@ -1885,7 +1733,7 @@ const styles = StyleSheet.create({
 //                 }
 //               })
 //               .catch((err) => {
-//                 console.error("An error occurred", err);
+//                 logger.error("An error occurred", err);
 //                 Alert.alert(
 //                   "Error",
 //                   "Could not open Twint app. Please try another payment method."
@@ -1954,7 +1802,7 @@ const styles = StyleSheet.create({
 //                   })
 //                   .finally(() => setProcessingPayment(false));
 //               } catch (error) {
-//                 console.error(`${method} payment error:`, error);
+//                 logger.error(`${method} payment error:`, error);
 //                 Alert.alert(
 //                   "Error",
 //                   `There was a problem processing your ${method} payment: ${
@@ -2040,7 +1888,7 @@ const styles = StyleSheet.create({
 //       );
 //     } catch (error) {
 //       const message = error instanceof Error ? error.message : "Unexpected error";
-//       console.error("Checkout Error:", error);
+//       logger.error("Checkout Error:", error);
 //       Alert.alert("Error", `There was an issue during checkout: ${message}`);
 //     }
 //   };
@@ -2733,7 +2581,7 @@ const styles = StyleSheet.create({
 //       const order = await orderService.createOrder(orderData);
 //       return order;
 //     } catch (error) {
-//       console.error("Error creating order:", error);
+//       logger.error("Error creating order:", error);
 //       throw error;
 //     }
 //   };
@@ -2839,7 +2687,7 @@ const styles = StyleSheet.create({
 //                         })
 //                         .finally(() => setProcessingPayment(false));
 //                     } catch (error) {
-//                       console.error("Twint payment error:", error);
+//                       logger.error("Twint payment error:", error);
 //                       Alert.alert(
 //                         "Error",
 //                         `There was a problem processing your Twint payment: ${
@@ -2871,7 +2719,7 @@ const styles = StyleSheet.create({
 //                 }
 //               })
 //               .catch((err) => {
-//                 console.error("An error occurred", err);
+//                 logger.error("An error occurred", err);
 //                 Alert.alert(
 //                   "Error",
 //                   "Could not open Twint app. Please try another payment method."
@@ -2940,7 +2788,7 @@ const styles = StyleSheet.create({
 //                   })
 //                   .finally(() => setProcessingPayment(false));
 //               } catch (error) {
-//                 console.error(`${method} payment error:`, error);
+//                 logger.error(`${method} payment error:`, error);
 //                 Alert.alert(
 //                   "Error",
 //                   `There was a problem processing your ${method} payment: ${
@@ -3026,7 +2874,7 @@ const styles = StyleSheet.create({
 //       );
 //     } catch (error) {
 //       const message = error instanceof Error ? error.message : "Unexpected error";
-//       console.error("Checkout Error:", error);
+//       logger.error("Checkout Error:", error);
 //       Alert.alert("Error", `There was an issue during checkout: ${message}`);
 //     }
 //   };
@@ -3714,7 +3562,7 @@ const styles = StyleSheet.create({
 //       const order = await orderService.createOrder(orderData);
 //       return order;
 //     } catch (error) {
-//       console.error("Error creating order:", error);
+//       logger.error("Error creating order:", error);
 //       throw error;
 //     }
 //   };
@@ -3821,7 +3669,7 @@ const styles = StyleSheet.create({
 //                         })
 //                         .finally(() => setProcessingPayment(false));
 //                     } catch (error) {
-//                       console.error("Twint payment error:", error);
+//                       logger.error("Twint payment error:", error);
 //                       Alert.alert(
 //                         "Error",
 //                         `There was a problem processing your Twint payment: ${
@@ -3853,7 +3701,7 @@ const styles = StyleSheet.create({
 //                 }
 //               })
 //               .catch((err) => {
-//                 console.error("An error occurred", err);
+//                 logger.error("An error occurred", err);
 //                 Alert.alert(
 //                   "Error",
 //                   "Could not open Twint app. Please try another payment method."
@@ -3922,7 +3770,7 @@ const styles = StyleSheet.create({
 //                   })
 //                   .finally(() => setProcessingPayment(false));
 //               } catch (error) {
-//                 console.error(`${method} payment error:`, error);
+//                 logger.error(`${method} payment error:`, error);
 //                 Alert.alert(
 //                   "Error",
 //                   `There was a problem processing your ${method} payment: ${
@@ -4008,7 +3856,7 @@ const styles = StyleSheet.create({
 //       );
 //     } catch (error) {
 //       const message = error instanceof Error ? error.message : "Unexpected error";
-//       console.error("Checkout Error:", error);
+//       logger.error("Checkout Error:", error);
 //       Alert.alert("Error", `There was an issue during checkout: ${message}`);
 //     }
 //   };
@@ -4791,7 +4639,7 @@ const styles = StyleSheet.create({
 //       const order = await orderService.createOrder(orderData);
 //       return order;
 //     } catch (error) {
-//       console.error("Error creating order:", error);
+//       logger.error("Error creating order:", error);
 //       throw error;
 //     }
 //   };
@@ -4898,7 +4746,7 @@ const styles = StyleSheet.create({
 //                         })
 //                         .finally(() => setProcessingPayment(false));
 //                     } catch (error) {
-//                       console.error("Twint payment error:", error);
+//                       logger.error("Twint payment error:", error);
 //                       Alert.alert(
 //                         "Error",
 //                         `There was a problem processing your Twint payment: ${
@@ -4930,7 +4778,7 @@ const styles = StyleSheet.create({
 //                 }
 //               })
 //               .catch((err) => {
-//                 console.error("An error occurred", err);
+//                 logger.error("An error occurred", err);
 //                 Alert.alert(
 //                   "Error",
 //                   "Could not open Twint app. Please try another payment method."
@@ -4999,7 +4847,7 @@ const styles = StyleSheet.create({
 //                   })
 //                   .finally(() => setProcessingPayment(false));
 //               } catch (error) {
-//                 console.error(`${method} payment error:`, error);
+//                 logger.error(`${method} payment error:`, error);
 //                 Alert.alert(
 //                   "Error",
 //                   `There was a problem processing your ${method} payment: ${
@@ -5085,7 +4933,7 @@ const styles = StyleSheet.create({
 //       );
 //     } catch (error) {
 //       const message = error instanceof Error ? error.message : "Unexpected error";
-//       console.error("Checkout Error:", error);
+//       logger.error("Checkout Error:", error);
 //       Alert.alert("Error", `There was an issue during checkout: ${message}`);
 //     }
 //   };
@@ -5852,7 +5700,7 @@ const styles = StyleSheet.create({
 //       const order = await orderService.createOrder(orderData);
 //       return order;
 //     } catch (error) {
-//       console.error("Error creating order:", error);
+//       logger.error("Error creating order:", error);
 //       throw error;
 //     }
 //   };
@@ -5953,7 +5801,7 @@ const styles = StyleSheet.create({
 //                         })
 //                         .finally(() => setProcessingPayment(false));
 //                     } catch (error) {
-//                       console.error("Twint payment error:", error);
+//                       logger.error("Twint payment error:", error);
 //                       Alert.alert(
 //                         "Error",
 //                         `There was a problem processing your Twint payment: ${
@@ -5985,7 +5833,7 @@ const styles = StyleSheet.create({
 //                 }
 //               })
 //               .catch((err) => {
-//                 console.error("An error occurred", err);
+//                 logger.error("An error occurred", err);
 //                 Alert.alert(
 //                   "Error",
 //                   "Could not open Twint app. Please try another payment method."
@@ -6063,7 +5911,7 @@ const styles = StyleSheet.create({
 //                   })
 //                   .finally(() => setProcessingPayment(false));
 //               } catch (error) {
-//                 console.error("Paystack payment error:", error);
+//                 logger.error("Paystack payment error:", error);
 //                 Alert.alert(
 //                   "Error",
 //                   `There was a problem processing your Paystack payment: ${
@@ -6143,7 +5991,7 @@ const styles = StyleSheet.create({
 //                   })
 //                   .finally(() => setProcessingPayment(false));
 //               } catch (error) {
-//                 console.error("Worldline payment error:", error);
+//                 logger.error("Worldline payment error:", error);
 //                 Alert.alert(
 //                   "Error",
 //                   `There was a problem processing your Worldline payment: ${
@@ -6164,7 +6012,7 @@ const styles = StyleSheet.create({
 //     try {
 //       router.push("/wallet");
 //     } catch (error) {
-//       console.error("❌ Navigation error:", error);
+//       logger.error("❌ Navigation error:", error);
 //     }
 //     return;
 
@@ -6928,7 +6776,7 @@ const styles = StyleSheet.create({
       
 //       return order;
 //     } catch (error) {
-//       console.error('Error creating order:', error);
+//       logger.error('Error creating order:', error);
 //       throw error;
 //     }
 //   };
@@ -7047,7 +6895,7 @@ const styles = StyleSheet.create({
 //                         throw new Error("No Twint payment method found");
 //                       }
 //                     } catch (error) {
-//                       console.error('Twint payment error:', error);
+//                       logger.error('Twint payment error:', error);
 //                       Alert.alert(
 //                         "Error",
 //                         `There was a problem processing your Twint payment: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`
@@ -7077,7 +6925,7 @@ const styles = StyleSheet.create({
 //                 }
 //               })
 //               .catch((err) => {
-//                 console.error("An error occurred", err);
+//                 logger.error("An error occurred", err);
 //                 Alert.alert(
 //                   "Error",
 //                   "Could not open Twint app. Please try another payment method."
@@ -7165,7 +7013,7 @@ const styles = StyleSheet.create({
 //                   throw new Error("No Paystack payment method found");
 //                 }
 //               } catch (error) {
-//                 console.error('Paystack payment error:', error);
+//                 logger.error('Paystack payment error:', error);
 //                 Alert.alert(
 //                   "Error",
 //                   `There was a problem processing your Paystack payment: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`
@@ -7256,7 +7104,7 @@ const styles = StyleSheet.create({
 //                   throw new Error("No Worldline payment method found");
 //                 }
 //               } catch (error) {
-//                 console.error('Worldline payment error:', error);
+//                 logger.error('Worldline payment error:', error);
 //                 Alert.alert(
 //                   "Error",
 //                   `There was a problem processing your Worldline payment: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`
@@ -7272,15 +7120,15 @@ const styles = StyleSheet.create({
 
 //   const handleCheckout = async () => {
 //     // Navigate directly to wallet screen when checkout is clicked
-//     console.log("🚀 Checkout button clicked!");
-//     console.log("🚀 Navigating to wallet screen...");
-//     console.log("🚀 Router object:", router);
+//     logger.debug("🚀 Checkout button clicked!");
+//     logger.debug("🚀 Navigating to wallet screen...");
+//     logger.debug("🚀 Router object:", router);
     
 //     try {
 //       router.push("/wallet");
-//       console.log("✅ Navigation command sent successfully");
+//       logger.debug("✅ Navigation command sent successfully");
 //     } catch (error) {
-//       console.error("❌ Navigation error:", error);
+//       logger.error("❌ Navigation error:", error);
 //     }
 //     return;
 
@@ -7302,12 +7150,12 @@ const styles = StyleSheet.create({
 //     }
 
 //     // Standard wallet payment
-//     console.log("🔍 Cart checkout - wallet state:", wallet);
-//     console.log("🔍 Cart checkout - isLoading:", isLoading);
+//     logger.debug("🔍 Cart checkout - wallet state:", wallet);
+//     logger.debug("🔍 Cart checkout - isLoading:", isLoading);
     
 //     // COMMENTED OUT: Wallet setup popup - client wants to test payment platforms only
 //     if (!wallet) {
-//       console.log("❌ No wallet found, showing setup popup");
+//       logger.debug("❌ No wallet found, showing setup popup");
 //       Alert.alert(
 //         "Wallet Required",
 //         "Please set up your wallet to make purchases.",
@@ -7414,7 +7262,7 @@ const styles = StyleSheet.create({
 
 //                   // Order PDF generated successfully
 //                 } catch (pdfError) {
-//                   console.error("Failed to generate PDF:", pdfError);
+//                   logger.error("Failed to generate PDF:", pdfError);
 //                   // Don't fail the entire purchase if PDF generation fails
 //                 }
 
@@ -7434,7 +7282,7 @@ const styles = StyleSheet.create({
 //                 );
 //               }
 //             } catch (error) {
-//               console.error('Wallet payment error:', error);
+//               logger.error('Wallet payment error:', error);
 //               Alert.alert(
 //                 "Error",
 //                 `There was a problem processing your payment: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`
@@ -7725,8 +7573,8 @@ const styles = StyleSheet.create({
 //                 (processingPayment || isLoading) && styles.disabledButton,
 //               ]}
 //               onPress={() => {
-//                 console.log("🔍 Button pressed - processingPayment:", processingPayment, "isLoading:", isLoading);
-//                 console.log("🔍 Button disabled:", processingPayment || isLoading);
+//                 logger.debug("🔍 Button pressed - processingPayment:", processingPayment, "isLoading:", isLoading);
+//                 logger.debug("🔍 Button disabled:", processingPayment || isLoading);
 //                 handleCheckout();
 //               }}
 //               disabled={false} // Temporarily disabled to test navigation

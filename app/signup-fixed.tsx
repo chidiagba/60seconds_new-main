@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState } from 'react';
 import {
   View,
@@ -54,11 +55,11 @@ export default function SignUpScreen() {
     setIsLoading(true);
 
     try {
-      console.log('🚀 Starting signup process...');
-      console.log('Email:', email);
-      console.log('Account Type:', accountType);
-      console.log('Full Name:', fullName);
-      console.log('Username:', username);
+      logger.debug('🚀 Starting signup process...');
+      logger.debug('Email:', email);
+      logger.debug('Account Type:', accountType);
+      logger.debug('Full Name:', fullName);
+      logger.debug('Username:', username);
 
       // Step 1: Create auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -67,7 +68,7 @@ export default function SignUpScreen() {
       });
 
       if (authError) {
-        console.error('❌ Auth signup failed:', authError.message);
+        logger.error('❌ Auth signup failed:', authError.message);
         Alert.alert('Signup Failed', authError.message);
         return;
       }
@@ -77,7 +78,7 @@ export default function SignUpScreen() {
         return;
       }
 
-      console.log('✅ Auth user created:', authData.user.id);
+      logger.debug('✅ Auth user created:', authData.user.id);
 
       // Step 2: Create profile
       const profileData = {
@@ -94,7 +95,7 @@ export default function SignUpScreen() {
         }),
       };
 
-      console.log('📝 Creating profile with data:', profileData);
+      logger.debug('📝 Creating profile with data:', profileData);
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
@@ -103,12 +104,12 @@ export default function SignUpScreen() {
         .single();
 
       if (profileError) {
-        console.error('❌ Profile creation failed:', profileError.message);
+        logger.error('❌ Profile creation failed:', profileError.message);
         Alert.alert('Profile Creation Failed', profileError.message);
         return;
       }
 
-      console.log('✅ Profile created successfully:', profile.id);
+      logger.debug('✅ Profile created successfully:', profile.id);
 
       // Success
       Alert.alert(
@@ -123,7 +124,7 @@ export default function SignUpScreen() {
       );
 
     } catch (error) {
-      console.error('❌ Signup error:', error);
+      logger.error('❌ Signup error:', error);
       Alert.alert('Signup Failed', 'An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);

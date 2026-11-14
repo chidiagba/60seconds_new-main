@@ -1,11 +1,13 @@
+import { TRPCError } from '@trpc/server';
+import { requiredEnv } from '@/backend/lib/env';
 import { z } from 'zod';
-import { publicProcedure } from '../../../create-context';
+import { protectedProcedure } from '../../../create-context';
 import { supabase } from '@/backend/lib/supabase';
 
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || 'sk_test_330eb515e3709b9f2b60dfd11c9c7396aba4fcf5';
+const PAYSTACK_SECRET_KEY = requiredEnv('PAYSTACK_SECRET_KEY');
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
 
-export const initializePaymentProcedure = publicProcedure
+export const initializePaymentProcedure = protectedProcedure
   .input(z.object({
     email: z.string().email(),
     amount: z.number().positive(), // Amount in dollars
@@ -24,7 +26,12 @@ export const initializePaymentProcedure = publicProcedure
     walletId: z.string().optional(),
     paymentType: z.enum(['order_payment', 'wallet_funding']).default('order_payment'),
   }))
-  .mutation(async ({ input }) => {
+  .mutation(async ({ input, ctx }) => {
+    if (input.orderId) {
+      const { data: order, error } = await supabase.from('orders').select('user_id,total_amount,currency').eq('id', input.orderId).single();
+      if (error || !order || order.user_id !== ctx.user.id) throw new TRPCError({ code: 'FORBIDDEN', message: 'Order is unavailable' });
+      if (Math.round(Number(order.total_amount) * 100) !== Math.round(input.amount * 100) || order.currency !== input.currency) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Order amount does not match' });
+    }
     try {
       // Convert amount to kobo (Paystack uses kobo for NGN, cents for USD)
       const amountInMinorUnit = Math.round(input.amount * 100);
@@ -40,7 +47,7 @@ export const initializePaymentProcedure = publicProcedure
       const reference = input.reference || `60seconds_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
       const payload = {
-        email: input.email,
+        email: ctx.user.email,
         amount: amountInMinorUnit,
         currency: input.currency,
         reference,
@@ -49,7 +56,7 @@ export const initializePaymentProcedure = publicProcedure
           ...input.metadata,
           app_name: '60Seconds',
           timestamp: new Date().toISOString(),
-          userId: input.userId,
+          userId: ctx.user.id,
           orderId: input.orderId,
           walletId: input.walletId,
           paymentType: input.paymentType,

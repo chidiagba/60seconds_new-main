@@ -1,13 +1,14 @@
+import { logger } from '../../../../lib/logger';
 import { z } from 'zod';
-import { publicProcedure } from '../../../create-context';
+import { disabledProcedure } from '../../../create-context';
 import { supabase } from '@/backend/lib/supabase';
 
 // Worldline API Configuration - PSPID is the Merchant ID
 const WORLDLINE_MERCHANT_ID = process.env.WORLDLINE_MERCHANT_ID || '60secondsTechnologies';
-const WORLDLINE_API_KEY = process.env.WORLDLINE_API_KEY || '43A1D436F54844DB73BF153ECBA9551A27636D945271483D0D0B62D713CDAB5C8B15F5158D9339FCA9EA4BD0C92678F94FC930FF3A3355BB1DC1856530B3D730';
+const WORLDLINE_API_KEY = process.env.WORLDLINE_API_KEY || '';
 const WORLDLINE_BASE_URL = process.env.WORLDLINE_BASE_URL || 'https://payment.direct.worldline-solutions.com/v2';
 
-export const verifyPaymentProcedure = publicProcedure
+export const verifyPaymentProcedure = disabledProcedure
   .input(z.object({
     paymentId: z.string(),
   }))
@@ -58,7 +59,7 @@ export const verifyPaymentProcedure = publicProcedure
             if (orderUpdateError) {
               console.error('Failed to update order status:', orderUpdateError);
             } else {
-              console.log('Order status updated successfully for Worldline payment:', orderId);
+              logger.debug('Order status updated successfully for Worldline payment:', orderId);
             }
             
             // Create payment record in Supabase
@@ -84,7 +85,7 @@ export const verifyPaymentProcedure = publicProcedure
             if (paymentInsertError) {
               console.error('Failed to create payment record:', paymentInsertError);
             } else {
-              console.log('Payment record created successfully');
+              logger.debug('Payment record created successfully');
             }
             
             // Update wallet balance if this is a wallet funding
@@ -111,7 +112,7 @@ export const verifyPaymentProcedure = publicProcedure
                 if (walletUpdateError) {
                   console.error('Failed to update wallet balance:', walletUpdateError);
                 } else {
-                  console.log('Wallet balance updated successfully');
+                  logger.debug('Wallet balance updated successfully');
                 }
               }
               
@@ -137,7 +138,7 @@ export const verifyPaymentProcedure = publicProcedure
             }
           }
           
-          console.log('Worldline payment processed successfully:', payment.paymentId);
+          logger.debug('Worldline payment processed successfully:', payment.paymentId);
         } catch (dbError) {
           console.error('Database update failed for Worldline payment:', dbError);
           // Don't fail the payment verification if database update fails
@@ -168,7 +169,7 @@ export const verifyPaymentProcedure = publicProcedure
       
       // For development/testing, return mock data
       if (process.env.NODE_ENV === 'development') {
-        console.log('Returning mock Worldline verification data for development');
+        logger.debug('Returning mock Worldline verification data for development');
         return {
           success: true,
           data: {

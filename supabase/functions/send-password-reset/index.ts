@@ -1,3 +1,5 @@
+import { logger } from '../_shared/logger.ts';
+import { corsForRequest } from '../_shared/cors.ts';
 // Supabase Edge Function for Sending Password Reset Emails via Postmark
 // This function sends password reset emails using Postmark (fast) instead of Supabase's slow email service
 
@@ -11,17 +13,14 @@ declare const Deno: {
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+
 
 serve(async (req) => {
+  const corsHeaders = corsForRequest(req);
   // Log that function was called - THIS SHOULD APPEAR IN LOGS IF FUNCTION IS ACCESSIBLE
-  console.log("🚀 send-password-reset function called");
-  console.log("📋 Request method:", req.method);
-  console.log("📋 Request URL:", req.url);
+  logger.debug("🚀 send-password-reset function called");
+  logger.debug("📋 Request method:", req.method);
+  logger.debug("📋 Request URL:", req.url);
   
   // Health check endpoint - helps verify function is deployed
   if (req.method === "GET") {
@@ -40,12 +39,12 @@ serve(async (req) => {
   
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    console.log("✅ CORS preflight request handled");
+    logger.debug("✅ CORS preflight request handled");
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    console.log("📧 Starting password reset email process...");
+    logger.debug("📧 Starting password reset email process...");
     // Parse request body
     let body;
     try {
@@ -87,7 +86,7 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     
     // Debug logging (remove in production if needed)
-    console.log("🔍 Checking secrets:", {
+    logger.debug("🔍 Checking secrets:", {
       hasSupabaseUrl: !!supabaseUrl,
       hasServiceKey: !!supabaseServiceKey,
       hasPostmarkKey: !!Deno.env.get("POSTMARK_API_KEY"),
@@ -127,7 +126,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: false,
-          message: resetError?.message || "Failed to generate reset link",
+          message: 'Request could not be completed',
         }),
         {
           status: 500,
@@ -170,7 +169,7 @@ serve(async (req) => {
       resetUrl = url.toString();
     } catch (e) {
       // Fallback: simple string replacement if URL parsing fails
-      console.log("⚠️ URL parsing failed, using string replacement");
+      logger.debug("⚠️ URL parsing failed, using string replacement");
       const deepLinkEncoded = encodeURIComponent(deepLinkUrl);
       // Remove existing redirect_to parameter (if present)
       const cleanLink = resetLink.replace(/[&?]redirect_to=[^&]*/g, "");
@@ -233,7 +232,7 @@ Website: https://60secondsapp.io`;
         }
         
         if (postmarkResponse.ok) {
-          console.log("✅ Password reset email sent via Postmark:", {
+          logger.debug("✅ Password reset email sent via Postmark:", {
             messageId: postmarkData.MessageID,
             to: email,
           });
@@ -260,13 +259,13 @@ Website: https://60secondsapp.io`;
         }
       } catch (postmarkError: any) {
         console.error("❌ Postmark API request failed:", {
-          error: postmarkError?.message || String(postmarkError),
+          error: 'Request could not be completed',
         });
         return new Response(
           JSON.stringify({
             success: false,
             message: "Failed to send email via Postmark",
-            error: postmarkError?.message || String(postmarkError),
+            error: 'Request could not be completed',
           }),
           {
             status: 500,
@@ -276,7 +275,7 @@ Website: https://60secondsapp.io`;
       }
     } else {
       // Fallback: Log if Postmark not configured
-      console.log("📧 Password Reset Email (Logging Only - Postmark not configured):", {
+      logger.debug("📧 Password Reset Email (Logging Only - Postmark not configured):", {
         to: email,
         resetUrl: resetUrl.substring(0, 50) + "...",
       });
@@ -297,7 +296,7 @@ Website: https://60secondsapp.io`;
     return new Response(
       JSON.stringify({
         success: false,
-        message: error.message || "Failed to send password reset email",
+        message: 'Request could not be completed',
       }),
       {
         status: 500,

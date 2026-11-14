@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { useEffect, useRef } from 'react';
 import { useAuthStore } from '@/store/auth-store';
 
@@ -20,9 +21,9 @@ export function useAvatarSync(
 
     // Check if avatar version has changed
     if (avatarVersion !== previousAvatarVersionRef.current) {
-      console.log('🎭 Avatar changed detected, triggering callback');
+      logger.debug('🎭 Avatar changed detected, triggering callback');
       Promise.resolve().then(callback).catch((error) => {
-        console.error('Error in useAvatarSync callback:', error);
+        logger.error('Error in useAvatarSync callback:', error);
       });
     }
 

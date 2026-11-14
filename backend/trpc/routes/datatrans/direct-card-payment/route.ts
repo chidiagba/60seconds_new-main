@@ -1,5 +1,6 @@
+import { logger } from '../../../../lib/logger';
 import { z } from 'zod';
-import { publicProcedure } from '../../../create-context';
+import { disabledProcedure } from '../../../create-context';
 import { supabase } from '@/backend/lib/supabase';
 import crypto from 'crypto';
 
@@ -28,7 +29,7 @@ const ensureStringMessage = (msg: any): string => {
   return str === '[object Object]' ? 'Invalid error format' : str;
 };
 
-export const directCardPaymentProcedure = publicProcedure
+export const directCardPaymentProcedure = disabledProcedure
   .input(z.object({
     email: z.string().email(),
     amount: z.number().positive(),
@@ -45,7 +46,7 @@ export const directCardPaymentProcedure = publicProcedure
   }))
   .mutation(async ({ input }) => {
     try {
-      console.log('Processing Datatrans direct card payment:', {
+      logger.debug('Processing Datatrans direct card payment:', {
         email: input.email,
         amount: input.amount,
         currency: input.currency,
@@ -63,7 +64,7 @@ export const directCardPaymentProcedure = publicProcedure
         DATATRANS_PASSWORD.length > 5
       );
       
-      console.log('🔑 Datatrans Configuration:', {
+      logger.debug('🔑 Datatrans Configuration:', {
         merchantId: DATATRANS_MERCHANT_ID,
         passwordLength: DATATRANS_PASSWORD?.length || 0,
         baseUrl: DATATRANS_BASE_URL,
@@ -77,7 +78,7 @@ export const directCardPaymentProcedure = publicProcedure
       }
 
       // Process Datatrans payment
-      console.log('💳 Processing Datatrans Payment:', {
+      logger.debug('💳 Processing Datatrans Payment:', {
         reference: input.reference,
         amount: input.amount,
         currency: input.currency,
@@ -112,16 +113,16 @@ export const directCardPaymentProcedure = publicProcedure
         }
       };
 
-      console.log('📤 Calling Datatrans API...');
+      logger.debug('📤 Calling Datatrans API...');
       const apiPath = '/v1/transactions';
       const apiUrl = `${DATATRANS_BASE_URL}${apiPath}`;
-      console.log(`   URL: ${apiUrl}`);
-      console.log(`   Method: POST`);
+      logger.debug(`   URL: ${apiUrl}`);
+      logger.debug(`   Method: POST`);
       
       // Datatrans uses Basic Authentication with Merchant ID and Password
       const authString = Buffer.from(`${DATATRANS_MERCHANT_ID}:${DATATRANS_PASSWORD}`).toString('base64');
       
-      console.log(`   Auth: Basic Auth with Merchant ID: ${DATATRANS_MERCHANT_ID}`);
+      logger.debug(`   Auth: Basic Auth with Merchant ID: ${DATATRANS_MERCHANT_ID}`);
       
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -133,7 +134,7 @@ export const directCardPaymentProcedure = publicProcedure
         body: JSON.stringify(payload)
       });
 
-      console.log(`📥 Datatrans API Response Status: ${response.status} ${response.statusText}`);
+      logger.debug(`📥 Datatrans API Response Status: ${response.status} ${response.statusText}`);
 
       // Check if response is JSON
       const responseContentType = response.headers.get('content-type');
@@ -186,14 +187,14 @@ export const directCardPaymentProcedure = publicProcedure
         throw new Error(errorMsg);
       }
 
-      console.log('✅ Datatrans API Success!');
-      console.log(`   Transaction ID: ${data.transactionId || data.transaction_id || data.refno || 'N/A'}`);
-      console.log(`   Status: ${data.status || 'N/A'}`);
-      console.log(`   Reference: ${data.refno || data.reference || input.reference}`);
-      console.log('');
-      console.log('📊 Payment processed successfully');
-      console.log(`   Search by reference: ${data.refno || data.reference || input.reference}`);
-      console.log('');
+      logger.debug('✅ Datatrans API Success!');
+      logger.debug(`   Transaction ID: ${data.transactionId || data.transaction_id || data.refno || 'N/A'}`);
+      logger.debug(`   Status: ${data.status || 'N/A'}`);
+      logger.debug(`   Reference: ${data.refno || data.reference || input.reference}`);
+      logger.debug('');
+      logger.debug('📊 Payment processed successfully');
+      logger.debug(`   Search by reference: ${data.refno || data.reference || input.reference}`);
+      logger.debug('');
 
       // Determine transaction ID and status
       const transactionId = data.transactionId || data.transaction_id || data.refno || input.reference;
@@ -207,7 +208,7 @@ export const directCardPaymentProcedure = publicProcedure
           status: status,
           authorization_url: data.redirectUrl || data.authorization_url,
           access_code: data.accessCode || data.access_code,
-          message: ensureStringMessage(data.message) || 'Payment processed successfully',
+          message: 'Request could not be completed',
           gateway_response: data,
           transaction_id: transactionId,
           amount: input.amount,
@@ -234,19 +235,19 @@ export const directCardPaymentProcedure = publicProcedure
             country_code: 'CH'
           }
         },
-        message: ensureStringMessage(data.message) || 'Payment processed successfully'
+        message: 'Request could not be completed'
       };
 
       // Save real payment to database
-      console.log('💾 Saving payment to database...');
+      logger.debug('💾 Saving payment to database...');
       await savePaymentToDatabase({
         ...input,
         response: result.data,
         isMock: false
       });
-      console.log('✅ Payment saved to database!');
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('');
+      logger.debug('✅ Payment saved to database!');
+      logger.debug('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      logger.debug('');
 
       return result;
 
@@ -256,7 +257,7 @@ export const directCardPaymentProcedure = publicProcedure
       // Log error details safely
       try {
         const errorDetails = {
-          message: error?.message,
+          message: 'Request could not be completed',
           messageType: typeof error?.message,
           name: error?.name,
           hasData: !!error?.data,
@@ -273,7 +274,7 @@ export const directCardPaymentProcedure = publicProcedure
       try {
         await saveFailedPaymentToDatabase({
           ...input,
-          error: typeof error.message === 'string' ? error.message : JSON.stringify(error.message)
+          error: 'Request could not be completed'
         });
       } catch (dbError) {
         console.error('Failed to save payment error to database:', dbError);
@@ -375,7 +376,7 @@ async function savePaymentToDatabase(params: {
   isMock: boolean;
 }) {
   try {
-    console.log('💾 Saving Datatrans payment to database...');
+    logger.debug('💾 Saving Datatrans payment to database...');
     
     // Create payment record
     const { error: paymentError } = await supabase
@@ -436,7 +437,7 @@ async function savePaymentToDatabase(params: {
       }
     }
 
-    console.log('✅ Datatrans payment saved to database successfully');
+    logger.debug('✅ Datatrans payment saved to database successfully');
   } catch (error: any) {
     console.error('❌ Error saving Datatrans payment to database:', error);
     // Don't throw here, payment processing should continue
@@ -456,7 +457,7 @@ async function saveFailedPaymentToDatabase(params: {
   error: string;
 }) {
   try {
-    console.log('💾 Saving failed Datatrans payment to database...');
+    logger.debug('💾 Saving failed Datatrans payment to database...');
     
     const { error } = await supabase
       .from('payments')
@@ -468,7 +469,7 @@ async function saveFailedPaymentToDatabase(params: {
         status: 'failed',
         transaction_id: params.reference,
         gateway_reference: params.reference,
-        gateway_response: { error: params.error },
+        gateway_response: { error: 'Request could not be completed' },
         metadata: {
           payment_type: params.paymentType,
           customer_email: params.email,
@@ -481,7 +482,7 @@ async function saveFailedPaymentToDatabase(params: {
     if (error) {
       console.error('❌ Error saving failed payment:', error);
     } else {
-      console.log('✅ Failed Datatrans payment saved to database');
+      logger.debug('✅ Failed Datatrans payment saved to database');
     }
   } catch (error: any) {
     console.error('❌ Error saving failed Datatrans payment to database:', error);

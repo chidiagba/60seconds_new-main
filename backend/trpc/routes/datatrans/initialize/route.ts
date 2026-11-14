@@ -1,11 +1,11 @@
 import { z } from "zod";
-import { publicProcedure } from "../../../create-context";
+import { disabledProcedure } from "../../../create-context";
 
 const DATATRANS_MERCHANT_ID = process.env.DATATRANS_MERCHANT_ID || '1110020919';
 const DATATRANS_PASSWORD = process.env.DATATRANS_PASSWORD || '';
 const DATATRANS_BASE_URL = process.env.DATATRANS_BASE_URL || 'https://api.datatrans.com';
 
-export const initializePaymentProcedure = publicProcedure
+export const initializePaymentProcedure = disabledProcedure
   .input(
     z.object({
       amount: z.number().positive(),

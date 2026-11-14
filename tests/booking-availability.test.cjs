@@ -25,7 +25,7 @@ test('customers can choose daytime and 17:30 arrivals, with past slots excluded'
 });
 test('the first avatar change triggers sync and supports synchronous callbacks',async()=>{
   let version=0, count=0, ref;
-  const {useAvatarSync}=load('hooks/useAvatarSync.ts',name=> name==='react' ? {
+  const {useAvatarSync}=load('hooks/useAvatarSync.ts',name=> name==='@/lib/logger' ? {logger:require('./logger-fixture.cjs')} : name==='react' ? {
     useRef: initial=>ref || (ref={current:initial}),
     useEffect: effect=>effect(),
   } : {useAuthStore: selector=>selector({avatarVersion:version})});

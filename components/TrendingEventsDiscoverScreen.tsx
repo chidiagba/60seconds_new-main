@@ -1,3 +1,4 @@
+import AvatarImage from '@/components/AvatarImage';
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -341,8 +342,8 @@ export default function TrendingEventsDiscoverScreen({ homePath }: Props) {
           style={styles.userInfoButton}
           onPress={() => handleUserPress(creatorId)}
         >
-          <Image
-            source={{ uri: getCreatorAvatar(item) }}
+          <AvatarImage
+            uri={getCreatorAvatar(item)} userId={getCreatorId(item)}
             style={styles.userAvatar}
             contentFit="cover"
             transition={300}

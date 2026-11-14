@@ -1,13 +1,10 @@
 // @ts-nocheck
+import { corsForRequest } from '../_shared/cors.ts';
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import Stripe from 'npm:stripe';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+
 
 const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY') || '';
 const supabaseUrl =
@@ -169,6 +166,7 @@ const mapVerificationFromStripe = (bankAccount: any, connectedAccount?: any) => 
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsForRequest(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }

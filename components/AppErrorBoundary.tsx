@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { Component, ReactNode } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import Colors from '@/constants/colors';
@@ -27,7 +28,7 @@ export class AppErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('[AppErrorBoundary] Caught render error:', error?.message, errorInfo?.componentStack);
+    logger.error('[AppErrorBoundary] Caught render error:', error?.message, errorInfo?.componentStack);
   }
 
   handleReset = () => {

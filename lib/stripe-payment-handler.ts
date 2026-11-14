@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { ensureStripeInitialized } from "@/lib/stripe-initialization";
 import { Platform, Alert, Linking } from 'react-native';
 import Constants from 'expo-constants';
@@ -29,7 +30,7 @@ export async function initializeStripePayment(params: StripePaymentParams) {
       return await initializeWebStripePayment(params);
     }
   } catch (error) {
-    console.error('Error initializing Stripe payment:', error);
+    logger.error('Error initializing Stripe payment:', error);
     return null;
   }
 }
@@ -68,7 +69,7 @@ async function initializeNativeStripePayment(params: StripePaymentParams) {
       initPaymentSheet: stripe.initPaymentSheet,
     };
   } catch (error) {
-    console.warn('Native Stripe initialization failed (Android):', error);
+    logger.warn('Native Stripe initialization failed (Android):', error);
     return null;
   }
 }
@@ -108,7 +109,7 @@ async function initializeWebStripePayment(params: StripePaymentParams) {
       },
     };
   } catch (error) {
-    console.warn('Web Stripe initialization failed (iOS):', error);
+    logger.warn('Web Stripe initialization failed (iOS):', error);
     return null;
   }
 }
@@ -142,7 +143,7 @@ async function createPaymentIntentOnBackend(
     const data = await response.json();
     return data.clientSecret || null;
   } catch (error) {
-    console.error('Error creating payment intent on backend:', error);
+    logger.error('Error creating payment intent on backend:', error);
     return null;
   }
 }
@@ -166,7 +167,7 @@ async function getStripeCheckoutUrl(clientSecret: string): Promise<string | null
     const data = await response.json();
     return data.url || null;
   } catch (error) {
-    console.error('Error getting checkout URL:', error);
+    logger.error('Error getting checkout URL:', error);
     return null;
   }
 }

@@ -26,3 +26,17 @@ ios/Pods/
 .env
 .env.*
 !.env.example
+
+# Private signing material, developer output and generated media
+build/
+dist/
+.expo-export*/
+local-private/
+logs/
+*.jks
+*.keystore
+yes
+yes.pub
+public/watermarked-videos/
+
+public/runtime-config.js

@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start --tunnel",
-    "build:web": "expo export --platform web",
+    "build:web": "node scripts/write-public-config.cjs && expo export --platform web",
     "start-web": "expo start --web --tunnel",
     "start-web-dev": "DEBUG=expo* expo start --web --tunnel",
     "start-server": "tsx start-server.js",
@@ -27,7 +27,11 @@
     "reconcile:paystack-order": "tsx scripts/reconcile-orphaned-paystack-order.ts",
     "backfill:ticket-receipts": "tsx scripts/backfill-missing-ticket-receipts.ts",
     "backfill:paystack-subaccounts": "tsx scripts/backfill-paystack-subaccounts.ts",
-    "postinstall": "node scripts/patch-ffmpeg-podspec.js && node scripts/patch-ffmpeg-android.js && node scripts/patch-expo-message-socket.js && node scripts/patch-stripe-swift-interop.js && node scripts/patch-expo-av-ios.js"
+    "postinstall": "node scripts/patch-ffmpeg-podspec.js && node scripts/patch-ffmpeg-android.js && node scripts/patch-expo-message-socket.js && node scripts/patch-stripe-swift-interop.js && node scripts/patch-expo-av-ios.js",
+    "test": "node --test tests/*.test.cjs tests/password-reset.cjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "node scripts/lint-source.cjs",
+    "scan:secrets": "node scripts/scan-secrets.cjs"
   },
   "dependencies": {
     "@expo/react-native-action-sheet": "^4.1.1",

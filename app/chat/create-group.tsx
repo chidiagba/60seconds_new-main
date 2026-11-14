@@ -1,3 +1,4 @@
+import AvatarImage from '@/components/AvatarImage';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
@@ -201,13 +202,7 @@ export default function CreateGroupScreen() {
               keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => (
                 <TouchableOpacity style={styles.searchResult} onPress={() => handleAddMember(item)}>
-                  {item.avatarUrl ? (
-                    <Image source={{ uri: item.avatarUrl }} style={styles.avatar} contentFit="cover" />
-                  ) : (
-                    <View style={styles.avatarFallback}>
-                      <Text style={styles.avatarFallbackText}>{item.fullName.charAt(0).toUpperCase()}</Text>
-                    </View>
-                  )}
+                  {<AvatarImage uri={item.avatarUrl} userId={item?.id} style={styles.avatar} contentFit="cover" />}
 
                   <View style={styles.searchInfo}>
                     <Text style={styles.searchName}>{item.fullName}</Text>

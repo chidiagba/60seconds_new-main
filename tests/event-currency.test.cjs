@@ -28,7 +28,7 @@ function creationService() {
     return {insert(value){saved[table]=value;return this;},select(){return table==='events'?this:Promise.resolve({data:saved[table],error:null});},single:async()=>({data:{id:'event',...saved.events},error:null})};
   }};
   const exports={};
-  vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/event-creation-service.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports,Error,console:{log(){},error(){}},require:name=>name==='./supabase'?{supabase:db}:exportsObject});
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/event-creation-service.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,{exports,Error,console:{log(){},error(){}},require:name=>name==='@/lib/logger'?{logger:require('./logger-fixture.cjs')}:name==='./supabase'?{supabase:db}:exportsObject});
   return {service:exports.EventCreationService,saved};
 }
 test('saved event, offers, and shared-page checkout keep the selected currency together',async()=>{

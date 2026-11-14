@@ -1,3 +1,4 @@
+import AvatarImage from '@/components/AvatarImage';
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { Image } from 'expo-image';
@@ -28,7 +29,7 @@ export default function CommentItem({ comment, onLike, level = 0 }: CommentItemP
         name: profile?.full_name || user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
         username: profile?.username || user.user_metadata?.username || user.email?.split('@')[0] || 'user',
         email: user.email,
-        avatar: profile?.avatar_url || comment.user.avatar,
+        avatar: profile?.avatar_url || '',
         followers: profile?.followers_count || 0,
         following: profile?.following_count || 0,
         isBusinessAccount: (profile?.user_type || user.user_metadata?.user_type) === 'business',
@@ -65,24 +66,11 @@ export default function CommentItem({ comment, onLike, level = 0 }: CommentItemP
 
   const hasReplies = comment.replies && comment.replies.length > 0;
   const replyCount = hasReplies ? comment.replies!.length : 0;
-  const avatarValue = (comment.user.avatar || '').trim();
-  const isEmojiAvatar = avatarValue === '👨' || avatarValue === '👩';
-  const hasAvatarUri = /^https?:\/\//i.test(avatarValue) || /^file:\/\//i.test(avatarValue) || avatarValue.startsWith('data:');
+
 
   return (
     <View style={[styles.container, level > 0 && styles.replyContainer]}>
-      {hasAvatarUri ? (
-        <Image
-          source={{ uri: avatarValue }}
-          style={styles.avatar}
-          contentFit="cover"
-          transition={300}
-        />
-      ) : (
-        <View style={[styles.avatar, styles.avatarFallback, isEmojiAvatar && styles.avatarEmojiBackground]}>
-          <Text style={styles.avatarFallbackText}>{isEmojiAvatar ? avatarValue : (comment.user.username?.[0] || 'U').toUpperCase()}</Text>
-        </View>
-      )}
+      <AvatarImage uri={comment.user.avatar} userId={comment.userId} style={styles.avatar} contentFit="cover" />
       
       <View style={styles.contentContainer}>
         <Text style={styles.username}>{comment.user.name || comment.user.username}</Text>

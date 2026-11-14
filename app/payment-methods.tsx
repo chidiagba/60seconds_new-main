@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -17,7 +18,7 @@ export default function PaymentMethodsScreen() {
   } = useWalletStore();
   
   useEffect(() => {
-    console.log('🔍 Payment methods screen mounted, fetching payment methods...');
+    logger.debug('🔍 Payment methods screen mounted, fetching payment methods...');
     fetchPaymentMethods();
   }, []);
   

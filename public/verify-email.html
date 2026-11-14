@@ -147,12 +147,13 @@
         </div>
     </div>
 
+    <script src="/runtime-config.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     
     <script>
         // Initialize Supabase client
-        const supabaseUrl = 'https://rvvujgbaswecqohixgog.supabase.co';
-        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ2dnVqZ2Jhc3dlY3FvaGl4Z29nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzk1NDc3NDUsImV4cCI6MjA1NTEyMzc0NX0.7tN4mfu7H6mYCTzGkCO6qzIoEzvIffa_iveNxXkJkXc';
+        const supabaseUrl = window.__PUBLIC_CONFIG__.supabaseUrl;
+        const supabaseKey = window.__PUBLIC_CONFIG__.supabaseAnonKey;
         const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
         // Get URL parameters

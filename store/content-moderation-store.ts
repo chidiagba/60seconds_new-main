@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { hiddenVideosService } from "@/lib/database";
@@ -39,7 +40,7 @@ export const useContentModerationStore = create<ContentModerationState>(
               JSON.stringify(dbHiddenVideos)
             );
           } catch (e) {
-            console.warn("Failed to sync hidden videos to AsyncStorage:", e);
+            logger.warn("Failed to sync hidden videos to AsyncStorage:", e);
           }
           return;
         }
@@ -49,14 +50,14 @@ export const useContentModerationStore = create<ContentModerationState>(
         const ids = stored ? (JSON.parse(stored) as string[]) : [];
         set({ hiddenVideoIds: new Set(ids) });
       } catch (e) {
-        console.error("Failed to load hidden videos:", e);
+        logger.error("Failed to load hidden videos:", e);
         // Still try AsyncStorage as fallback
         try {
           const stored = await AsyncStorage.getItem(HIDDEN_VIDEOS_KEY);
           const ids = stored ? (JSON.parse(stored) as string[]) : [];
           set({ hiddenVideoIds: new Set(ids) });
         } catch (e2) {
-          console.error("Failed to load hidden videos from AsyncStorage:", e2);
+          logger.error("Failed to load hidden videos from AsyncStorage:", e2);
           set({ hiddenVideoIds: new Set() });
         }
       }
@@ -90,7 +91,7 @@ export const useContentModerationStore = create<ContentModerationState>(
         // Save to database (source of truth, persistent across devices)
         await hiddenVideosService.hideVideoForUser(videoId);
       } catch (e) {
-        console.error("Failed to save hidden video to database:", e);
+        logger.error("Failed to save hidden video to database:", e);
         // Continue anyway - AsyncStorage will act as fallback
       }
 
@@ -101,7 +102,7 @@ export const useContentModerationStore = create<ContentModerationState>(
           JSON.stringify([...next])
         );
       } catch (e) {
-        console.error("Failed to persist hidden video to AsyncStorage:", e);
+        logger.error("Failed to persist hidden video to AsyncStorage:", e);
       }
     },
 
@@ -123,7 +124,7 @@ export const useContentModerationStore = create<ContentModerationState>(
         // Remove from database
         await hiddenVideosService.unhideVideoForUser(videoId);
       } catch (e) {
-        console.error("Failed to remove hidden video from database:", e);
+        logger.error("Failed to remove hidden video from database:", e);
       }
 
       try {
@@ -133,7 +134,7 @@ export const useContentModerationStore = create<ContentModerationState>(
           JSON.stringify([...next])
         );
       } catch (e) {
-        console.error("Failed to update AsyncStorage:", e);
+        logger.error("Failed to update AsyncStorage:", e);
       }
     },
 
@@ -148,14 +149,14 @@ export const useContentModerationStore = create<ContentModerationState>(
           JSON.stringify([...next])
         );
       } catch (e) {
-        console.error("Failed to persist blocked user:", e);
+        logger.error("Failed to persist blocked user:", e);
       }
       // developer notification: send a record to backend (fire-and-forget)
       try {
         // if you have a table for moderation you can insert here
         // example: await supabase.from('user_blocks').insert({ user_id: userId });
       } catch (e) {
-        console.warn('Failed to notify server about blocked user', e);
+        logger.warn('Failed to notify server about blocked user', e);
       }
     },
 

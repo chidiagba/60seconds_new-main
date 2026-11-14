@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { unregisterCurrentPushDevice } from '@/utils/push-device';
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import * as Linking from 'expo-linking';
@@ -25,7 +26,12 @@ interface AuthContextType {
     country?: string;
     country_code?: string;
     currency?: string;
-  }, options?: { emailRedirectTo?: string }) => Promise<{ error: any; needsVerification?: boolean; userId?: string }>;
+  }, options?: { emailRedirectTo?: string }, attribution?: {
+    referralCode: string;
+    source: string;
+    platform: string;
+    firstOpenTimestamp: string;
+  }) => Promise<{ error: any; needsVerification?: boolean; userId?: string }>;
   signInWithMagicLink: (email: string) => Promise<{ error: any }>;
   signOut: () => Promise<{ error: any }>;
   updateProfile: (updates: Partial<Profile>) => Promise<{ error: any }>;
@@ -102,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user_type: (currentUser.user_metadata?.user_type as 'business' | 'private') || 'private',
       followers_count: 0,
       following_count: 0,
-      avatar_url: previousProfile?.avatar_url || currentUser.user_metadata?.avatar_url || undefined,
+      avatar_url: previousProfile ? previousProfile.avatar_url : currentUser.user_metadata?.avatar_url || undefined,
       ...(previousProfile && (previousProfile as any).avatar_gender !== undefined
         ? { avatar_gender: (previousProfile as any).avatar_gender }
         : {}),
@@ -250,7 +256,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Add timeout to prevent infinite loading (increased for Android simulator)
     const timeoutId = setTimeout(() => {
-      console.warn('Auth initialization timeout - proceeding without auth');
+      logger.warn('Auth initialization timeout - proceeding without auth');
       setLoading(false);
     }, 10000); // 10 second timeout
 
@@ -309,11 +315,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     country?: string;
     country_code?: string;
     currency?: string;
-  }, _options?: { emailRedirectTo?: string }) => {
+  }, _options?: { emailRedirectTo?: string }, attribution?: {
+    referralCode: string;
+    source: string;
+    platform: string;
+    firstOpenTimestamp: string;
+  }) => {
     try {
-      console.log('🚀 Starting Supabase signup process...');
-      console.log('Email:', email);
-      console.log('Profile data:', profileData);
+      logger.debug('🚀 Starting Supabase signup process...');
+      logger.debug('Email:', email);
+      logger.debug('Profile data:', profileData);
 
       useAuthStore.getState().logout();
       setSession(null);
@@ -323,7 +334,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         await supabase.auth.signOut();
       } catch (signOutError) {
-        console.warn('Pre-signup sign out failed:', signOutError);
+        logger.warn('Pre-signup sign out failed:', signOutError);
       }
 
       const normalizedEmail = email.trim().toLowerCase();
@@ -346,12 +357,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             country_code: profileData?.country_code,
             currency: resolvedSignupCurrency,
           },
+          attribution: attribution ? {
+            referral_code: attribution.referralCode,
+            source: attribution.source,
+            platform: attribution.platform,
+            first_open_at: attribution.firstOpenTimestamp,
+          } : undefined,
         },
       });
 
       if (error || !data?.success) {
         if ((data as any)?.code === 'existing_user' && (data as any)?.user_id) {
-          console.log('ℹ️ Existing signup user detected, continuing with PIN verification flow:', (data as any)?.user_id);
+          logger.debug('ℹ️ Existing signup user detected, continuing with PIN verification flow:', (data as any)?.user_id);
           return {
             error: null,
             needsVerification: true,
@@ -359,43 +376,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           };
         }
 
-        try {
-          const { data: existingUserData } = await supabase.functions.invoke('get-uid-by-email', {
-            body: { email: normalizedEmail },
-          });
-
-          if (existingUserData?.uid) {
-            const alreadyOtpVerified = existingUserData.otp_verified === true;
-
-            if (!alreadyOtpVerified) {
-              console.log('ℹ️ Existing account found after signup failure, continuing with PIN verification flow:', existingUserData.uid);
-              return {
-                error: null,
-                needsVerification: true,
-                userId: existingUserData.uid,
-              };
-            }
-
-            return {
-              error: new Error('This email is already registered. Please sign in with your password.'),
-            };
-          }
-        } catch (lookupErr) {
-          console.warn('Existing user recovery lookup failed:', lookupErr);
-        }
-
         const remoteError = (data as any)?.error || error?.message || 'Signup failed';
-        console.error('❌ Supabase auth signup error:', remoteError);
+        logger.error('❌ Supabase auth signup error:', remoteError);
         return { error: new Error(remoteError) };
       }
 
-      console.log('✅ Supabase auth signup successful:', data?.user_id);
+      logger.debug('✅ Supabase auth signup successful:', data?.user_id);
 
       // Keep users fully signed-out until signup PIN verification is complete.
       try {
         await supabase.auth.signOut();
       } catch (signOutError) {
-        console.warn('Failed to clear signup session:', signOutError);
+        logger.warn('Failed to clear signup session:', signOutError);
       }
 
       useAuthStore.getState().logout();
@@ -409,7 +401,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         userId: data?.user_id,
       };
     } catch (err) {
-      console.error('❌ Signup error:', err);
+      logger.error('❌ Signup error:', err);
       return { error: err };
     }
   };
@@ -456,7 +448,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if ('avatar_url' in updates || 'avatar_gender' in updates) {
         const { updateAvatarInfo } = useAuthStore.getState();
         updateAvatarInfo({
-          avatar: mergedProfile.avatar_url || undefined,
+          avatar: resolveAvatarUrl({ avatarUrl: mergedProfile.avatar_url }),
           avatarGender: (mergedProfile as any).avatar_gender as any,
         });
       }
@@ -487,19 +479,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if ('avatar_url' in fallbackUpdates || 'avatar_gender' in updates) {
             const { updateAvatarInfo } = useAuthStore.getState();
             updateAvatarInfo({
-              avatar: mergedProfile.avatar_url || undefined,
+              avatar: resolveAvatarUrl({ avatarUrl: mergedProfile.avatar_url }),
               avatarGender: (mergedProfile as any).avatar_gender as any,
             });
           }
           
           return { error: null };
         } catch (fallbackError) {
-          console.error('Error updating profile (fallback):', fallbackError);
+          logger.error('Error updating profile (fallback):', fallbackError);
           return { error: fallbackError };
         }
       }
 
-      console.error('Error updating profile:', error);
+      logger.error('Error updating profile:', error);
       return { error };
     }
   };
@@ -519,7 +511,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       return { error };
     } catch (error) {
-      console.error('Error resending verification email:', error);
+      logger.error('Error resending verification email:', error);
       return { error };
     }
   };
@@ -540,13 +532,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
   
       if (error || !data?.success) {
-        console.error("Password reset OTP error:", error || data);
+        logger.error("Password reset OTP error:", error || data);
         return { error: new Error(data?.message || error?.message || "Failed to send reset code.") };
       }
 
       return { error: null };
     } catch (err) {
-      console.error("Error during password reset request:", err);
+      logger.error("Error during password reset request:", err);
       return { error: err instanceof Error ? err : new Error("An unexpected error occurred.") };
     }
   };
@@ -568,7 +560,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   //     if (!data?.success) {
   //       const fnMessage = typeof data?.message === "string" ? data.message : null;
   //       if (error) {
-  //         console.error("Password reset Edge Function error:", error);
+  //         logger.error("Password reset Edge Function error:", error);
   //         const msg =
   //           error.message?.includes("504") || error.message?.includes("Gateway Timeout")
   //             ? "Request timed out. The reset email may still be sent—check your inbox."
@@ -593,7 +585,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   //     });
 
   //     if (otpError || !otpData?.session) {
-  //       console.error("verifyOtp error:", otpError);
+  //       logger.error("verifyOtp error:", otpError);
   //       return {
   //         error: new Error(
   //           otpError?.message || "Could not verify reset token. Please use the link in your email.",
@@ -605,7 +597,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   //     const refresh_token = otpData.session.refresh_token ?? "";
   //     return { error: null, access_token, refresh_token };
   //   } catch (err) {
-  //     console.error("Error during password reset request:", err);
+  //     logger.error("Error during password reset request:", err);
   //     return {
   //       error: err instanceof Error ? err : new Error("An unexpected error occurred."),
   //     };
@@ -620,7 +612,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   //     // Use Postmark Edge Function for fast email delivery (instead of slow Supabase email service)
   //     const startTime = Date.now();
       
-  //     console.log('📧 Sending password reset email via Postmark...');
+  //     logger.debug('📧 Sending password reset email via Postmark...');
       
   //     // Call our custom Edge Function that uses Postmark
   //     const { data, error } = await supabase.functions.invoke('send-password-reset', {
@@ -631,10 +623,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
   //     const duration = Date.now() - startTime;
   //     const seconds = (duration / 1000).toFixed(1);
-  //     console.log(`⏱️ Password reset request completed in ${seconds}s`);
+  //     logger.debug(`⏱️ Password reset request completed in ${seconds}s`);
       
   //     if (error) {
-  //       console.error('❌ Password reset error:', error);
+  //       logger.error('❌ Password reset error:', error);
         
   //       // Extract actual error message from function response
   //       let actualError = error.message || 'Unknown error';
@@ -646,7 +638,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   //           // Get status code
   //           if (error.context.status) {
   //             errorStatus = error.context.status;
-  //             console.error(`❌ Edge Function returned status: ${errorStatus}`);
+  //             logger.error(`❌ Edge Function returned status: ${errorStatus}`);
   //           }
             
   //           // Try to read response body
@@ -664,18 +656,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               
   //             if (body.message) {
   //               actualError = body.message;
-  //               console.error('❌ Error message from function:', actualError);
+  //               logger.error('❌ Error message from function:', actualError);
   //             } else if (body.error) {
   //               actualError = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
   //             }
   //           }
   //         } catch (e) {
-  //           console.error('Failed to parse error context:', e);
+  //           logger.error('Failed to parse error context:', e);
   //         }
   //       }
         
-  //       console.error('❌ Actual error from function:', actualError);
-  //       console.error('❌ Full error object:', JSON.stringify({
+  //       logger.error('❌ Actual error from function:', actualError);
+  //       logger.error('❌ Full error object:', JSON.stringify({
   //         message: error.message,
   //         name: error.name,
   //         status: errorStatus,
@@ -684,7 +676,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
   //       // Check if function is not deployed (404)
   //       if (errorStatus === 404 || error.message?.includes('Function not found') || error.message?.includes('404')) {
-  //         console.warn('⚠️ Password reset function not deployed. Falling back to Supabase email service...');
+  //         logger.warn('⚠️ Password reset function not deployed. Falling back to Supabase email service...');
   //         return await resetPasswordFallback(email);
   //       }
         
@@ -714,7 +706,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   //     }
       
   //     if (data?.success) {
-  //       console.log('✅ Password reset email sent successfully via Postmark');
+  //       logger.debug('✅ Password reset email sent successfully via Postmark');
   //       return { error: null };
   //     } else {
   //       return {
@@ -724,10 +716,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   //       };
   //     }
   //   } catch (error: any) {
-  //     console.error('❌ Password reset exception:', error);
+  //     logger.error('❌ Password reset exception:', error);
       
   //     // Fallback to Supabase's built-in email service if Edge Function fails
-  //     console.warn('⚠️ Edge Function failed. Falling back to Supabase email service...');
+  //     logger.warn('⚠️ Edge Function failed. Falling back to Supabase email service...');
   //     return await resetPasswordFallback(email);
   //   }
   // };
@@ -738,7 +730,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       return { error };
     } catch (error) {
-      console.error('Error updating password:', error);
+      logger.error('Error updating password:', error);
       return { error };
     }
   };

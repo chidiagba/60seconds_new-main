@@ -11,7 +11,7 @@ function setup(status='success') {
  const order={id,business_id:'owner',user_id:'buyer',guest_email:'test@example.com',total_amount:1040,currency:'NGN',items:[]};
  const state={calls:[],ledger:0,fulfilled:0,refunds:0,routes:[]};
  const transaction={id:123,reference,status,amount:104000,currency:'NGN',metadata:{guest_order_id:id}};
- const db={from(name){let patch;const chain={select(){return this},eq(){return this},order(){return this},update(value){patch=value;return this},single:async()=>({data:name==='orders'?order:checkout}),limit:async()=>({data:state.routes}),then(resolve){Object.assign(name==='orders'?order:checkout,patch||{});resolve({error:null})}};return chain;},auth:{admin:{getUserById:async()=>({data:{user:{user_metadata:{}}}})}},rpc:async(name)=>{if(name==='finish_guest_order')checkout.state='paid';else state.ledger++;return {error:null}}};
+ const db={from(name){let patch;const chain={select(){return this},eq(){return this},order(){return this},update(value){patch=value;return this},single:async()=>({data:name==='orders'?order:checkout}),limit:async()=>({data:state.routes}),then(resolve){Object.assign(name==='orders'?order:checkout,patch||{});resolve({error:null})}};return chain;},auth:{admin:{getUserById:async()=>({data:{user:{user_metadata:{}}}})}},rpc:async(name)=>{if(name==='settle_verified_guest_payment'){checkout.state='paid';state.ledger++;}else throw new Error('Unexpected settlement RPC');return {error:null}}};
  const exports={};
  const fetch=async(url,options)=>{
   state.calls.push({url,body:options.body?JSON.parse(options.body):null});
@@ -34,8 +34,9 @@ test('wrong amount, currency or reference never confirms payment',async()=>{
   const x=setup();Object.assign(x.transaction,patch);await assert.rejects(x.reconcileGuestPaystack(x.db,reference));assert.equal(x.state.fulfilled,0);assert.equal(x.state.ledger,0);
  }
 });
-test('an expired abandoned checkout releases its hold, while processing retains it',async()=>{
- const abandoned=setup('abandoned');await abandoned.reconcileGuestPaystack(abandoned.db,reference);assert.equal(abandoned.checkout.state,'released');
+test('abandoned and processing retain holds; only definitive failure releases them',async()=>{
+ const abandoned=setup('abandoned');await abandoned.reconcileGuestPaystack(abandoned.db,reference);assert.equal(abandoned.checkout.state,'reserved');
+ const failed=setup('failed');await failed.reconcileGuestPaystack(failed.db,reference);assert.equal(failed.checkout.state,'released');
  const processing=setup('processing');await processing.reconcileGuestPaystack(processing.db,reference);assert.equal(processing.checkout.state,'reserved');
 });
 test('payment after a released hold is refunded rather than double-booked',async()=>{
@@ -49,11 +50,11 @@ test('legacy Nigerian subaccount metadata preserves seller splits and the platfo
  const payload=x.state.calls.at(-1).body;
  assert.equal(payload.subaccount,'ACCT_legacy');assert.equal(payload.transaction_charge,4000);assert.equal(payload.bearer,'account');
 });
-test('ledger failure leaves a paid checkout recoverable before any receipt is sent',async()=>{
+test('atomic settlement failure leaves the reservation recoverable before any receipt is sent',async()=>{
  const x=setup();const original=x.db.rpc;
- x.db.rpc=async(name)=>name==='finalize_paystack_ledger'?{error:new Error('Ledger temporarily unavailable')}:original(name);
+ x.db.rpc=async(name)=>name==='settle_verified_guest_payment'?{error:new Error('Ledger temporarily unavailable')}:original(name);
  await assert.rejects(x.reconcileGuestPaystack(x.db,reference),/Ledger temporarily unavailable/);
- assert.equal(x.checkout.state,'paid');assert.equal(x.state.fulfilled,0);
+ assert.equal(x.checkout.state,'reserved');assert.equal(x.state.fulfilled,0);
  x.db.rpc=original;await x.reconcileGuestPaystack(x.db,reference);
  assert.equal(x.state.fulfilled,1);assert.equal(x.state.ledger,1);
 });

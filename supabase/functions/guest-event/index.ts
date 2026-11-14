@@ -1,11 +1,13 @@
+import { corsForRequest } from '../_shared/cors.ts';
 import { initializeGuestPaystack } from '../_shared/guest-paystack.ts';
 import { eventShareExpired, toMinorUnits } from '../../../utils/commerce-rules.ts';
 import { resolveEventCurrency } from '../../../utils/country-currency.ts';
 import Stripe from 'npm:stripe';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
-const reply = (body: unknown, status = 200) => Response.json(body, { status, headers });
+
 Deno.serve(async req => {
+  const headers = corsForRequest(req);
+  const reply = (body: unknown, status = 200) => Response.json(body, { status, headers });
   if (req.method === 'OPTIONS') return new Response('ok', { headers });
   if (req.method !== 'POST') return reply({ error: 'Method not allowed' },405);
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -21,7 +23,7 @@ Deno.serve(async req => {
       if (String(table.currency).toUpperCase() === 'NGN') {
         if (!Deno.env.get('PAYSTACK_SECRET_KEY')) return reply({error:'Paystack payments are unavailable'},409);
         const {data: order,error: reserveError} = await db.rpc('reserve_venue_order',{table_key:input.tableId,guest_key:auth.user.id,arrival:input.startsAt,party:input.partySize,buyer_name:input.name,buyer_email:input.email,note:input.note || null});
-        if (reserveError) return reply({error:reserveError.message},400);
+        if (reserveError) return reply({error:'Request could not be completed'},400);
         return reply(await initializeGuestPaystack(db,order,`/tables/venue?venueId=${table.venue_id}`));
       }
       const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, {maxNetworkRetries:2});
@@ -30,7 +32,7 @@ Deno.serve(async req => {
       const account = await stripe.accounts.retrieve(owner.stripe_connected_account_id);
       if (!account.charges_enabled || !account.payouts_enabled) return reply({error:'Business payments are unavailable'},409);
       const {data: order,error: reserveError} = await db.rpc('reserve_venue_order',{table_key:input.tableId,guest_key:auth.user.id,arrival:input.startsAt,party:input.partySize,buyer_name:input.name,buyer_email:input.email,note:input.note || null});
-      if (reserveError) return reply({error:reserveError.message},400);
+      if (reserveError) return reply({error:'Request could not be completed'},400);
       const base = (Deno.env.get('PUBLIC_EVENT_BASE_URL') || 'https://events.60secondsapp.io').replace(/\/$/,'');
       let session: Stripe.Checkout.Session;
       try {
@@ -65,7 +67,7 @@ Deno.serve(async req => {
     if (String(event.currency).toUpperCase() === 'NGN') {
       if (!Deno.env.get('PAYSTACK_SECRET_KEY')) return reply({error:'Paystack payments are unavailable'},409);
       const {data: order,error: reserveError} = await db.rpc('reserve_event_order',{event_key:event.id,buyer_email:String(input.email || '').trim(),requested_items:input.items || [],requested_tables:input.tables || []});
-      if (reserveError) return reply({error:reserveError.message},400);
+      if (reserveError) return reply({error:'Request could not be completed'},400);
       return reply(await initializeGuestPaystack(db,order,`/web-event/${event.id}`));
     }
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { maxNetworkRetries: 2 });
@@ -75,7 +77,7 @@ Deno.serve(async req => {
     const account = await stripe.accounts.retrieve(owner.stripe_connected_account_id);
     if (!account.charges_enabled || !account.payouts_enabled) return reply({ error: 'Seller payments are not available yet' },409);
     const { data: order, error: reserveError } = await db.rpc('reserve_event_order',{ event_key: event.id, buyer_email: String(input.email || '').trim(), requested_items: input.items || [], requested_tables: input.tables || [] });
-    if (reserveError) return reply({ error: reserveError.message },400);
+    if (reserveError) return reply({ error: 'Request could not be completed' },400);
     let session: Stripe.Checkout.Session;
     try {
       const base = (Deno.env.get('PUBLIC_EVENT_BASE_URL') || 'https://events.60secondsapp.io').replace(/\/$/,'');

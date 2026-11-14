@@ -14,9 +14,9 @@ test('clearing a photo does not resurrect the cached photo or gender', () => {
   assert.equal(result.avatar_url,null);
   assert.equal(result.avatar_gender,null);
 });
-test('gender avatar replaces a removed uploaded photo', () => {
+test('legacy gender choice leaves a removed photo empty', () => {
   const result = mergeProfileAvatarFields({id:'a',avatar_url:null,avatar_gender:'female'},{id:'a',avatar_url:'old.jpg'});
-  assert.equal(resolveAvatarUrl({avatarUrl:result.avatar_url,avatarGender:result.avatar_gender}),FEMALE_AVATAR_URL);
+  assert.equal(resolveAvatarUrl({avatarUrl:result.avatar_url,avatarGender:result.avatar_gender}),'');
 });
 test('new photos replace old photos and missing legacy fields remain supported', () => {
   assert.equal(mergeProfileAvatarFields({id:'a',avatar_url:'new.jpg'},{id:'a',avatar_url:'old.jpg'}).avatar_url,'new.jpg');
@@ -60,6 +60,7 @@ for (const tab of ['tabs','tabsbusiness']) {
       uploadImageToSupabase:async()=> 'https://example.com/new.jpg',setIsUploadingAvatar(){},setAvatarGender(){},
       useVideoStore:{getState:()=>({syncUserProfile(){broadcast=true;}})},Alert:{alert:(...args)=>alerts.push(args)},
     };
+    context.logger = require('./logger-fixture.cjs');
     vm.createContext(context);
     vm.runInContext(ts.transpileModule(declaration+'\nglobalThis.pick = pickAndUploadAvatar;', {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText,context);
     await context.pick();

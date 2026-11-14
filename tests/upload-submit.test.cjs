@@ -22,9 +22,10 @@ function screenHandler(business, overrides = {}) {
   const alerts = [];
   const preparing = [];
   const context = {
+    venueCoordinates: value => Number.isFinite(value?.latitude) && Number.isFinite(value?.longitude) ? value : null,
     uploadLaunchLockRef: { current: false }, preparingUploadRef: { current: false },
     isUploading: false, videoUri: null, flyerUri: null, videoDurationMs: null,
-    eventName: 'Test event', eventLocation: { name: 'Test venue' },
+    eventName: 'Test event', eventLocation: { name: 'Test venue', latitude: 6.6, longitude: 3.3 },
     user: { user_type: business ? 'business' : 'private' }, authUser: null,
     eventDate: new Date('2026-10-16T08:00:00Z'), eventEndDate: null,
     getCurrentMinimumStartDate: () => new Date('2026-10-16T09:00:00Z'),
@@ -67,5 +68,12 @@ for (const business of [false, true]) {
     assert.equal(alerts.length, 2);
     assert.equal(alerts[0][0], 'Upload Failed');
     assert.equal(context.uploadLaunchLockRef.current, false);
+  });
+}
+for (const business of [false, true]) {
+  test(`${business ? 'business' : 'personal'}: an address without a venue pin cannot publish misleading distances`, async () => {
+    const {context, alerts} = screenHandler(business, {videoUri:'file:///event.mp4', eventLocation:{name:'Ikeja, Nigeria',latitude:null,longitude:null}});
+    await context.submit();
+    assert.equal(alerts[0][0], 'Select Venue Location');
   });
 }

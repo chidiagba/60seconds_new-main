@@ -1,3 +1,4 @@
+import AvatarImage from '@/components/AvatarImage';
 import React from 'react';
 import {
   View,
@@ -147,24 +148,10 @@ export default function SearchResultItem({ type, data, onPress }: SearchResultIt
   );
 
   const renderUserItem = () => (
-    // Prefer uploaded avatar URL, then gender avatar, then default placeholder.
+    // Missing photos stay empty.
     <TouchableOpacity style={styles.userItem} onPress={handlePress}>
       <View style={styles.userAvatarContainer}>
-        {data.avatar_url ? (
-          <ExpoImage
-            source={{ uri: data.avatar_url }}
-            style={styles.userAvatar}
-            contentFit="cover"
-          />
-        ) : data.avatar_gender ? (
-          <View style={[styles.userAvatar, styles.genderAvatar, data.avatar_gender === 'male' ? styles.genderAvatarMale : styles.genderAvatarFemale]}>
-            <Text style={styles.genderAvatarText}>{data.avatar_gender === 'male' ? '👨' : '👩'}</Text>
-          </View>
-        ) : (
-          <View style={[styles.userAvatar, styles.placeholderAvatar]}>
-            <Users size={20} color={Colors.dark.subtext} />
-          </View>
-        )}
+        <AvatarImage uri={data.avatar_url} userId={data.id} style={styles.userAvatar} contentFit="cover" />
       </View>
       
       <View style={styles.userInfo}>

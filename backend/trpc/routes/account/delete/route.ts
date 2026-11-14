@@ -1,21 +1,22 @@
+import { logger } from '../../../../lib/logger';
 import { z } from 'zod';
-import { publicProcedure } from '../../../create-context';
+import { protectedProcedure } from '../../../create-context';
 import { supabase } from '@/backend/lib/supabase';
 
-export const deleteAccountProcedure = publicProcedure
+export const deleteAccountProcedure = protectedProcedure
   .input(z.object({
     userId: z.string().uuid(),
     email: z.string().email().optional(),
     reason: z.string().optional(),
   }))
-  .mutation(async ({ input }) => {
+  .mutation(async ({ input, ctx }) => {
     if (!supabase) {
       throw new Error('Supabase client not configured');
     }
 
     try {
-      console.log('🗑️ Deleting account:', {
-        userId: input.userId,
+      logger.debug('🗑️ Deleting account:', {
+        userId: ctx.user.id,
         email: input.email,
         reason: input.reason,
       });
@@ -32,39 +33,39 @@ export const deleteAccountProcedure = publicProcedure
       for (const { table, column } of tablesToClean) {
         try {
           const { error } = await supabase
-            .from(table as any)
+            .from(table)
             .delete()
-            .eq(column, input.userId);
+            .eq(column, ctx.user.id);
 
           if (error && error.code !== 'PGRST116') {
             console.warn(`⚠️ Failed to delete from ${table}:`, error);
           } else {
-            console.log(`✅ Cleaned data from ${table}`);
+            logger.debug(`✅ Cleaned data from ${table}`);
           }
         } catch (tableError) {
           console.warn(`⚠️ Error cleaning table ${table}:`, tableError);
         }
       }
 
-      const { error: deleteUserError } = await supabase.auth.admin.deleteUser(input.userId);
+      const { error: deleteUserError } = await supabase.auth.admin.deleteUser(ctx.user.id);
 
       if (deleteUserError) {
         console.error('❌ Failed to delete auth user:', deleteUserError);
         throw deleteUserError;
       }
 
-      console.log('✅ Account deleted successfully');
+      logger.debug('✅ Account deleted successfully');
 
       return {
         success: true,
         message: 'Account deleted successfully',
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Delete account error:', error);
 
       return {
         success: false,
-        message: error.message || 'Failed to delete account',
+        message: 'Request could not be completed',
       };
     }
   });

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
@@ -122,7 +123,7 @@ export default function SearchScreen() {
           });
         }
       } catch (e) {
-        console.log("Location unavailable on this device/session");
+        logger.debug("Location unavailable on this device/session");
       }
     })();
   }, []);
@@ -861,7 +862,7 @@ const styles = StyleSheet.create({
 //           });
 //         }
 //       } catch (error) {
-//         console.error("Error getting location:", error);
+//         logger.error("Error getting location:", error);
 //       }
 //     })();
 //   }, []);

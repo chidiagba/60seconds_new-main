@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import AvatarImage from '@/components/AvatarImage';
 import { ProfileTableActions } from '@/features/tables/ProfileTableActions';
 // app/(tabs)/profile.tsx
@@ -127,7 +128,7 @@ export default function ProfileScreen() {
       const visibleVideos = (rawVideos || []).filter((video: any) => video?.id && !deletedVideoIds.has(video.id));
       setUserUploadedVideos(visibleVideos);
     } catch (error) {
-      console.error('Error loading user videos:', error);
+      logger.error('Error loading user videos:', error);
     } finally {
       setUserVideosLoading(false);
     }
@@ -200,7 +201,7 @@ export default function ProfileScreen() {
       const liked = (videos || []).filter((video: any) => likedSet.has(video.id) && !deletedVideoIds.has(video.id));
       setLikedVideosData(liked);
     } catch (error) {
-      console.warn('Unable to load liked videos:', error);
+      logger.warn('Unable to load liked videos:', error);
       setLikedVideosData([]);
     } finally {
       setLikedVideosLoading(false);
@@ -246,7 +247,7 @@ export default function ProfileScreen() {
           following: counts.followingCount,
         });
       } catch (error) {
-        console.error('Error loading follow data:', error);
+        logger.error('Error loading follow data:', error);
       }
     };
     loadFollowData();
@@ -450,16 +451,12 @@ export default function ProfileScreen() {
 
       <View style={styles.profileSection}>
         <View style={styles.avatarContainer}>
-          {resolvedProfileAvatar ? (
-            <AvatarImage
-              uri={resolvedProfileAvatar}
+          <AvatarImage
+              uri={resolvedProfileAvatar} userId={authProfile.id}
               style={styles.profileImage}
               contentFit="cover"
               transition={300}
             />
-          ) : (
-            <View style={styles.profileImageEmpty} />
-          )}
           {authProfile.user_type === 'business' && (
             <View style={styles.businessIndicator}>
               <Text style={styles.businessIndicatorText}>PRO</Text>
@@ -827,8 +824,8 @@ export default function ProfileScreen() {
               {safeFollowers.length > 0 ? (
                 safeFollowers.map((u) => (
                   <TouchableOpacity key={`follower-${u.id}`} style={styles.followedUserItem} onPress={() => handleUserPress(u.id)}>
-                    <Image
-                      source={{ uri: u.avatar_url || 'https://via.placeholder.com/150' }}
+                    <AvatarImage
+                      uri={u.avatar_url} userId={u.id}
                       style={styles.followedUserAvatar}
                       contentFit="cover"
                       transition={300}
@@ -847,8 +844,8 @@ export default function ProfileScreen() {
               {safeFollowing.length > 0 ? (
                 safeFollowing.map((u) => (
                   <TouchableOpacity key={`following-${u.id}`} style={styles.followedUserItem} onPress={() => handleUserPress(u.id)}>
-                    <Image
-                      source={{ uri: u.avatar_url || 'https://via.placeholder.com/150' }}
+                    <AvatarImage
+                      uri={u.avatar_url} userId={u.id}
                       style={styles.followedUserAvatar}
                       contentFit="cover"
                       transition={300}

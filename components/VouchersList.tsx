@@ -1,3 +1,7 @@
+import {voucherExpiryInstant} from '@/utils/voucher-expiry';
+import { AppState } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { supabase } from '@/lib/supabase';
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, Alert } from 'react-native';
 import { Tag, Clock, Trash2, Edit, ToggleLeft, ToggleRight, Share2 } from 'lucide-react-native';
@@ -22,6 +26,15 @@ export default function VouchersList({ businessId, isManagement = false }: Vouch
   useEffect(() => {
     loadVouchers();
   }, [businessId]);
+
+  useFocusEffect(React.useCallback(() => {
+    void fetchVouchers(businessId);
+    const refresh=()=>{void fetchVouchers(businessId);};
+    const channel=supabase.channel(`voucher-management-${businessId||'owner'}`).on('postgres_changes',{event:'*',schema:'public',table:'vouchers',...(businessId?{filter:`business_id=eq.${businessId}`}:{})},refresh).subscribe();
+    const appState=AppState.addEventListener('change',state=>{if(state==='active')refresh();});
+    const timer=setInterval(refresh,30000);
+    return ()=>{void supabase.removeChannel(channel);appState.remove();clearInterval(timer);};
+  },[businessId,fetchVouchers]));
 
   const loadVouchers = async () => {
     await fetchVouchers(businessId);
@@ -99,8 +112,8 @@ export default function VouchersList({ businessId, isManagement = false }: Vouch
   };
 
   const renderVoucherItem = ({ item }: { item: Voucher }) => {
-    const isExpired = new Date() > new Date(item.expiryDate);
-    const isLimitReached = item.usageCount >= item.usageLimit;
+    const isExpired = Date.now() > voucherExpiryInstant(item.expiryDate);
+    const isLimitReached = item.usageLimit != null && item.usageCount >= item.usageLimit;
     const isDisabled = isExpired || isLimitReached || !item.isActive;
     
     return (
@@ -117,7 +130,7 @@ export default function VouchersList({ businessId, isManagement = false }: Vouch
                 item.isActive ? styles.activeBadge : styles.inactiveBadge
               ]}>
                 <Text style={styles.statusText}>
-                  {item.isActive ? 'Active' : 'Inactive'}
+                  {!item.isActive ? 'Inactive' : isExpired ? 'Expired' : isLimitReached ? 'Exhausted' : 'Active'}
                 </Text>
               </View>
             )}
@@ -135,7 +148,7 @@ export default function VouchersList({ businessId, isManagement = false }: Vouch
               <Text style={styles.metaText}>
                 {item.discountType === 'percentage' 
                   ? `${item.discountValue}% off` 
-                  : `$${item.discountValue.toFixed(2)} off`}
+                  : `${item.currency || ''} ${item.discountValue.toFixed(2)} off`}
               </Text>
             </View>
             
@@ -145,20 +158,25 @@ export default function VouchersList({ businessId, isManagement = false }: Vouch
                 styles.metaText,
                 isExpired && styles.expiredText
               ]}>
-                {isExpired ? 'Expired' : `Expires: ${formatExpiryDate(item.expiryDate)}`}
+                {!item.expiryDate ? 'No expiry' : isExpired ? 'Expired' : `Expires: ${formatExpiryDate(item.expiryDate)}`}
               </Text>
             </View>
           </View>
           
+          {item.productId && <Text style={styles.metaText}>Product restriction: {item.productId}</Text>}
+          {item.eventId && <Text style={styles.metaText}>Event restriction: {item.eventId}</Text>}
+          {item.perUserLimit && <Text style={styles.metaText}>Limit per customer: {item.perUserLimit}</Text>}
+          {item.allowedUserIds?.length ? <Text style={styles.metaText}>Selected customers only</Text> : null}
           <View style={styles.usageContainer}>
             <Text style={styles.usageText}>
-              Used {item.usageCount} of {item.usageLimit} times
+              Used {item.usageCount} of {item.usageLimit ?? 'unlimited'} times
+              {item.usageLimit != null ? ` · ${Math.max(0,item.usageLimit-item.usageCount)} remaining` : ''}
             </Text>
             <View style={styles.progressBar}>
               <View 
                 style={[
                   styles.progressFill,
-                  { width: `${(item.usageCount / item.usageLimit) * 100}%` }
+                  { width: `${item.usageLimit ? Math.min(100,(item.usageCount / item.usageLimit) * 100) : 0}%` }
                 ]} 
               />
             </View>

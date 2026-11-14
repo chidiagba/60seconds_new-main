@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -16,6 +17,7 @@ import * as Location from "expo-location";
 
 import Colors from "@/constants/colors";
 import { getCurrentLocation } from "@/utils/location";
+import { venueCoordinates } from "@/utils/venue-location";
 
 type LatLng = { latitude: number; longitude: number };
 
@@ -42,7 +44,11 @@ function useNativeMaps() {
 export default function LocationScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ from?: string; lat?: string; lng?: string; name?: string; eventName?: string }>();
+  const params = useLocalSearchParams<{
+    from?: string; lat?: string; lng?: string; name?: string; eventName?: string;
+    initialLatitude?: string; initialLongitude?: string; initialName?: string;
+    initialCity?: string; initialCountry?: string;
+  }>();
 
   // View mode: when lat/lng are passed, show the event pin (no picker UI)
   const viewLat = params.lat ? Number(params.lat) : null;
@@ -113,6 +119,19 @@ export default function LocationScreen() {
       return;
     }
 
+    const existingVenue = venueCoordinates({
+      latitude: params.initialLatitude,
+      longitude: params.initialLongitude,
+    });
+    if (existingVenue) {
+      setCurrentLocation(existingVenue);
+      setSelectedLocation(existingVenue);
+      setLocationName(params.initialName || `${existingVenue.latitude.toFixed(6)}, ${existingVenue.longitude.toFixed(6)}`);
+      setLocationMeta({ city: params.initialCity || "", country: params.initialCountry || "" });
+      if (!params.initialName) void reverseToName(existingVenue);
+      return;
+    }
+
     // Picker mode: getCurrentLocation shows the Android prominent disclosure
     // immediately before the system foreground-location permission dialog.
     (async () => {
@@ -129,7 +148,7 @@ export default function LocationScreen() {
         setSelectedLocation(coords);
         await reverseToName(coords);
       } catch (e) {
-        console.error("Error getting location:", e);
+        logger.error("Error getting location:", e);
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -153,7 +172,7 @@ export default function LocationScreen() {
         mapRef.current.animateToRegion({ ...coords, ...DEFAULT_DELTA }, 450);
       }
     } catch (e) {
-      console.error("Error using current location:", e);
+      logger.error("Error using current location:", e);
     }
   }, [reverseToName]);
 
@@ -185,7 +204,7 @@ export default function LocationScreen() {
 
       setResults(next);
     } catch (e) {
-      console.error("Search error:", e);
+      logger.error("Search error:", e);
       setResults([]);
     } finally {
       setIsSearching(false);
@@ -229,7 +248,7 @@ export default function LocationScreen() {
   const handleConfirm = useCallback(() => {
     if (!selectedLocation) return;
 
-    const backTo = typeof params.from === "string" && params.from.length ? params.from : "/upload";
+    const backTo = params.from === '/(tabsbusiness)/upload' ? '/(tabsbusiness)/upload' : '/(tabs)/upload';
 
     router.replace({
       pathname: backTo,
@@ -593,7 +612,7 @@ const styles = StyleSheet.create({
 //         setSelectedLocation(coords);
 //         await reverseToName(coords);
 //       } catch (e) {
-//         console.error("Error getting location:", e);
+//         logger.error("Error getting location:", e);
 //       }
 //     })();
 //   }, [reverseToName]);
@@ -617,7 +636,7 @@ const styles = StyleSheet.create({
 //         mapRef.current.animateToRegion({ ...coords, ...DEFAULT_DELTA }, 450);
 //       }
 //     } catch (e) {
-//       console.error("Error using current location:", e);
+//       logger.error("Error using current location:", e);
 //     }
 //   }, [reverseToName]);
 
@@ -649,7 +668,7 @@ const styles = StyleSheet.create({
 
 //       setResults(next);
 //     } catch (e) {
-//       console.error("Search error:", e);
+//       logger.error("Search error:", e);
 //       setResults([]);
 //     } finally {
 //       setIsSearching(false);
@@ -1027,7 +1046,7 @@ const styles = StyleSheet.create({
 //             }
 //           }
 //         } catch (error) {
-//           console.error('Error getting location:', error);
+//           logger.error('Error getting location:', error);
 //         }
 //       }
 //     })();
@@ -1069,7 +1088,7 @@ const styles = StyleSheet.create({
       
 //       setSearchResults(results);
 //     } catch (error) {
-//       console.error('Error searching locations:', error);
+//       logger.error('Error searching locations:', error);
 //     } finally {
 //       setIsLoading(false);
 //     }
@@ -1131,7 +1150,7 @@ const styles = StyleSheet.create({
 //         }
 //       }
 //     } catch (error) {
-//       console.error('Error getting current location:', error);
+//       logger.error('Error getting current location:', error);
 //     }
 //   };
   

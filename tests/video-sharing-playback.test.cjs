@@ -13,18 +13,19 @@ function functions(file, names, context) {
   }
   visit(ast);
   assert.equal(found.length, names.length);
-  vm.createContext(context);
+  context.logger = require('./logger-fixture.cjs');
+    vm.createContext(context);
   vm.runInContext(ts.transpileModule(found.join('\n') + '\nglobalThis.api = {' + names.join(',') + '};', {compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText, context);
   return context.api;
 }
-test('logo appears only in the final second, including short clips, seeks and loops', () => {
-  let visible;
+test('watermark playback clock updates throughout the clip, including seeks and loops without tags', () => {
+  let seconds;
   const {handlePlaybackStatusUpdate:update} = functions('components/VideoPlayer.tsx', ['handlePlaybackStatusUpdate'], {
-    setIsLoading(){}, canPlay:true, setShowEndLogo:v=>visible=v, taggedUsers:[],
+    setIsLoading(){}, canPlay:true, taggedUsers:[], lastProgressSecondRef:{current:-1},setCurrentTime:value=>seconds=value,
   });
-  for (const [position,duration,expected] of [[0,5000,false],[3999,5000,false],[4000,5000,true],[4999,5000,true],[0,5000,false],[0,500,true],[0,undefined,false]]) {
-    update({isLoaded:true,positionMillis:position,durationMillis:duration,isBuffering:false});
-    assert.equal(visible,expected,`${position}/${duration}`);
+  for (const position of [0,3750,4000,8250,0]) {
+    update({isLoaded:true,positionMillis:position,durationMillis:10000,isBuffering:false});
+    assert.equal(seconds,position/1000);
   }
 });
 for (const destination of ['instagram','tiktok','twitter']) {
@@ -70,7 +71,7 @@ for (const mode of ['direct','unavailable','cancelled','tiktok']) {
   });
 }
 
-for (const destination of ['instagram','facebook']) {
+for (const destination of ['instagram','facebook','whatsapp']) {
   test(`iOS ${destination} sends the local video through the share extension`, async () => {
     const calls=[];
     const context={Platform:{OS:'ios'},isCancelRequestedRef:{current:false},isMountedRef:{current:true},
@@ -81,7 +82,20 @@ for (const destination of ['instagram','facebook']) {
     assert.deepEqual(calls,['file:///video.mp4']);
   });
 }
-for (const platform of ['android','ios']) {
+for (const destination of ['whatsapp','instagram','tiktok','facebook','twitter','generic']) {
+  test(`iOS ${destination} share sheet receives the exported MP4 as a file attachment`, async () => {
+    const calls=[];
+    const context={Platform:{OS:'ios'},isCancelRequestedRef:{current:false},isMountedRef:{current:true},
+      resolveShareSocialTarget:()=>destination,ShareOpen:{shareSingle(){assert.fail('iOS must pass the file through its system share sheet');}},
+      openSystemShareSheet:async prepared=>calls.push({uri:prepared.uri,mimeType:prepared.mimeType}),
+    };
+    await functions('components/ShareModal.tsx',['continuePreparedShare'],context).continuePreparedShare({
+      destination,uri:'file:///cache/watermarked.mp4',mimeType:'video/mp4',
+    });
+    assert.deepEqual(calls,[{uri:'file:///cache/watermarked.mp4',mimeType:'video/mp4'}]);
+  });
+}
+for (const platform of ['android']) {
   test(`${platform}: WhatsApp attaches the video even when an event has a booking link`, async () => {
     const destinations=[];
     const context={Platform:{OS:platform},eventId:'event-1',shareMessage:'Book here: https://example.com/event-1',
@@ -112,7 +126,7 @@ test('Android falls back to the attachment sheet when a destination is not insta
   await functions('components/ShareModal.tsx',['continuePreparedShare'],context).continuePreparedShare({destination:'facebook',uri:'file:///video.mp4',mimeType:'video/mp4'});
   assert.deepEqual(calls,['file:///video.mp4']);
 });
-for (const platform of ['android','ios']) {
+for (const platform of ['android']) {
   test(`${platform}: native share sheet receives the video file and MIME type`, async () => {
     let payload; let finished=false;
     const context={Platform:{OS:platform},video:{eventName:'Event'},shareMessage:'Booking link',xShareMessage:'Short booking link',
@@ -139,10 +153,33 @@ for (const platform of ['android','ios']) {
   });
 }
 
-test('sharing prepares the original file without invoking a watermark exporter', async () => {
+test('sharing burns the creator watermark before handing the file to any destination', async () => {
   const original = {uri:'file:///original.mp4',mimeType:'video/mp4'};
-  const api = functions('components/ShareModal.tsx', ['prepareVideoForShare'], {ensureOriginalVideoCached:async()=>original});
-  assert.equal(await api.prepareVideoForShare(), original);
+  const branded = {uri:'file:///branded.mp4',mimeType:'video/mp4',outputType:'mp4',applied:true};
+  const api = functions('components/ShareModal.tsx', ['prepareVideoForShare'], {
+    ensureOriginalVideoCached:async()=>original,video:{id:'video-1',user:{username:'creator'}},
+    FileSystem:{getInfoAsync:async()=>({exists:true,size:5000})},
+    videoWatermarkService:{prepareExport:async(uri,username,id)=>{
+      assert.equal(uri,original.uri);assert.equal(username,'creator');assert.equal(id,'video-1');return branded;
+    }},
+  });
+  assert.equal(await api.prepareVideoForShare(), branded);
+});
+
+test('sharing refuses a non-MP4, non-local, or unwatermarked export', async () => {
+  for (const invalid of [
+    {uri:'https://cdn.example/video.mp4',mimeType:'video/mp4',outputType:'mp4',applied:true},
+    {uri:'file:///video.mov',mimeType:'video/quicktime',outputType:'mov',applied:true},
+    {uri:'file:///video.mp4',mimeType:'video/mp4',outputType:'mp4',applied:false},
+  ]) {
+    const api = functions('components/ShareModal.tsx', ['prepareVideoForShare'], {
+      ensureOriginalVideoCached:async()=>({uri:'file:///original.mp4'}),
+      video:{id:'video-1',user:{username:'creator'}},
+      FileSystem:{getInfoAsync:async()=>({exists:true,size:5000})},
+      videoWatermarkService:{prepareExport:async()=>invalid},
+    });
+    await assert.rejects(api.prepareVideoForShare(),/local MP4 video/);
+  }
 });
 
 test('manual playback can start from paused while automatic feeds obey their parent pause state',()=>{
@@ -155,3 +192,27 @@ test('manual playback can start from paused while automatic feeds obey their par
   assert.equal(canPlay,expected);
  }
 });
+for (const destination of ['generic','instagram','whatsapp','tiktok']) {
+  test(`${destination}: a failed watermark export cannot share the original`, async()=>{
+    let shared=false,alerted=false;
+    const context={Platform:{OS:'ios'},activeShareSession:false,isPreparingVideo:false,
+      isCancelRequestedRef:{current:false},isMountedRef:{current:true},updatePreparingState(){},DESTINATION_LABELS:{},
+      prepareVideoForShare:async()=>{throw new Error('watermark failed');},
+      continuePreparedShare:async()=>{shared=true;},isLikelyShareCancelled:()=>false,Alert:{alert(){alerted=true;}},
+    };
+    await functions('components/ShareModal.tsx',['beginVideoShare'],context).beginVideoShare(destination);
+    assert.equal(shared,false);assert.equal(alerted,true);assert.equal(context.activeShareSession,false);
+  });
+}
+for(const fail of [false,true]) {
+  test(`saving to Photos ${fail?'blocks on watermark failure':'uses only the burned export'}`,async()=>{
+    let saved=null;
+    const context={Platform:{OS:'android'},activeShareSession:false,isPreparingVideo:false,
+      isCancelRequestedRef:{current:false},isMountedRef:{current:true},updatePreparingState(){},
+      MediaLibrary:{requestPermissionsAsync:async()=>({granted:true}),saveToLibraryAsync:async uri=>{saved=uri;}},
+      prepareVideoForShare:async()=>{if(fail)throw new Error('encoder failed');return {uri:'file:///watermarked.mp4'};},Alert:{alert(){}},
+    };
+    await functions('components/ShareModal.tsx',['handleSaveVideo'],context).handleSaveVideo();
+    assert.equal(saved,fail?null:'file:///watermarked.mp4');assert.equal(context.activeShareSession,false);
+  });
+}

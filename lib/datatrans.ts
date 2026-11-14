@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { Platform } from 'react-native';
 import { trpcClient } from '@/lib/trpc';
 import { DATATRANS_CONFIG } from '@/lib/datatrans-config';
@@ -128,8 +129,9 @@ class DatatransService {
    * Initialize Datatrans payment
    */
   async initializePayment(params: DatatransInitializeParams): Promise<DatatransPaymentResponse> {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('Initializing Datatrans payment:', {
+      logger.debug('Initializing Datatrans payment:', {
         amount: params.amount,
         currency: params.currency,
         orderId: params.orderId,
@@ -153,7 +155,7 @@ class DatatransService {
 
       return result as DatatransPaymentResponse;
     } catch (error: any) {
-      console.error('Datatrans initialize payment error:', error);
+      logger.error('Datatrans initialize payment error:', error);
       throw new Error(error.message || 'Failed to initialize Datatrans payment');
     }
   }
@@ -162,8 +164,9 @@ class DatatransService {
    * Verify Datatrans payment
    */
   async verifyPayment(transactionId: string): Promise<DatatransVerifyResponse> {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('Verifying Datatrans payment:', transactionId);
+      logger.debug('Verifying Datatrans payment:', transactionId);
       
       const result = await trpcClient.datatrans.verify.mutate({
         transactionId,
@@ -171,7 +174,7 @@ class DatatransService {
       
       return result as DatatransVerifyResponse;
     } catch (error: any) {
-      console.error('Datatrans verify payment error:', error);
+      logger.error('Datatrans verify payment error:', error);
       throw new Error(error.message || 'Failed to verify Datatrans payment');
     }
   }
@@ -181,8 +184,9 @@ class DatatransService {
    * Uses Supabase Edge Functions instead of TRPC backend
    */
   async processDirectCardPayment(params: DatatransDirectCardPaymentParams): Promise<DatatransDirectCardPaymentResponse> {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('Processing Datatrans direct card payment via Supabase Edge Function:', {
+      logger.debug('Processing Datatrans direct card payment via Supabase Edge Function:', {
         email: params.email,
         amount: params.amount,
         currency: params.currency,
@@ -196,7 +200,7 @@ class DatatransService {
       let edgeFunctionError: any = null;
       
       try {
-        console.log('🔄 Attempting Supabase Edge Function...');
+        logger.debug('🔄 Attempting Supabase Edge Function...');
         const { data, error } = await supabase.functions.invoke('datatrans-payment', {
           body: {
             email: params.email,
@@ -220,7 +224,7 @@ class DatatransService {
           let errorStatus = 0;
           
           // Log full error for debugging
-          console.error('❌ Supabase Edge Function error object:', JSON.stringify({
+          logger.error('❌ Supabase Edge Function error object:', JSON.stringify({
             message: error.message,
             name: error.name,
             context: error.context,
@@ -235,7 +239,7 @@ class DatatransService {
               // Get status code
               if (context.status) {
                 errorStatus = context.status;
-                console.error(`❌ Edge Function returned status: ${errorStatus}`);
+                logger.error(`❌ Edge Function returned status: ${errorStatus}`);
               }
               
               // Try to read response body if available
@@ -253,7 +257,7 @@ class DatatransService {
                 
                 if (body.message) {
                   actualError = body.message;
-                  console.error('❌ Error message from function:', actualError);
+                  logger.error('❌ Error message from function:', actualError);
                 } else if (body.error) {
                   actualError = typeof body.error === 'string' ? body.error : JSON.stringify(body.error);
                 } else {
@@ -261,7 +265,7 @@ class DatatransService {
                 }
               }
             } catch (e) {
-              console.error('Failed to parse error context:', e);
+              logger.error('Failed to parse error context:', e);
             }
           }
           
@@ -274,30 +278,30 @@ class DatatransService {
                        errorMsg.includes('requested function was not found');
           
           if (is404) {
-            console.warn('⚠️ Edge Function not deployed (404), falling back to TRPC backend');
-            console.warn('⚠️ Error:', actualError);
+            logger.warn('⚠️ Edge Function not deployed (404), falling back to TRPC backend');
+            logger.warn('⚠️ Error:', actualError);
             useEdgeFunction = false;
             edgeFunctionError = new Error(`Edge Function not deployed: ${actualError}. Using TRPC backend instead.`);
           } else {
             // 500 or other errors - these mean function is deployed but has an error
-            console.error('❌ Edge Function returned error (status ' + errorStatus + '):', actualError);
-            console.error('💡 This usually means:');
-            console.error('   1. Missing secrets (DATATRANS_MERCHANT_ID, DATATRANS_PASSWORD)');
-            console.error('   2. Invalid Datatrans credentials');
-            console.error('   3. Check Supabase Dashboard → Edge Functions → datatrans-payment → Logs');
+            logger.error('❌ Edge Function returned error (status ' + errorStatus + '):', actualError);
+            logger.error('💡 This usually means:');
+            logger.error('   1. Missing secrets (DATATRANS_MERCHANT_ID, DATATRANS_PASSWORD)');
+            logger.error('   2. Invalid Datatrans credentials');
+            logger.error('   3. Check Supabase Dashboard → Edge Functions → datatrans-payment → Logs');
             throw new Error(actualError);
           }
         } else if (data) {
-          console.log('✅ Edge Function response received');
+          logger.debug('✅ Edge Function response received');
           return data as DatatransDirectCardPaymentResponse;
         } else {
           throw new Error('No response data from Edge Function');
         }
       } catch (edgeError: any) {
         // Log the actual error for debugging
-        console.error('❌ Edge Function call failed:', edgeError);
-        console.error('❌ Error message:', edgeError?.message);
-        console.error('❌ Error name:', edgeError?.name);
+        logger.error('❌ Edge Function call failed:', edgeError);
+        logger.error('❌ Error message:', edgeError?.message);
+        logger.error('❌ Error name:', edgeError?.name);
         
         // Check if it's a "not found" or "non-2xx" error - fallback to TRPC
         const errorMsg = (edgeError?.message || '').toLowerCase();
@@ -309,20 +313,20 @@ class DatatransService {
             errorMsg.includes('non-2xx status code') ||
             errorMsg.includes('requested function was not found') ||
             errorName.includes('functionshttperror')) {
-          console.warn('⚠️ Edge Function not deployed or unavailable, falling back to TRPC backend');
-          console.warn('⚠️ Original error:', edgeError?.message || 'Unknown error');
+          logger.warn('⚠️ Edge Function not deployed or unavailable, falling back to TRPC backend');
+          logger.warn('⚠️ Original error:', edgeError?.message || 'Unknown error');
           useEdgeFunction = false;
           edgeFunctionError = edgeError;
         } else {
           // Real error from Edge Function - rethrow
-          console.error('❌ Edge Function returned unexpected error, rethrowing...');
+          logger.error('❌ Edge Function returned unexpected error, rethrowing...');
           throw edgeError;
         }
       }
 
       // Fallback to TRPC backend if Edge Function is not available
       if (!useEdgeFunction) {
-        console.log('🔄 Using TRPC backend as fallback...');
+        logger.debug('🔄 Using TRPC backend as fallback...');
         try {
           const result = await trpcClient.datatrans.directCardPayment.mutate({
             email: params.email,
@@ -342,7 +346,7 @@ class DatatransService {
           // Fix [object Object] in message field if present
           if (result && typeof result === 'object' && 'message' in result) {
             if (result.message === '[object Object]' || (typeof result.message === 'object' && result.message !== null)) {
-              console.warn('⚠️ TRPC returned [object Object] in message, extracting real error...');
+              logger.warn('⚠️ TRPC returned [object Object] in message, extracting real error...');
               // Try to get real error from data
               if (result.data && typeof result.data === 'object' && 'gateway_response' in result.data) {
                 const gateway = (result.data as any).gateway_response;
@@ -361,7 +365,7 @@ class DatatransService {
           return result as DatatransDirectCardPaymentResponse;
         } catch (trpcError: any) {
           // TRPC error - extract message properly
-          console.error('❌ TRPC backend error:', trpcError);
+          logger.error('❌ TRPC backend error:', trpcError);
           throw trpcError; // Let the outer catch handle it
         }
       }
@@ -370,11 +374,11 @@ class DatatransService {
       throw new Error('Unexpected state: Edge Function failed but fallback not triggered');
 
     } catch (error: any) {
-      console.error('❌ Datatrans direct card payment error:', error);
-      console.error('❌ Error type:', error?.constructor?.name);
-      console.error('❌ Error message:', error?.message);
-      console.error('❌ Error data:', error?.data);
-      console.error('❌ Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+      logger.error('❌ Datatrans direct card payment error:', error);
+      logger.error('❌ Error type:', error?.constructor?.name);
+      logger.error('❌ Error message:', error?.message);
+      logger.error('❌ Error data:', error?.data);
+      logger.error('❌ Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
       
       // Provide helpful error message - properly extract string from error
       let errorMessage = 'Payment processing failed';
@@ -417,8 +421,8 @@ class DatatransService {
       // Check for Supabase Edge Function errors
       if (error?.message?.includes('Function not found') || error?.message?.includes('404')) {
         errorMessage = 'Payment function not deployed. Please deploy the Supabase Edge Function: supabase functions deploy datatrans-payment';
-        console.error('❌ Edge Function not found!');
-        console.error('💡 Deploy the function: supabase functions deploy datatrans-payment');
+        logger.error('❌ Edge Function not found!');
+        logger.error('💡 Deploy the function: supabase functions deploy datatrans-payment');
       }
       
       // Ensure errorMessage is always a string and not "[object Object]"
@@ -499,8 +503,9 @@ class DatatransService {
       country_code: string;
     };
   }) {
+    throw new Error('Payment provider is disabled. Use Stripe or Paystack.');
     try {
-      console.log('💾 Saving Datatrans payment method to Supabase...');
+      logger.debug('💾 Saving Datatrans payment method to Supabase...');
       
       // Use the imported supabase client
       
@@ -508,12 +513,12 @@ class DatatransService {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       
       if (!authUser) {
-        console.log('⚠️ Skipping Supabase save: no authenticated user');
+        logger.debug('⚠️ Skipping Supabase save: no authenticated user');
         return null;
       }
 
       // Use authenticated user ID instead of passed userId
-      const userId = authUser.id;
+      const userId = authUser?.id;
 
       // Determine card type based on brand
       const cardType = params.cardType || params.authorization.brand || 'credit_card';
@@ -543,14 +548,14 @@ class DatatransService {
         .single();
 
       if (error) {
-        console.error('❌ Supabase save error:', error);
+        logger.error('❌ Supabase save error:', error);
         throw error;
       }
 
-      console.log('✅ Datatrans payment method saved to Supabase:', data);
+      logger.debug('✅ Datatrans payment method saved to Supabase:', data);
       return data;
     } catch (error: any) {
-      console.error('❌ Error saving Datatrans payment method to Supabase:', error);
+      logger.error('❌ Error saving Datatrans payment method to Supabase:', error);
       throw error;
     }
   }

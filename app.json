@@ -2,7 +2,7 @@
   "expo": {
     "name": "60Seconds",
     "slug": "nightvibe-nightlife-video-platform",
-    "version": "114.0.0",
+    "version": "115.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
@@ -16,10 +16,8 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.sixtyseconds.nightlife",
-      "buildNumber": "114",
-      "config": {
-        "googleMapsApiKey": "AIzaSyDIbbjLmJj4l4BxLdj9xpnguG5BRhm5v-M"
-      },
+      "buildNumber": "117",
+      "config": {},
       "infoPlist": {
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
         "NSLocationAlwaysUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
@@ -42,12 +40,13 @@
         ],
         "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to access your microphone",
         "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to access your camera",
-        "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your photos"
+        "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your photos",
+        "NSPhotoLibraryAddUsageDescription": "Allow 60Seconds to save watermarked videos to your library."
       }
     },
     "android": {
-      "versionCode": 114,
-      "versionName": "114.0.0",
+      "versionCode": 116,
+      "versionName": "115.0.2",
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
@@ -70,10 +69,7 @@
       "blockedPermissions": [
         "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.FOREGROUND_SERVICE_LOCATION"
-      ],
-      "googleMaps": {
-        "apiKey": "AIzaSyDIbbjLmJj4l4BxLdj9xpnguG5BRhm5v-M"
-      }
+      ]
     },
     "web": {
       "bundler": "metro",

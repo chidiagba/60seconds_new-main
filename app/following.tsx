@@ -1,3 +1,5 @@
+import AvatarImage from '@/components/AvatarImage';
+import { logger } from '@/lib/logger';
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
@@ -33,7 +35,7 @@ export default function FollowingScreen() {
       setFollowedUsersData(data);
       await refreshFollowedUsers();
     } catch (error) {
-      console.error('Error loading following list:', error);
+      logger.error('Error loading following list:', error);
       setFollowedUsersData([]);
     } finally {
       setLoading(false);
@@ -71,8 +73,8 @@ export default function FollowingScreen() {
         style={styles.followedUserItem}
         onPress={() => handleUserPress(item.id)}
       >
-        <Image
-          source={{ uri: item.avatar_url || 'https://via.placeholder.com/150' }}
+        <AvatarImage
+          uri={item.avatar_url} userId={item.id}
           style={styles.avatar}
           contentFit="cover"
           transition={300}

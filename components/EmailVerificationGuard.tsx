@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/lib/auth';
@@ -16,7 +17,7 @@ export function EmailVerificationGuard({ children }: EmailVerificationGuardProps
 
     // If user is signed in but email is not verified, redirect to verification page
     if (user && !checkEmailVerification()) {
-      console.log('User email not verified, redirecting to verification page');
+      logger.debug('User email not verified, redirecting to verification page');
       router.replace({ pathname: '/verify-email', params: { email: user.email || '' } });
     }
   }, [user, loading, checkEmailVerification, router]);

@@ -1,3 +1,5 @@
+import { resolveCurrentVenueSelection, venueCoordinates } from '@/utils/venue-location';
+import { logger } from '@/lib/logger';
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   View,
@@ -75,7 +77,7 @@ type DraftProduct = {
   available_quantity: number;
   image?: string;
   currency?: string;
-  type?: 'ticket' | 'drink' | 'reservation';
+  type?: 'ticket' | 'drink' | 'reservation' | 'merchandise';
 };
 
 const buildFallbackEventTitle = () => `Untitled Video ${new Date().toISOString().slice(0, 10)}`;
@@ -279,23 +281,44 @@ export default function UploadScreen() {
   useEffect(() => {
     const lat = params.latitude ? parseFloat(params.latitude) : null;
     const lng = params.longitude ? parseFloat(params.longitude) : null;
+    const coordinates = venueCoordinates({ latitude: lat, longitude: lng });
 
-    if (lat != null && lng != null && !Number.isNaN(lat) && !Number.isNaN(lng)) {
+    if (coordinates) {
       const name =
         (typeof params.locationName === "string" && params.locationName.length
           ? params.locationName
-          : `${lat.toFixed(6)}, ${lng.toFixed(6)}`) || "";
+          : `${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`) || "";
 
       setEventLocation({
         name,
-        latitude: lat,
-        longitude: lng,
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude,
         city: (typeof params.city === "string" ? params.city : "") || "",
         country: (typeof params.country === "string" ? params.country : "") || "",
       });
       setIsResolvingLocation(false);
     }
   }, [params.latitude, params.longitude, params.locationName, params.city, params.country]);
+
+  useEffect(() => {
+    if (Platform.OS === "web" || isEditMode || params.latitude || params.longitude || eventLocation.name) return;
+
+    let active = true;
+    void resolveCurrentVenueSelection({
+      getPermission: () => Location.getForegroundPermissionsAsync(),
+      getPosition: () => getCurrentLocation({ requestPermission: false, maxCacheAgeMs: 60_000 }),
+      reverseGeocode: (coordinates) => Location.reverseGeocodeAsync(coordinates),
+    }).then((selection) => {
+      if (!active || !selection) return;
+      setEventLocation((current: typeof eventLocation) =>
+        current.name || venueCoordinates(current) ? current : selection
+      );
+    }).catch((error) => {
+      logger.debug("Current venue auto-fill unavailable:", error);
+    });
+
+    return () => { active = false; };
+  }, [isEditMode, params.latitude, params.longitude, eventLocation.name]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -379,7 +402,7 @@ export default function UploadScreen() {
           });
         }
       } catch (error) {
-        console.error("Failed to load video for edit:", error);
+        logger.error("Failed to load video for edit:", error);
         if (mounted) {
           Alert.alert("Edit Error", "Could not load this video for editing.", [
             { text: "OK", onPress: () => router.push("/profile") },
@@ -506,7 +529,7 @@ export default function UploadScreen() {
         }
       }
     } catch (error) {
-      console.error("Recording error:", error);
+      logger.error("Recording error:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to record video. Please try again.";
       Alert.alert("Recording Error", errorMessage);
     } finally {
@@ -533,7 +556,7 @@ export default function UploadScreen() {
 
       setIsRecording(false);
     } catch (error) {
-      console.error("Stop recording error:", error);
+      logger.error("Stop recording error:", error);
       Alert.alert("Recording Error", "Failed to stop recording. Please try again.");
       setIsRecording(false);
       if (recordingTimerRef.current) {
@@ -626,7 +649,7 @@ export default function UploadScreen() {
 
       await pickAndValidate(false);
     } catch (error) {
-      console.error("Video picker error:", error);
+      logger.error("Video picker error:", error);
       Alert.alert("Selection Error", "Could not open your gallery. Please try again.");
       setIsReopeningTrimPicker(false);
     } finally {
@@ -662,7 +685,7 @@ export default function UploadScreen() {
       }
       Alert.alert("Video Updated", `${label} applied successfully.`);
     } catch (error) {
-      console.error(`${label} failed`, error);
+      logger.error(`${label} failed`, error);
       Alert.alert("Edit Failed", "Could not apply that edit. Please try another option.");
     } finally {
       setIsEditingVideo(false);
@@ -805,9 +828,11 @@ export default function UploadScreen() {
             country: "",
           });
         }
+      } else {
+        Alert.alert("Location unavailable", "Allow location access in Settings, or search for and select the venue on the map.");
       }
     } catch (error) {
-      console.error("Current location lookup failed:", error);
+      logger.error("Current location lookup failed:", error);
       Alert.alert("Location Error", "Could not fetch your current location. Please try again.");
     } finally {
       setIsResolvingLocation(false);
@@ -817,7 +842,14 @@ export default function UploadScreen() {
   // ✅ Open map and tell it to return to /upload
   const handleOpenMap = () => {
     setIsResolvingLocation(true);
-    router.push({ pathname: "/location", params: { from: "/(tabs)/upload" } });
+    const coordinates = venueCoordinates(eventLocation);
+    router.push({ pathname: "/location", params: {
+      from: "/(tabs)/upload",
+      initialName: eventLocation.name || "",
+      ...(coordinates ? { initialLatitude: String(coordinates.latitude), initialLongitude: String(coordinates.longitude) } : {}),
+      initialCity: eventLocation.city || "",
+      initialCountry: eventLocation.country || "",
+    } });
   };
 
   const formatDateForInput = (date: Date): string => {
@@ -1183,6 +1215,11 @@ export default function UploadScreen() {
       Alert.alert("Missing Location", "Please set an event location");
       return;
     }
+    if (!venueCoordinates(eventLocation)) {
+      Alert.alert("Select Venue Location", "Select the exact venue on the map or use your current location before uploading.");
+      return;
+    }
+
 
     const resolvedTitle = eventName.trim() || buildFallbackEventTitle();
     const minimumStart = getCurrentMinimumStartDate();
@@ -1210,7 +1247,7 @@ export default function UploadScreen() {
     } = await supabase.auth.getUser();
 
     if (userError || !currentUser) {
-      console.error("Authentication error:", userError);
+      logger.error("Authentication error:", userError);
       Alert.alert("Authentication Error", "Please log in to upload videos");
       return;
     }
@@ -1230,7 +1267,7 @@ export default function UploadScreen() {
           location_city: eventLocation.city || "",
           location_country: eventLocation.country || "",
           location_coordinates:
-            eventLocation.latitude && eventLocation.longitude
+            venueCoordinates(eventLocation)
               ? `POINT(${eventLocation.longitude} ${eventLocation.latitude})`
               : undefined,
           event_name: resolvedTitle,
@@ -1248,8 +1285,8 @@ export default function UploadScreen() {
             location_name: eventLocation.name,
             location_city: eventLocation.city || "",
             location_country: eventLocation.country || "",
-            location_latitude: eventLocation.latitude || null,
-            location_longitude: eventLocation.longitude || null,
+            location_latitude: eventLocation.latitude ?? null,
+            location_longitude: eventLocation.longitude ?? null,
             hashtags,
             updated_at: new Date().toISOString(),
           })
@@ -1257,7 +1294,7 @@ export default function UploadScreen() {
           .eq("user_id", currentUser.id);
 
         if (eventUpdateError) {
-          console.warn("Linked event update failed:", eventUpdateError);
+          logger.warn("Linked event update failed:", eventUpdateError);
         }
 
         await fetchVideos();
@@ -1276,7 +1313,7 @@ export default function UploadScreen() {
           },
         ]);
       } catch (error) {
-        console.error("Video update failed:", error);
+        logger.error("Video update failed:", error);
         setIsUploading(false);
         setUploadStatus("error");
         setUploadProgress(0);
@@ -1364,7 +1401,7 @@ export default function UploadScreen() {
               });
               const uploadSourceUri = preparedUpload.uri;
 
-              console.log("[Upload] Prepared video for upload:", {
+              logger.debug("[Upload] Prepared video for upload:", {
                 originalSizeBytes: preparedUpload.originalSizeBytes,
                 outputSizeBytes: preparedUpload.outputSizeBytes,
                 didCompress: preparedUpload.didCompress,
@@ -1423,7 +1460,7 @@ export default function UploadScreen() {
                 location_city: uploadSnapshot.location.city || "",
                 location_country: uploadSnapshot.location.country || "",
                 location_coordinates:
-                  uploadSnapshot.location.latitude && uploadSnapshot.location.longitude
+                  venueCoordinates(uploadSnapshot.location)
                     ? `POINT(${uploadSnapshot.location.longitude} ${uploadSnapshot.location.latitude})`
                     : undefined,
                 event_name: uploadSnapshot.resolvedTitle,
@@ -1441,6 +1478,7 @@ export default function UploadScreen() {
                 videoId: newVideo.id,
                 userId: uploadSnapshot.currentUserId,
                 localSourceUri: uploadSourceUri,
+                username: uploadSnapshot.profile.username,
               });
 
               const eventData = {
@@ -1451,8 +1489,8 @@ export default function UploadScreen() {
                 end_date: uploadSnapshot.resolvedEndDate.toISOString(),
                 location_name: uploadSnapshot.location.name || "Location not specified",
                 location_city: uploadSnapshot.location.city || "",
-                location_latitude: uploadSnapshot.location.latitude || null,
-                location_longitude: uploadSnapshot.location.longitude || null,
+                location_latitude: uploadSnapshot.location.latitude ?? null,
+                location_longitude: uploadSnapshot.location.longitude ?? null,
                 max_attendees: 100,
                 current_attendees: 0,
                 ticket_price: 0,
@@ -1471,7 +1509,7 @@ export default function UploadScreen() {
                 newEvent = await eventService.createEvent(eventData);
                 if (!newEvent || !newEvent.id) throw new Error("No event ID returned");
               } catch (eventError) {
-                console.error("Event creation failed:", eventError);
+                logger.error("Event creation failed:", eventError);
                 newEvent = { id: "temp-event-id" };
               }
 
@@ -1534,7 +1572,7 @@ export default function UploadScreen() {
                     });
                   }
                 } catch (productError) {
-                  console.warn("Product creation warning after successful upload:", productError);
+                  logger.warn("Product creation warning after successful upload:", productError);
                 }
               }
 
@@ -1548,7 +1586,7 @@ export default function UploadScreen() {
                   name: uploadSnapshot.profile.full_name,
                   avatar:
                     uploadSnapshot.profile.avatar_url ||
-                    "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80",
+                    '',
                   isBusinessAccount: uploadSnapshot.profile.user_type === "business",
                   followers: uploadSnapshot.profile.followers_count,
                   following: uploadSnapshot.profile.following_count,
@@ -1586,7 +1624,7 @@ export default function UploadScreen() {
           return;
         } catch (error) {
           stopProgressTimer();
-          console.error(`Upload attempt ${attempt} failed:`, error);
+          logger.error(`Upload attempt ${attempt} failed:`, error);
 
           const failureText = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
           if (failureText.includes("timed out")) {
@@ -1953,7 +1991,7 @@ export default function UploadScreen() {
               <TextInput
                 style={[styles.textInput, styles.locationInput]}
                 value={eventLocation.name}
-                onChangeText={(text) => setEventLocation({ ...eventLocation, name: text })}
+                onChangeText={(text) => setEventLocation({ ...eventLocation, name: text, latitude: null, longitude: null })}
                 placeholder="Event Location"
                 placeholderTextColor={Colors.dark.subtext}
               />
@@ -2182,7 +2220,7 @@ export default function UploadScreen() {
                     (event as any)?.message ||
                     (event as any)?.nativeEvent?.message ||
                     "Failed to initialize camera.";
-                  console.error("Camera mount error:", message);
+                  logger.error("Camera mount error:", message);
                   Alert.alert("Camera Error", message);
                 }}
               />
@@ -2918,7 +2956,7 @@ const styles = StyleSheet.create({
 //         setPendingVideoUri(video.uri);
 //       }
 //     } catch (error) {
-//       console.error("Recording error:", error);
+//       logger.error("Recording error:", error);
 //       Alert.alert(
 //         "Recording Error",
 //         "Failed to record video. Please try again."
@@ -2950,7 +2988,7 @@ const styles = StyleSheet.create({
 //         setIsRecording(false);
 //       }
 //     } catch (error) {
-//       console.error("Stop recording error:", error);
+//       logger.error("Stop recording error:", error);
 //       Alert.alert(
 //         "Recording Error",
 //         "Failed to stop recording. Please try again."
@@ -3177,7 +3215,7 @@ const styles = StyleSheet.create({
 //       error: userError,
 //     } = await supabase.auth.getUser();
 //     if (userError || !currentUser) {
-//       console.error("Authentication error:", userError);
+//       logger.error("Authentication error:", userError);
 //       Alert.alert("Authentication Error", "Please log in to upload videos");
 //       return;
 //     }
@@ -3216,9 +3254,9 @@ const styles = StyleSheet.create({
 //         throw new Error("User authentication is required");
 //       }
 
-//       console.log("Starting upload process for user:", currentUser.id);
-//       console.log("Event name:", eventName.trim());
-//       console.log("Event location:", eventLocation.name);
+//       logger.debug("Starting upload process for user:", currentUser.id);
+//       logger.debug("Event name:", eventName.trim());
+//       logger.debug("Event location:", eventLocation.name);
 
 //       // Initialize watermark service
 //       await videoWatermarkService.preloadWatermark();
@@ -3260,7 +3298,7 @@ const styles = StyleSheet.create({
 //         location_city: eventLocation.city || "",
 //         location_country: eventLocation.country || "",
 //         location_coordinates:
-//           eventLocation.latitude && eventLocation.longitude
+//           venueCoordinates(eventLocation)
 //             ? `POINT(${eventLocation.longitude} ${eventLocation.latitude})`
 //             : undefined,
 //         event_name: eventName.trim(),
@@ -3268,9 +3306,9 @@ const styles = StyleSheet.create({
 //         hashtags: eventTags.filter((tag) => !tag.startsWith("@")),
 //       };
 
-//       console.log("Creating video with data:", videoData);
+//       logger.debug("Creating video with data:", videoData);
 //       const newVideo = await videoService.uploadVideo(videoData);
-//       console.log("Video created successfully:", newVideo);
+//       logger.debug("Video created successfully:", newVideo);
 
 //       if (!newVideo || !newVideo.id) {
 //         throw new Error("Failed to create video: No video ID returned");
@@ -3284,8 +3322,8 @@ const styles = StyleSheet.create({
 //         start_date: eventDate.toISOString(),
 //         location_name: eventLocation.name || "Location not specified",
 //         location_city: eventLocation.city || "",
-//         location_latitude: eventLocation.latitude || null,
-//         location_longitude: eventLocation.longitude || null,
+//         location_latitude: eventLocation.latitude ?? null,
+//         location_longitude: eventLocation.longitude ?? null,
 //         max_attendees: 100,
 //         current_attendees: 0,
 //         ticket_price: 0,
@@ -3299,17 +3337,17 @@ const styles = StyleSheet.create({
 //         business_id: user.user_type === "business" ? currentUser.id : undefined,
 //       };
 
-//       console.log("Creating event with data:", eventData);
+//       logger.debug("Creating event with data:", eventData);
 //       let newEvent;
 //       try {
 //         newEvent = await eventService.createEvent(eventData);
-//         console.log("Event created successfully:", newEvent);
+//         logger.debug("Event created successfully:", newEvent);
 
 //         if (!newEvent || !newEvent.id) {
 //           throw new Error("Failed to create event: No event ID returned");
 //         }
 //       } catch (eventError) {
-//         console.error("Event creation failed:", eventError);
+//         logger.error("Event creation failed:", eventError);
 //         // Continue with video creation even if event creation fails
 //         // The video will still be uploaded and available
 //         Alert.alert(
@@ -3406,7 +3444,7 @@ const styles = StyleSheet.create({
 //           name: user.full_name,
 //           avatar:
 //             user.avatar_url ||
-//             "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80",
+//             '',
 //           isBusinessAccount: user.user_type === "business",
 //           followers: user.followers_count,
 //           following: user.following_count,
@@ -3463,7 +3501,7 @@ const styles = StyleSheet.create({
 //     } catch (error) {
 //       clearInterval(progressInterval);
 //       clearTimeout(uploadTimeout);
-//       console.error("Upload error:", error);
+//       logger.error("Upload error:", error);
 //       setIsUploading(false);
 //       setUploadStatus("error");
 //       Alert.alert(
@@ -3639,7 +3677,7 @@ const styles = StyleSheet.create({
 //                 style={[styles.textInput, styles.locationInput]}
 //                 value={eventLocation.name}
 //                 onChangeText={(text) =>
-//                   setEventLocation({ ...eventLocation, name: text })
+//                   setEventLocation({ ...eventLocation, name: text, latitude: null, longitude: null })
 //                 }
 //                 placeholder="Event location"
 //                 placeholderTextColor={Colors.dark.subtext}

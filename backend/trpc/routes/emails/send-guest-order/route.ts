@@ -1,4 +1,5 @@
-import { publicProcedure } from '@/backend/trpc/create-context';
+import { logger } from '../../../../lib/logger';
+import { protectedProcedure } from '@/backend/trpc/create-context';
 import { z } from 'zod';
 
 const sendGuestOrderEmailSchema = z.object({
@@ -16,7 +17,7 @@ const sendGuestOrderEmailSchema = z.object({
   pdfUrl: z.string().optional(),
 });
 
-export const sendGuestOrderEmailProcedure = publicProcedure
+export const sendGuestOrderEmailProcedure = protectedProcedure
   .input(sendGuestOrderEmailSchema)
   .mutation(async ({ input }: { input: z.infer<typeof sendGuestOrderEmailSchema> }) => {
     try {
@@ -26,7 +27,7 @@ export const sendGuestOrderEmailProcedure = publicProcedure
       // - AWS SES
       // - Resend
       
-      console.log('Sending order confirmation email to guest:', {
+      logger.debug('Sending order confirmation email to guest:', {
         to: input.customerEmail,
         subject: `Order Confirmation - ${input.orderNumber}`,
         orderDetails: input,

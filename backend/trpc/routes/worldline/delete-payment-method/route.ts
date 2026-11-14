@@ -1,15 +1,16 @@
+import { logger } from '../../../../lib/logger';
 import { z } from 'zod';
-import { publicProcedure } from '../../../create-context';
+import { disabledProcedure } from '../../../create-context';
 import { supabase } from '@/backend/lib/supabase';
 
-export const deletePaymentMethodProcedure = publicProcedure
+export const deletePaymentMethodProcedure = disabledProcedure
   .input(z.object({
     paymentMethodId: z.string(),
     userId: z.string(),
   }))
   .mutation(async ({ input }) => {
     try {
-      console.log('Deleting Worldline payment method:', input.paymentMethodId);
+      logger.debug('Deleting Worldline payment method:', input.paymentMethodId);
       
       // First, verify the payment method belongs to the user
       const { data: paymentMethod, error: fetchError } = await supabase
@@ -36,7 +37,7 @@ export const deletePaymentMethodProcedure = publicProcedure
         throw new Error('Failed to delete payment method');
       }
 
-      console.log('✅ Payment method deleted successfully');
+      logger.debug('✅ Payment method deleted successfully');
       
       return {
         success: true,
@@ -46,7 +47,7 @@ export const deletePaymentMethodProcedure = publicProcedure
       console.error('Delete payment method error:', error);
       return {
         success: false,
-        message: error.message || 'Failed to delete payment method'
+        message: 'Request could not be completed'
       };
     }
   });

@@ -1,3 +1,6 @@
+import AvatarImage from '@/components/AvatarImage';
+import { profileSearchFilter } from '@/lib/profile-search';
+import { logger } from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import { 
   View, 
@@ -47,12 +50,12 @@ export default function UserSearchModal({
         const { data: profiles, error } = await supabase
           .from('profiles')
           .select('*')
-          .or(`full_name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%,business_name.ilike.%${searchQuery}%`)
+          .or(profileSearchFilter(searchQuery))
           .neq('id', currentUser?.id || '') // Exclude current user
           .limit(20);
 
         if (error) {
-          console.error('Error searching users:', error);
+          logger.error('Error searching users:', error);
           setSearchResults([]);
           setIsLoading(false);
           return;
@@ -63,7 +66,7 @@ export default function UserSearchModal({
           name: profile.full_name,
           username: profile.username,
           email: profile.email,
-          avatar: profile.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop&crop=face',
+          avatar: profile.avatar_url || '',
           bio: profile.bio,
           followers: profile.followers_count || 0,
           following: profile.following_count || 0,
@@ -81,7 +84,7 @@ export default function UserSearchModal({
         setSearchResults(filteredUsers);
         setIsLoading(false);
       } catch (error) {
-        console.error('Error searching users:', error);
+        logger.error('Error searching users:', error);
         setSearchResults([]);
         setIsLoading(false);
       }
@@ -105,8 +108,8 @@ export default function UserSearchModal({
         onPress={() => handleSelectUser(item)}
         disabled={isSelected}
       >
-        <Image
-          source={{ uri: item.avatar }}
+        <AvatarImage
+          uri={item.avatar} userId={item?.id}
           style={styles.userAvatar}
           contentFit="cover"
           transition={300}

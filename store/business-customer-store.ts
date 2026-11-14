@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { create } from 'zustand';
 import { BusinessCustomer, VideoInteraction, VoucherShare, CustomerFilters, CustomerStats, InteractionType, User } from '@/types';
 import { useAuthStore } from './auth-store';
@@ -259,7 +260,7 @@ export const useBusinessCustomerStore = create<BusinessCustomerState>((set, get)
       await new Promise(resolve => setTimeout(resolve, 500));
       
       // In a real app, this would create a chat and send the message
-      console.log(`Sending message to customer ${customerId}: ${message}`);
+      logger.debug(`Sending message to customer ${customerId}: ${message}`);
       
       set({ isLoading: false });
       return true;
@@ -281,7 +282,7 @@ export const useBusinessCustomerStore = create<BusinessCustomerState>((set, get)
       await new Promise(resolve => setTimeout(resolve, 1000));
       
       // In a real app, this would create chats and send messages to multiple customers
-      console.log(`Sending message to ${customerIds.length} customers: ${message}`);
+      logger.debug(`Sending message to ${customerIds.length} customers: ${message}`);
       
       set({ isLoading: false });
       return true;

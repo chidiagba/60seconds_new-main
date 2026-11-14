@@ -1,3 +1,4 @@
+import { profileSearchFilter } from '@/lib/profile-search';
 import { supabase } from '@/lib/supabase';
 
 const GROUP_COLORS = ['#6366F1', '#10B981', '#F43F5E', '#F59E0B', '#3B82F6', '#8B5CF6'];
@@ -573,7 +574,7 @@ export async function searchProfilesForGroup(query: string, currentUserId: strin
   const { data, error } = await supabase
     .from('profiles')
     .select('id,full_name,username,avatar_url,user_type')
-    .or(`full_name.ilike.%${query}%,username.ilike.%${query}%,business_name.ilike.%${query}%`)
+    .or(profileSearchFilter(query))
     .neq('id', currentUserId)
     .limit(20);
 

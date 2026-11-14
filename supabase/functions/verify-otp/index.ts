@@ -1,248 +1,55 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsForRequest } from '../_shared/cors.ts';
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method === "GET") {
-    return new Response(
-      JSON.stringify({ status: "ok", function: "verify-otp" }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  }
-
+  const corsHeaders = corsForRequest(req);
+  const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method !== 'POST') return respond({ error: 'Method not allowed' }, 405);
   try {
-    const body = await req.json().catch(() => ({}));
-    const { email, code, type, user_id } = body;
-    const normalizedEmail = typeof email === "string" ? email.replace(/\s+/g, "").trim().toLowerCase() : "";
-    const requestType = typeof type === "string" ? type.trim() : "";
-    const t = requestType === "signup" || requestType === "recovery" ? requestType : null;
-    const c = typeof code === "string" ? code.replace(/\s+/g, "").trim() : "";
-
-    // signup_email_otp is the new flow where Supabase auth.verifyOtp is done client-side.
-    // This endpoint only stamps app_metadata after that verification.
-    if (!normalizedEmail) {
-      return new Response(
-        JSON.stringify({ success: false, error: "email is required" }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    const { email, code, type, referral_code: referralCodeInput } = await req.json();
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const url = Deno.env.get('SUPABASE_URL');
+    const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!url || !key) throw new Error('Missing OTP server configuration');
+    const admin = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+    let uid: string | null = null;
+    if (type === 'signup_email_otp') {
+      const token = req.headers.get('authorization')?.match(/^Bearer (\S+)$/i)?.[1];
+      if (!token) return respond({ error: 'Sign in required' }, 401);
+      const { data, error } = await admin.auth.getUser(token);
+      if (error || !data.user || data.user.email?.toLowerCase() !== normalizedEmail) return respond({ error: 'Invalid session' }, 401);
+      // getUser verified the token; require OTP authentication, not just a password session.
+      const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      if (!payload.amr?.some((entry: { method: string }) => entry.method === 'otp')) return respond({ error: 'Email verification required' }, 403);
+      uid = data.user.id;
+    } else if (type === 'signup' && typeof code === 'string' && /^\d{6}$/.test(code)) {
+      const { data, error } = await admin.rpc('consume_signup_otp', { target_email: normalizedEmail, target_code: code });
+      if (error) throw error;
+      uid = data;
     }
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") ||
-      `https://${Deno.env.get("SUPABASE_PROJECT_REF") || "rvvujgbaswecqohixgog"}.supabase.co`;
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-    if (!supabaseUrl || !serviceKey) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Server configuration error" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const supabase = createClient(supabaseUrl, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
+    if (!uid) return respond({ success: false, error: 'Invalid or expired code' }, 400);
+    const { data: userData, error: userError } = await admin.auth.admin.getUserById(uid);
+    if (userError) throw userError;
+    const { error: updateError } = await admin.auth.admin.updateUserById(uid, {
+      app_metadata: { ...userData.user.app_metadata, signup_otp_verified_at: new Date().toISOString(), signup_otp_verified: true, otp_verified: true },
     });
-
-    // Supabase-only mode: client already verified OTP via supabase.auth.verifyOtp,
-    // this endpoint only stamps app_metadata for signup gate completion.
-    if (requestType === "signup_email_otp") {
-      const authHeader = req.headers.get("Authorization") || req.headers.get("authorization") || "";
-      const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
-
-      if (!token) {
-        return new Response(
-          JSON.stringify({ success: false, error: "Missing user session token" }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const { data: tokenUserData, error: tokenUserErr } = await supabase.auth.getUser(token);
-      if (tokenUserErr || !tokenUserData?.user) {
-        return new Response(
-          JSON.stringify({ success: false, error: "Invalid or expired session" }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const tokenUser = tokenUserData.user;
-      const requestedUid = typeof user_id === "string" ? user_id.trim() : "";
-      const effectiveUid = requestedUid || tokenUser.id;
-
-      if (effectiveUid !== tokenUser.id) {
-        return new Response(
-          JSON.stringify({ success: false, error: "User mismatch" }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      if (normalizedEmail && (tokenUser.email || "").toLowerCase() !== normalizedEmail) {
-        return new Response(
-          JSON.stringify({ success: false, error: "Email mismatch" }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const existingMeta = (tokenUser.app_metadata || {}) as Record<string, unknown>;
-      const otpVerifiedAt = new Date().toISOString();
-      const { error: metaUpdateErr } = await supabase.auth.admin.updateUserById(tokenUser.id, {
-        app_metadata: {
-          ...existingMeta,
-          signup_otp_verified_at: otpVerifiedAt,
-          signup_otp_verified: true,
-          otp_verified: true,
-          latest_otp_code: null,
-          latest_otp_type: null,
-          latest_otp_email: null,
-          latest_otp_expires_at: null,
-          latest_otp_sent_at: null,
-          latest_otp_provider: null,
-          signup_last_otp_code: null,
-          signup_last_otp_expires_at: null,
-          signup_last_otp_sent_at: null,
-          signup_last_otp_provider: null,
-        },
+    if (updateError) throw updateError;
+    const referralCode = typeof referralCodeInput === 'string' ? referralCodeInput.trim().toLowerCase() : '';
+    if (referralCode && /^[a-z0-9][a-z0-9_-]{2,39}$/.test(referralCode)) {
+      const { error: attributionError } = await admin.rpc('attach_campaign_attribution', {
+        p_user_id: uid,
+        p_referral_code: referralCode,
+        p_source: 'manual_code',
+        p_platform: 'unknown',
+        p_first_open_at: null,
       });
-
-      if (metaUpdateErr) {
-        return new Response(
-          JSON.stringify({ success: false, error: `Failed to mark OTP as verified: ${metaUpdateErr.message}` }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const welcomeName = (tokenUser.email || normalizedEmail).split("@")[0] || "there";
-      const { data: welcomeData, error: welcomeErr } = await supabase.functions.invoke("send-welcome-email", {
-        body: {
-          user_id: tokenUser.id,
-          email: normalizedEmail,
-          name: welcomeName,
-          trigger: "post_signup_pin_verification_server",
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      if (welcomeErr || !welcomeData?.success) {
-        console.warn("Welcome email could not be sent after PIN verification:", welcomeErr?.message || welcomeData?.error || "unknown error");
-      }
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          uid: tokenUser.id,
-          otp_verified: true,
-          welcome_email_sent: Boolean(welcomeData?.success),
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      if (attributionError) console.error('Campaign attribution recovery failed:', attributionError.code || 'database_error');
     }
-
-    if (!t || !c) {
-      return new Response(
-        JSON.stringify({ success: false, error: "code and type (signup|recovery) are required" }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const now = new Date().toISOString();
-    const { data: rows, error: selErr } = await supabase
-      .from("otp_codes")
-      .select("id, user_id")
-      .eq("email", normalizedEmail)
-      .eq("type", t)
-      .eq("code", c)
-      .gt("expires_at", now)
-      .limit(1);
-
-    if (selErr || !rows?.length) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Invalid or expired OTP" }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const row = rows[0];
-    const uid = row?.user_id ?? null;
-
-    if (t === "signup" && uid) {
-      const { data: authUserData, error: authUserErr } = await supabase.auth.admin.getUserById(uid);
-      if (authUserErr) {
-        return new Response(
-          JSON.stringify({ success: false, error: `Failed to load user: ${authUserErr.message}` }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const existingMeta = (authUserData?.user?.app_metadata || {}) as Record<string, unknown>;
-      const otpVerifiedAt = new Date().toISOString();
-      const { error: metaUpdateErr } = await supabase.auth.admin.updateUserById(uid, {
-        app_metadata: {
-          ...existingMeta,
-          signup_otp_verified_at: otpVerifiedAt,
-          signup_otp_verified: true,
-          otp_verified: true,
-          latest_otp_code: null,
-          latest_otp_type: null,
-          latest_otp_email: null,
-          latest_otp_expires_at: null,
-          latest_otp_sent_at: null,
-          latest_otp_provider: null,
-          signup_last_otp_code: null,
-          signup_last_otp_expires_at: null,
-          signup_last_otp_sent_at: null,
-          signup_last_otp_provider: null,
-        },
-      });
-
-      if (metaUpdateErr) {
-        return new Response(
-          JSON.stringify({ success: false, error: `Failed to mark OTP as verified: ${metaUpdateErr.message}` }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const authUserEmail = (authUserData?.user?.email || normalizedEmail).toLowerCase();
-      const welcomeName = authUserEmail.split("@")[0] || "there";
-      try {
-        const { error: welcomeErr } = await supabase.functions.invoke("send-welcome-email", {
-          body: {
-            user_id: uid,
-            email: authUserEmail,
-            name: welcomeName,
-            trigger: "post_signup_otp_table_verification_server",
-          },
-        });
-        if (welcomeErr) {
-          console.warn("send-welcome-email invocation failed (non-blocking):", welcomeErr);
-        }
-      } catch (invokeErr) {
-        console.warn("send-welcome-email invoke error (non-blocking):", invokeErr);
-      }
-    }
-
-    if (t !== "recovery") {
-      await supabase.from("otp_codes").delete().eq("id", row.id);
-    }
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        uid: uid || undefined,
-        code: t === "recovery" ? c : undefined,
-        otp_verified: true,
-        email_confirmation_required: t === "signup",
-      }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  } catch (e) {
-    console.error("verify-otp error:", e);
-    return new Response(
-      JSON.stringify({ success: false, error: "An error occurred" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return respond({ success: true, otp_verified: true });
+  } catch (error) {
+    console.error('OTP verification failed', error);
+    return respond({ success: false, error: 'Could not verify code' }, 500);
   }
 });

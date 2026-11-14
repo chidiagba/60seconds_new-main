@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /** Keep a session's pagination order consistent if an older server lacks the RPC. */
@@ -17,7 +18,7 @@ export function createVideoFeedLoader(client: SupabaseClient) {
       });
       if (result.error?.code !== 'PGRST202') return result;
       randomFeedUnavailable = true;
-      console.warn('Random video feed RPC unavailable; using a session-ordered ID fallback.');
+      logger.warn('Random video feed RPC unavailable; using a session-ordered ID fallback.');
     }
     if (seed) {
       if (fallbackSeed !== seed || !fallbackIds) {

@@ -1,3 +1,5 @@
+import AvatarImage from '@/components/AvatarImage';
+import { logger } from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Image } from 'expo-image';
@@ -60,7 +62,7 @@ export default function GuestListNotifications({ visible, onClose }: GuestListNo
       // Remove from local state
       setAllRequests(prev => prev.filter(r => r.id !== requestId));
     } catch (error) {
-      console.error('Failed to approve request:', error);
+      logger.error('Failed to approve request:', error);
     }
   };
 
@@ -70,7 +72,7 @@ export default function GuestListNotifications({ visible, onClose }: GuestListNo
       // Remove from local state
       setAllRequests(prev => prev.filter(r => r.id !== requestId));
     } catch (error) {
-      console.error('Failed to reject request:', error);
+      logger.error('Failed to reject request:', error);
     }
   };
 
@@ -116,8 +118,8 @@ export default function GuestListNotifications({ visible, onClose }: GuestListNo
           ) : (
             allRequests.map(request => (
               <View key={request.id} style={styles.requestItem}>
-                <Image
-                  source={{ uri: request.user.avatar }}
+                <AvatarImage
+                  uri={request.user.avatar} userId={request.user?.id}
                   style={styles.userAvatar}
                   contentFit="cover"
                   transition={300}

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import AvatarImage from '@/components/AvatarImage';
 
 // import React, { useEffect, useMemo, useState } from "react";
@@ -53,13 +54,13 @@ import AvatarImage from '@/components/AvatarImage';
 //     if (isOwnProfile && authProfile && authUser?.id) {
 //       return {
 //         id: authUser.id,
-//         full_name: authProfile.full_name,
-//         username: authProfile.username,
-//         avatar_url: authProfile.avatar_url,
-//         bio: authProfile.bio,
-//         location_city: authProfile.location_city,
+//         full_name: authProfile.full_name ?? null,
+//         username: authProfile.username ?? null,
+//         avatar_url: authProfile.avatar_url ?? null,
+//         bio: authProfile.bio ?? null,
+//         location_city: authProfile.location_city ?? null,
 //         user_type: authProfile.user_type,
-//         business_type: authProfile.business_type,
+//         business_type: authProfile.business_type ?? null,
 //         followers_count: authProfile.followers_count,
 //         following_count: authProfile.following_count,
 //       };
@@ -561,14 +562,14 @@ export default function ProfileUserScreen() {
     if (isOwnProfile && authProfile && authUser?.id) {
       return {
         id: authUser.id,
-        full_name: authProfile.full_name,
-        username: authProfile.username,
-        avatar_url: authProfile.avatar_url,
+        full_name: authProfile.full_name ?? null,
+        username: authProfile.username ?? null,
+        avatar_url: authProfile.avatar_url ?? null,
         avatar_gender: (authProfile as any).avatar_gender ?? null,
-        bio: authProfile.bio,
-        location_city: authProfile.location_city,
+        bio: authProfile.bio ?? null,
+        location_city: authProfile.location_city ?? null,
         user_type: authProfile.user_type,
-        business_type: authProfile.business_type,
+        business_type: authProfile.business_type ?? null,
         followers_count: authProfile.followers_count,
         following_count: authProfile.following_count,
       };
@@ -674,7 +675,7 @@ export default function ProfileUserScreen() {
           setUserVideos(videos || []);
         }
       } catch (error) {
-        console.error("Error loading profile videos:", error);
+        logger.error("Error loading profile videos:", error);
         if (!cancelled) {
           setUserVideos([]);
         }
@@ -700,7 +701,7 @@ export default function ProfileUserScreen() {
         following: counts.followingCount,
       });
     } catch (error) {
-      console.error('Error refreshing follow counts:', error);
+      logger.error('Error refreshing follow counts:', error);
     }
   };
 
@@ -866,34 +867,7 @@ export default function ProfileUserScreen() {
 
       <View style={styles.profileSection}>
         <View style={styles.avatarContainer}>
-          {displayProfile.avatar_url ? (
-            <AvatarImage
-              uri={displayProfile.avatar_url}
-              style={styles.profileImage}
-              contentFit="cover"
-              transition={300}
-            />
-          ) : displayProfile.avatar_gender ? (
-            <View style={[
-              styles.profileImage,
-              {
-                backgroundColor: displayProfile.avatar_gender === 'male' ? '#3B82F6' : '#EC4899',
-                justifyContent: 'center',
-                alignItems: 'center',
-              }
-            ]}>
-              <Text style={{ fontSize: 52 }}>
-                {displayProfile.avatar_gender === 'male' ? '👨' : '👩'}
-              </Text>
-            </View>
-          ) : (
-            <Image
-              source={require("@/assets/images/avatar-placeholder.png")}
-              style={styles.profileImage}
-              contentFit="cover"
-              transition={300}
-            />
-          )}
+          <AvatarImage uri={displayProfile.avatar_url} userId={displayProfile.id} style={styles.profileImage} contentFit="cover" transition={300} />
           {isBusiness && (
             <View style={styles.businessIndicator}>
               <Text style={styles.businessIndicatorText}>PRO</Text>
@@ -1482,13 +1456,13 @@ const styles = StyleSheet.create({
 //     if (isOwnProfile && authProfile && authUser?.id) {
 //       return {
 //         id: authUser.id,
-//         full_name: authProfile.full_name,
-//         username: authProfile.username,
-//         avatar_url: authProfile.avatar_url,
-//         bio: authProfile.bio,
-//         location_city: authProfile.location_city,
+//         full_name: authProfile.full_name ?? null,
+//         username: authProfile.username ?? null,
+//         avatar_url: authProfile.avatar_url ?? null,
+//         bio: authProfile.bio ?? null,
+//         location_city: authProfile.location_city ?? null,
 //         user_type: authProfile.user_type,
-//         business_type: authProfile.business_type,
+//         business_type: authProfile.business_type ?? null,
 //         followers_count: authProfile.followers_count,
 //         following_count: authProfile.following_count,
 //       };
@@ -2272,13 +2246,13 @@ const styles = StyleSheet.create({
 //     if (isOwnProfile && authProfile) {
 //       return {
 //         id: authUser!.id,
-//         full_name: authProfile.full_name,
-//         username: authProfile.username,
-//         avatar_url: authProfile.avatar_url,
-//         bio: authProfile.bio,
-//         location_city: authProfile.location_city,
+//         full_name: authProfile.full_name ?? null,
+//         username: authProfile.username ?? null,
+//         avatar_url: authProfile.avatar_url ?? null,
+//         bio: authProfile.bio ?? null,
+//         location_city: authProfile.location_city ?? null,
 //         user_type: authProfile.user_type,
-//         business_type: authProfile.business_type,
+//         business_type: authProfile.business_type ?? null,
 //         followers_count: authProfile.followers_count,
 //         following_count: authProfile.following_count,
 //       };

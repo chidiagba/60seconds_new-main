@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { trpcClient } from '@/lib/trpc';
@@ -115,19 +116,19 @@ class PaystackService {
             if (body?.error) realMessage = body.error;
           }
         } catch (_) {}
-        console.error('Paystack edge function error body:', realMessage);
+        logger.error('Paystack edge function error body:', realMessage);
         throw new Error(realMessage || 'Edge function error');
       }
 
       if (!data?.success || !data.data?.authorization_url) {
         const msg = data?.error || 'Failed to initialize payment';
-        console.error('Paystack initialize failed:', msg);
+        logger.error('Paystack initialize failed:', msg);
         throw new Error(msg);
       }
 
       return data.data;
     } catch (error: any) {
-      console.error('Paystack initialization error:', error);
+      logger.error('Paystack initialization error:', error);
       throw new Error(error.message || 'Failed to initialize payment');
     }
   }
@@ -151,7 +152,7 @@ class PaystackService {
         data: data.data,
       };
     } catch (error: any) {
-      console.error('Paystack verification error:', error);
+      logger.error('Paystack verification error:', error);
       throw new Error(error.message || 'Failed to verify payment');
     }
   }
@@ -169,7 +170,7 @@ class PaystackService {
 
       return result.data;
     } catch (error: any) {
-      console.error('Paystack customer creation error:', error);
+      logger.error('Paystack customer creation error:', error);
       throw new Error(error.message || 'Failed to create customer');
     }
   }
@@ -189,7 +190,7 @@ class PaystackService {
 
       return result.data;
     } catch (error: any) {
-      console.error('Paystack get customer error:', error);
+      logger.error('Paystack get customer error:', error);
       throw new Error(error.message || 'Failed to get customer');
     }
   }
@@ -214,14 +215,14 @@ class PaystackService {
     cardholderName: string;
   }) {
     try {
-      console.log('💳 Processing direct credit card payment...');
+      logger.debug('💳 Processing direct credit card payment...');
       
       // First initialize the payment
       const paymentData = await this.initializePayment(params);
       
       // For direct card payment, we would typically use Paystack's charge API
       // But for now, we'll return the authorization URL for card input
-      console.log('✅ Payment initialized for direct card processing');
+      logger.debug('✅ Payment initialized for direct card processing');
       
       return {
         success: true,
@@ -231,11 +232,11 @@ class PaystackService {
         message: 'Please complete payment on Paystack checkout page'
       };
     } catch (error: any) {
-      console.error('Direct card payment error:', error);
+      logger.error('Direct card payment error:', error);
       
       // FALLBACK: If Paystack API is not available, provide mock response for testing
       if (error.message && (error.message.includes('Paystack API error') || error.message.includes('Failed to initialize'))) {
-        console.log('🔄 Paystack API unavailable, using mock response for testing...');
+        logger.debug('🔄 Paystack API unavailable, using mock response for testing...');
         
         const mockReference = this.generateReference('mock_credit_card');
         
@@ -264,13 +265,13 @@ class PaystackService {
     authorization?: any;
   }) {
     try {
-      console.log('💾 Saving payment method to Supabase...');
+      logger.debug('💾 Saving payment method to Supabase...');
 
       // Use authenticated user for RLS; fall back to skip if no session
       const { data: authData } = await supabase.auth.getUser();
       const authedUserId = authData?.user?.id;
       if (!authedUserId) {
-        console.log('ℹ️ Skipping Supabase save: no authenticated user');
+        logger.debug('ℹ️ Skipping Supabase save: no authenticated user');
         return null;
       }
 
@@ -304,11 +305,11 @@ class PaystackService {
         .single();
 
       if (error) {
-        console.error('❌ Supabase payment method save error:', error);
+        logger.error('❌ Supabase payment method save error:', error);
         throw new Error(`Failed to save payment method: ${error.message}`);
       }
 
-      console.log('✅ Payment method saved to Supabase:', {
+      logger.debug('✅ Payment method saved to Supabase:', {
         id: data.id,
         nickname: data.nickname,
         card_type: data.card_type
@@ -316,11 +317,11 @@ class PaystackService {
 
       return data;
     } catch (error: any) {
-      console.error('Payment method save error:', error);
+      logger.error('Payment method save error:', error);
       
       // FALLBACK: If Supabase save fails, return mock data for testing
       if (error.message && error.message.includes('Failed to save payment method')) {
-        console.log('🔄 Supabase save unavailable, using mock payment method for testing...');
+        logger.debug('🔄 Supabase save unavailable, using mock payment method for testing...');
         
         return {
           id: `mock_payment_method_${Date.now()}`,
@@ -399,7 +400,7 @@ class PaystackService {
         }, 600000);
       });
     } catch (error: any) {
-      console.error('Paystack checkout error:', error);
+      logger.error('Paystack checkout error:', error);
       throw error;
     }
   }

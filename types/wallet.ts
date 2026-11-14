@@ -103,6 +103,4 @@ export const TWINT_API_KEY = "twint_api_key_placeholder";
 
 // Paystack configuration
 export const PAYSTACK_PUBLIC_KEY = process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY || "pk_test_your_public_key_here";
-export const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "sk_test_your_secret_key_here";
-export const PAYSTACK_WEBHOOK_SECRET = process.env.PAYSTACK_WEBHOOK_SECRET || "your_webhook_secret_here";
 export const PAYSTACK_MERCHANT_ID = "60seconds_paystack_merchant";

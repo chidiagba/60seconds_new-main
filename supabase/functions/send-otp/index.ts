@@ -1,16 +1,15 @@
+import { corsForRequest } from '../_shared/cors.ts';
 // @ts-ignore
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 // @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+
 
 function genOtp(): string {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  const values = new Uint32Array(1);
+  do { crypto.getRandomValues(values); } while (values[0] >= 4294800000);
+  return String(100000 + values[0] % 900000);
 }
 
 type EmailSendResult = {
@@ -188,7 +187,7 @@ const sendOtpEmailWithFailover = async (
       lastResult = {
         ok: false,
         provider: providerName,
-        detail: providerError?.message || String(providerError),
+        detail: undefined,
       };
       console.warn(`OTP email provider exception: ${providerName}`, lastResult.detail);
     }
@@ -198,177 +197,34 @@ const sendOtpEmailWithFailover = async (
 };
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method === "GET") {
-    return new Response(
-      JSON.stringify({ status: "ok", function: "send-otp" }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  }
-
+  const corsHeaders = corsForRequest(req);
+  const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method !== 'POST') return respond({ error: 'Method not allowed' }, 405);
   try {
-    const body = await req.json().catch(() => ({}));
-    const { email, type, user_id } = body;
-    const normalizedEmail = typeof email === "string" ? email.replace(/\s+/g, "").trim().toLowerCase() : "";
-    const t = type === "signup" || type === "recovery" ? type : null;
-
-    if (!normalizedEmail || !t) {
-      return new Response(
-        JSON.stringify({ success: false, message: "email and type (signup|recovery) are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-// @ts-ignore
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") ||
-// @ts-ignore
-      `https://${Deno.env.get("SUPABASE_PROJECT_REF") || "rvvujgbaswecqohixgog"}.supabase.co`;
-// @ts-ignore
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-    if (!supabaseUrl || !serviceKey) {
-      return new Response(
-        JSON.stringify({ success: false, message: "Server configuration error" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const supabase = createClient(supabaseUrl, serviceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-
-    let resolvedUser: AuthUserRecord | null = null;
-
-    if (typeof user_id === "string" && user_id.trim()) {
-      try {
-        resolvedUser = await resolveUserById(supabase, user_id.trim());
-      } catch (resolveErr) {
-        console.warn("send-otp: resolveUserById failed, falling back to email lookup:", resolveErr);
-      }
-
-      if (!resolvedUser) {
-        try {
-          resolvedUser = await resolveUserByEmail(supabase, normalizedEmail);
-        } catch (emailLookupErr) {
-          console.warn("send-otp: email lookup also failed:", emailLookupErr);
-        }
-      }
-
-      if (!resolvedUser) {
-        return new Response(
-          JSON.stringify({ success: false, message: "No account found with this email or user ID" }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const registeredEmail = String(resolvedUser.email || "").trim().toLowerCase();
-      // For signup PIN, email mismatch is acceptable (user_id takes precedence)
-      if (t === "recovery" && (!registeredEmail || registeredEmail !== normalizedEmail)) {
-        return new Response(
-          JSON.stringify({ success: false, message: "Password reset PIN can only be sent to the registered email address" }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-    } else {
-      try {
-        resolvedUser = await resolveUserByEmail(supabase, normalizedEmail);
-      } catch (emailLookupErr) {
-        console.warn("send-otp: email lookup failed:", emailLookupErr);
-      }
-      
-      if (!resolvedUser) {
-        return new Response(
-          JSON.stringify({ success: false, message: "No account found with this email" }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-    }
-
-    const uid = resolvedUser.id;
-
+    const { email, type } = await req.json();
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || type !== 'signup') return respond({ error: 'Invalid request. Use Supabase recovery for password resets.' }, 400);
+    const url = Deno.env.get('SUPABASE_URL');
+    const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!url || !key) throw new Error('Missing OTP server configuration');
+    const admin = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+    const { data: allowed, error: limitError } = await admin.rpc('allow_otp_request', { target_email: normalizedEmail, target_ip: ip });
+    if (limitError) throw limitError;
+    if (!allowed) return respond({ error: 'Please wait before requesting another code' }, 429);
+    const user = await resolveUserByEmail(admin, normalizedEmail);
+    // Same response whether an account exists or not. Never accept a caller-supplied UID.
+    const accepted = { success: true, message: 'If the account can be verified, a code has been sent.' };
+    if (!user) return respond(accepted);
     const code = genOtp();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
-
-    await supabase.from("otp_codes").delete().eq("email", normalizedEmail).eq("type", t);
-    const { error: insErr } = await supabase.from("otp_codes").insert({
-      email: normalizedEmail,
-      code,
-      type: t,
-      user_id: uid,
-      expires_at: expiresAt,
-      created_at: new Date().toISOString(),
-    });
-    if (insErr) {
-      console.error("otp_codes insert error:", insErr);
-      return new Response(
-        JSON.stringify({ success: false, message: "Failed to save OTP" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const isSignup = t === "signup";
-    const subject = isSignup ? "Verify your email - 60Seconds" : "Reset your password - 60Seconds";
-    const text = isSignup
-      ? `Your 6-digit verification code is: ${code}\n\nIt expires in 10 minutes. Enter this code in the app to verify your email.\n\nIf you didn't sign up, ignore this email.`
-      : `Your 6-digit password reset code is: ${code}\n\nIt expires in 10 minutes. Enter this code in the app to set a new password.\n\nIf you didn't request this, ignore this email.`;
-
-    const sendResult = await sendOtpEmailWithFailover(normalizedEmail, subject, text);
-
-    if (!sendResult.ok) {
-      console.error("OTP email send failed:", sendResult.detail || "unknown error");
-      return new Response(
-        JSON.stringify({
-          success: false,
-          message: "Failed to send OTP email via configured providers",
-          detail: sendResult.detail || null,
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Keep the latest OTP visible in Supabase Auth user metadata for support/debug workflows.
-    try {
-      const { data: authUserData, error: authUserErr } = await supabase.auth.admin.getUserById(uid);
-      if (authUserErr) {
-        console.warn("send-otp: failed to load user for metadata OTP stamp:", authUserErr.message);
-      } else {
-        const existingMeta = (authUserData?.user?.app_metadata || {}) as Record<string, unknown>;
-        const stampedMeta: Record<string, unknown> = {
-          ...existingMeta,
-          latest_otp_code: code,
-          latest_otp_type: t,
-          latest_otp_email: normalizedEmail,
-          latest_otp_expires_at: expiresAt,
-          latest_otp_sent_at: new Date().toISOString(),
-          latest_otp_provider: sendResult.provider,
-        };
-
-        if (t === "signup") {
-          stampedMeta.signup_last_otp_code = code;
-          stampedMeta.signup_last_otp_expires_at = expiresAt;
-          stampedMeta.signup_last_otp_sent_at = stampedMeta.latest_otp_sent_at;
-          stampedMeta.signup_last_otp_provider = sendResult.provider;
-        }
-
-        const { error: updateMetaErr } = await supabase.auth.admin.updateUserById(uid, {
-          app_metadata: stampedMeta,
-        });
-
-        if (updateMetaErr) {
-          console.warn("send-otp: failed to stamp OTP metadata:", updateMetaErr.message);
-        }
-      }
-    } catch (metaStampErr) {
-      console.warn("send-otp: unexpected metadata OTP stamp error:", metaStampErr);
-    }
-
-    return new Response(
-      JSON.stringify({ success: true, message: "OTP sent", provider: sendResult.provider }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  } catch (e) {
-    console.error("send-otp error:", e);
-    return new Response(
-      JSON.stringify({ success: false, message: "An error occurred" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    const { error: insertError } = await admin.rpc('issue_signup_otp', { target_email: normalizedEmail, target_user: user.id, target_code: code });
+    if (insertError) throw insertError;
+    const result = await sendOtpEmailWithFailover(normalizedEmail, 'Verify your email - 60Seconds', `Your verification code is: ${code}\nIt expires in 10 minutes.`);
+    if (!result.ok) console.error('OTP delivery failed', result.provider);
+    return respond(accepted);
+  } catch (error) {
+    console.error('OTP request failed', error);
+    return respond({ success: false, error: 'Could not process request' }, 500);
   }
 });

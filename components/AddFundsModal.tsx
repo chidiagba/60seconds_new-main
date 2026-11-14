@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState } from 'react';
 import { 
   View, 
@@ -158,7 +159,7 @@ export default function AddFundsModal({ visible, onClose }: AddFundsModalProps) 
                 );
               }
             }).catch(err => {
-              console.error('An error occurred', err);
+              logger.error('An error occurred', err);
               Alert.alert('Error', 'Could not open Twint app. Please try another payment method.');
             });
           }

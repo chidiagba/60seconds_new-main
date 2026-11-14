@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -178,7 +179,7 @@ export default function BusinessAnalyticsScreen() {
           }
         }
       } catch (error) {
-        console.error('Error loading analytics data:', error);
+        logger.error('Error loading analytics data:', error);
       } finally {
         setIsLoading(false);
       }

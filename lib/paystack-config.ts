@@ -4,7 +4,6 @@
 export const PAYSTACK_CONFIG = {
   // Read from environment so test and live credentials can be injected per build.
   PUBLIC_KEY: process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY || 'pk_test_your_public_key_here',
-  SECRET_KEY: process.env.PAYSTACK_SECRET_KEY || 'sk_test_your_secret_key_here',
   
   // Base URL for Paystack API
   BASE_URL: 'https://api.paystack.co',

@@ -1,15 +1,13 @@
+import { logger } from '../../../../lib/logger';
+import { requiredEnv } from '@/backend/lib/env';
 import { z } from 'zod';
-import { publicProcedure } from '../../../create-context';
+import { protectedProcedure } from '../../../create-context';
 
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || 'sk_test_your_secret_key_here';
+const PAYSTACK_SECRET_KEY = requiredEnv('PAYSTACK_SECRET_KEY');
 
-// Check if we have a valid API key
-if (PAYSTACK_SECRET_KEY === 'sk_test_your_secret_key_here') {
-  console.warn('⚠️ Paystack secret key not set! Using placeholder key. Set PAYSTACK_SECRET_KEY in your environment variables.');
-}
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
 
-export const createCustomerProcedure = publicProcedure
+export const createCustomerProcedure = protectedProcedure
   .input(z.object({
     email: z.string().email(),
     first_name: z.string().optional(),
@@ -17,29 +15,11 @@ export const createCustomerProcedure = publicProcedure
     phone: z.string().optional(),
     metadata: z.record(z.any()).optional(),
   }))
-  .mutation(async ({ input }) => {
+  .mutation(async ({ input, ctx }) => {
     try {
-      console.log('🚀 Creating Paystack customer with input:', input);
-      console.log('🔑 Using Paystack secret key:', PAYSTACK_SECRET_KEY ? 'Set' : 'Not set');
-      console.log('🌐 Paystack base URL:', PAYSTACK_BASE_URL);
-      
-      // If using placeholder key, return mock data for testing
-      if (PAYSTACK_SECRET_KEY === 'sk_test_your_secret_key_here') {
-        console.log('🧪 Using mock Paystack customer data for testing');
-        return {
-          success: true,
-          data: {
-            id: `mock_customer_${Date.now()}`,
-            customer_code: `CUS_mock_${Date.now()}`,
-            email: input.email,
-            first_name: input.first_name || 'Mock',
-            last_name: input.last_name || 'Customer',
-            phone: input.phone || null,
-            metadata: input.metadata || {},
-            created_at: new Date().toISOString(),
-          },
-        };
-      }
+      logger.debug('🚀 Creating Paystack customer with input:', input);
+      logger.debug('🔑 Using Paystack secret key:', PAYSTACK_SECRET_KEY ? 'Set' : 'Not set');
+      logger.debug('🌐 Paystack base URL:', PAYSTACK_BASE_URL);
       
       const response = await fetch(`${PAYSTACK_BASE_URL}/customer`, {
         method: 'POST',
@@ -48,7 +28,7 @@ export const createCustomerProcedure = publicProcedure
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          email: input.email,
+          email: ctx.user.email,
           first_name: input.first_name,
           last_name: input.last_name,
           phone: input.phone,
@@ -99,13 +79,13 @@ export const createCustomerProcedure = publicProcedure
     }
   });
 
-export const getCustomerProcedure = publicProcedure
+export const getCustomerProcedure = protectedProcedure
   .input(z.object({
     email_or_code: z.string(),
   }))
-  .query(async ({ input }) => {
+  .query(async ({ input, ctx }) => {
     try {
-      const response = await fetch(`${PAYSTACK_BASE_URL}/customer/${input.email_or_code}`, {
+      const response = await fetch(`${PAYSTACK_BASE_URL}/customer/${encodeURIComponent(ctx.user.email || "")}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${PAYSTACK_SECRET_KEY}`,

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -12,7 +13,7 @@ export default function EmailConfirmedScreen() {
       try {
         await supabase.auth.signOut();
       } catch (error) {
-        console.warn('Failed to clear session after email confirmation:', error);
+        logger.warn('Failed to clear session after email confirmation:', error);
       }
     };
 

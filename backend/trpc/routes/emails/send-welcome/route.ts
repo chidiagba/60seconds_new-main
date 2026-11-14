@@ -1,4 +1,5 @@
-import { publicProcedure } from '@/backend/trpc/create-context';
+import { logger } from '../../../../lib/logger';
+import { protectedProcedure } from '@/backend/trpc/create-context';
 import { z } from 'zod';
 
 const sendWelcomeEmailSchema = z.object({
@@ -6,9 +7,9 @@ const sendWelcomeEmailSchema = z.object({
   name: z.string().min(1),
 });
 
-export const sendWelcomeEmailProcedure = publicProcedure
+export const sendWelcomeEmailProcedure = protectedProcedure
   .input(sendWelcomeEmailSchema)
-  .mutation(async ({ input }) => {
+  .mutation(async ({ input, ctx }) => {
     try {
       const { email, name } = input;
 
@@ -45,17 +46,17 @@ https://60secondsapp.io
       // });
 
       // For now, log the email (in production, replace with actual email sending)
-      console.log('📧 Welcome Email:', {
+      logger.debug('📧 Welcome Email:', {
         to: email,
         subject: subject,
         name: name,
       });
-      console.log('Email content length:', emailContent.length, 'characters');
+      logger.debug('Email content length:', emailContent.length, 'characters');
 
       // In development, you might want to see the email content
       if (process.env.NODE_ENV === 'development') {
-        console.log('\n--- Email Content Preview ---');
-        console.log(emailContent.substring(0, 200) + '...\n');
+        logger.debug('\n--- Email Content Preview ---');
+        logger.debug(emailContent.substring(0, 200) + '...\n');
       }
 
       return {
@@ -66,7 +67,7 @@ https://60secondsapp.io
       console.error('❌ Failed to send welcome email:', error);
       return {
         success: false,
-        message: error.message || 'Failed to send welcome email',
+        message: 'Request could not be completed',
       };
     }
   });

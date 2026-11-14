@@ -1,14 +1,15 @@
+import { logger } from '../../../../lib/logger';
 import { z } from 'zod';
-import { publicProcedure } from '../../../create-context';
+import { disabledProcedure } from '../../../create-context';
 import { supabase } from '@/backend/lib/supabase';
 
-export const getPaymentMethodsProcedure = publicProcedure
+export const getPaymentMethodsProcedure = disabledProcedure
   .input(z.object({
     userId: z.string(),
   }))
   .query(async ({ input }) => {
     try {
-      console.log('Getting Worldline payment methods for user:', input.userId);
+      logger.debug('Getting Worldline payment methods for user:', input.userId);
       
       const { data: paymentMethods, error } = await supabase
         .from('payment_methods')
@@ -32,7 +33,7 @@ export const getPaymentMethodsProcedure = publicProcedure
       return {
         success: false,
         data: [],
-        message: error.message || 'Failed to retrieve payment methods'
+        message: 'Request could not be completed'
       };
     }
   });

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React from 'react';
 import { TouchableOpacity, StyleSheet, Text } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -29,7 +30,7 @@ export default function MessageButton({ userId, style, showText = false }: Messa
         router.push(`/chat/${chatId}`);
       }
     } catch (error) {
-      console.error('Error starting chat:', error);
+      logger.error('Error starting chat:', error);
       // Handle error (show toast, etc.)
     }
   };

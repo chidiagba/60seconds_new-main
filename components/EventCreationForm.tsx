@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -165,7 +166,7 @@ export function EventCreationForm({
         setErrors([result.error || 'Failed to create event']);
       }
     } catch (error) {
-      console.error('Event creation error:', error);
+      logger.error('Event creation error:', error);
       setErrors(['An unexpected error occurred. Please try again.']);
     } finally {
       setIsLoading(false);
@@ -727,7 +728,7 @@ const styles = StyleSheet.create({
 //         setErrors([result.error || 'Failed to create event']);
 //       }
 //     } catch (error) {
-//       console.error('Event creation error:', error);
+//       logger.error('Event creation error:', error);
 //       setErrors(['An unexpected error occurred. Please try again.']);
 //     } finally {
 //       setIsLoading(false);

@@ -1,0 +1,16 @@
+CREATE ROLE anon;
+CREATE ROLE authenticated;
+CREATE ROLE service_role BYPASSRLS;
+CREATE SCHEMA auth;
+CREATE SCHEMA storage;
+CREATE SCHEMA extensions;
+CREATE TABLE auth.users (id uuid primary key default gen_random_uuid(),email text,email_confirmed_at timestamptz,raw_app_meta_data jsonb default '{}',raw_user_meta_data jsonb default '{}',created_at timestamptz default now());
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.role',true),'') $$;
+CREATE TABLE storage.buckets(id text primary key,name text,public boolean default false,file_size_limit bigint,allowed_mime_types text[]);
+CREATE TABLE storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text,owner uuid,owner_id text,metadata jsonb);
+ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+CREATE FUNCTION storage.foldername(text) RETURNS text[] LANGUAGE sql AS $$ SELECT string_to_array($1,'/') $$;
+CREATE PUBLICATION supabase_realtime;
+GRANT USAGE ON SCHEMA auth,public,storage TO anon,authenticated,service_role;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA auth TO anon,authenticated,service_role;

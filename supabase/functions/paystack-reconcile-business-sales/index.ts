@@ -1,12 +1,9 @@
 // @ts-nocheck
+import { corsForRequest } from '../_shared/cors.ts';
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -177,6 +174,7 @@ const resolveLegacyOrder = async (payment: any, organizerId: string): Promise<an
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsForRequest(req);
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   try {
     const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
@@ -248,7 +246,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error?.message || 'Reconciliation failed' }), {
+    return new Response(JSON.stringify({ error: 'Request could not be completed' }), {
       status: String(error?.message) === 'Unauthorized' ? 401 : 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

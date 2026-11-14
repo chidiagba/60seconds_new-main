@@ -1,12 +1,10 @@
+import { corsForRequest } from '../_shared/cors.ts';
 // @ts-ignore
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 // @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+
 
 type AuthUser = {
   id: string;
@@ -180,6 +178,7 @@ const sendViaResend = async (email: string, subject: string, emailContent: strin
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = corsForRequest(req);
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -222,7 +221,7 @@ Deno.serve(async (req) => {
       const { data, error } = await admin.auth.admin.getUserById(userId);
       if (error) {
         return new Response(
-          JSON.stringify({ success: false, message: `Failed to read user: ${error.message}` }),
+          JSON.stringify({ success: false, message: 'Request could not be completed' }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -306,7 +305,7 @@ Deno.serve(async (req) => {
         JSON.stringify({
           success: false,
           message: "Failed to send email through configured providers",
-          detail: sendResult.detail || null,
+          detail: undefined,
         }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );

@@ -1,3 +1,7 @@
+import {loadTicketSellers} from './ticket-seller';
+import { videoVenueCoordinates } from '@/utils/venue-location';
+import { profileSearchFilter } from './profile-search';
+import { logger } from '@/lib/logger';
 import Constants from 'expo-constants';
 import { createVideoFeedLoader } from './video-feed';
 import { Platform } from 'react-native';
@@ -98,7 +102,7 @@ async function ensureAuthenticatedProfileExists() {
       return user;
     }
 
-    console.error('Failed to create profile:', insertError.message);
+    logger.error('Failed to create profile:', insertError.message);
     throw insertError;
   }
 
@@ -138,7 +142,7 @@ async function fetchProfileForVideoById(userId: string) {
   }
 
   if (!isMissingAvatarGenderSelectError(withGender.error)) {
-    console.warn('Unable to fetch video profile:', withGender.error);
+    logger.warn('Unable to fetch video profile:', withGender.error);
     return { data: null, error: null as any };
   }
 
@@ -149,7 +153,7 @@ async function fetchProfileForVideoById(userId: string) {
     .maybeSingle();
 
   if (legacy.error) {
-    console.warn('Unable to fetch legacy video profile:', legacy.error);
+    logger.warn('Unable to fetch legacy video profile:', legacy.error);
     return { data: null, error: null as any };
   }
 
@@ -171,7 +175,7 @@ async function fetchProfilesForVideoByIds(userIds: string[]) {
   }
 
   if (!isMissingAvatarGenderSelectError(withGender.error)) {
-    console.warn('Unable to fetch video profiles:', withGender.error);
+    logger.warn('Unable to fetch video profiles:', withGender.error);
     return { data: [], error: null as any };
   }
 
@@ -181,7 +185,7 @@ async function fetchProfilesForVideoByIds(userIds: string[]) {
     .in('id', userIds);
 
   if (legacy.error) {
-    console.warn('Unable to fetch legacy video profiles:', legacy.error);
+    logger.warn('Unable to fetch legacy video profiles:', legacy.error);
     return { data: [], error: null as any };
   }
 
@@ -361,7 +365,7 @@ async function deleteVideoViaRpc(videoId: string): Promise<boolean> {
         message.includes('schema cache');
 
       if (!isMissingFunction) {
-        console.warn('delete_video_permanently RPC failed:', error);
+        logger.warn('delete_video_permanently RPC failed:', error);
       }
 
       return false;
@@ -369,7 +373,7 @@ async function deleteVideoViaRpc(videoId: string): Promise<boolean> {
 
     return data === true;
   } catch (error) {
-    console.warn('delete_video_permanently RPC exception:', error);
+    logger.warn('delete_video_permanently RPC exception:', error);
     return false;
   }
 }
@@ -377,7 +381,7 @@ async function deleteVideoViaRpc(videoId: string): Promise<boolean> {
 // Profile operations
 export const profileService = {
   async createProfile(profile: Tables['profiles']['Insert']) {
-    console.log('Creating profile with data:', profile);
+    logger.debug('Creating profile with data:', profile);
 
     // Ensure user is authenticated
     const { data: { user } } = await supabase.auth.getUser();
@@ -397,8 +401,8 @@ export const profileService = {
       .single();
 
     if (error) {
-      console.error('Error creating profile:', error);
-      console.error('Error details:', {
+      logger.error('Error creating profile:', error);
+      logger.error('Error details:', {
         message: error.message,
         details: error.details,
         hint: error.hint,
@@ -413,7 +417,7 @@ export const profileService = {
       throw error;
     }
 
-    console.log('Profile created successfully:', data);
+    logger.debug('Profile created successfully:', data);
     return data;
   },
 
@@ -425,12 +429,12 @@ export const profileService = {
       .maybeSingle();
 
     if (error) {
-      console.error('Error fetching profile:', error.message || error);
+      logger.error('Error fetching profile:', error.message || error);
       throw error;
     }
 
     if (!data) {
-      console.log('No profile found for user:', userId);
+      logger.debug('No profile found for user:', userId);
       return null;
     }
 
@@ -471,11 +475,11 @@ export const profileService = {
         return fallbackData;
       }
 
-      console.error('Error updating profile (fallback):', fallbackError.message || fallbackError);
+      logger.error('Error updating profile (fallback):', fallbackError.message || fallbackError);
       throw fallbackError;
     }
 
-    console.error('Error updating profile:', error.message || error);
+    logger.error('Error updating profile:', error.message || error);
     throw error;
   },
 
@@ -486,7 +490,7 @@ export const profileService = {
       .eq('user_type', 'business');
 
     if (error) {
-      console.error('Error fetching business profiles:', error);
+      logger.error('Error fetching business profiles:', error);
       throw error;
     }
     return data;
@@ -496,10 +500,10 @@ export const profileService = {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .or(`username.ilike.%${query}%,full_name.ilike.%${query}%,business_name.ilike.%${query}%`);
+      .or(profileSearchFilter(query));
 
     if (error) {
-      console.error('Error searching profiles:', error);
+      logger.error('Error searching profiles:', error);
       throw error;
     }
     return data;
@@ -520,7 +524,7 @@ export const followService = {
       .eq('id', userId);
 
     if (error) {
-      console.error('Error syncing profile follow counts:', error);
+      logger.error('Error syncing profile follow counts:', error);
       throw error;
     }
   },
@@ -547,7 +551,7 @@ export const followService = {
       );
 
     if (error) {
-      console.error('Error following user:', error);
+      logger.error('Error following user:', error);
       throw error;
     }
 
@@ -557,7 +561,7 @@ export const followService = {
         this.syncProfileFollowCounts(followingId),
       ]);
     } catch (syncError) {
-      console.warn('Follow created but count sync failed:', syncError);
+      logger.warn('Follow created but count sync failed:', syncError);
     }
   },
 
@@ -569,7 +573,7 @@ export const followService = {
       .eq('following_id', followingId);
 
     if (error) {
-      console.error('Error unfollowing user:', error);
+      logger.error('Error unfollowing user:', error);
       throw error;
     }
 
@@ -579,7 +583,7 @@ export const followService = {
         this.syncProfileFollowCounts(followingId),
       ]);
     } catch (syncError) {
-      console.warn('Unfollow completed but count sync failed:', syncError);
+      logger.warn('Unfollow completed but count sync failed:', syncError);
     }
   },
 
@@ -590,7 +594,7 @@ export const followService = {
       .eq('follower_id', followerId);
 
     if (error) {
-      console.warn('Unable to fetch following ids:', error);
+      logger.warn('Unable to fetch following ids:', error);
       return [];
     }
 
@@ -606,7 +610,7 @@ export const followService = {
       .maybeSingle();
 
     if (error) {
-      console.error('Error checking follow status:', error);
+      logger.error('Error checking follow status:', error);
       throw error;
     }
 
@@ -626,11 +630,11 @@ export const followService = {
     ]);
 
     if (followersError) {
-      console.warn('Unable to fetch followers count:', followersError);
+      logger.warn('Unable to fetch followers count:', followersError);
     }
 
     if (followingError) {
-      console.warn('Unable to fetch following count:', followingError);
+      logger.warn('Unable to fetch following count:', followingError);
     }
 
     return {
@@ -646,7 +650,7 @@ export const followService = {
       .eq('following_id', userId);
 
     if (error) {
-      console.error('Error fetching followers:', error);
+      logger.error('Error fetching followers:', error);
       throw error;
     }
 
@@ -659,7 +663,7 @@ export const followService = {
       .in('id', followerIds);
 
     if (profilesError) {
-      console.error('Error fetching follower profiles:', profilesError);
+      logger.error('Error fetching follower profiles:', profilesError);
       throw profilesError;
     }
 
@@ -673,7 +677,7 @@ export const followService = {
       .eq('follower_id', userId);
 
     if (error) {
-      console.error('Error fetching following:', error);
+      logger.error('Error fetching following:', error);
       throw error;
     }
 
@@ -686,7 +690,7 @@ export const followService = {
       .in('id', followingIds);
 
     if (profilesError) {
-      console.error('Error fetching following profiles:', profilesError);
+      logger.error('Error fetching following profiles:', profilesError);
       throw profilesError;
     }
 
@@ -744,7 +748,7 @@ export const videoService = {
     return data.publicUrl;
   },
 
-  async normalizeVideoRecord<T extends { video_url?: string | null; thumbnail_url?: string | null }>(video: T): Promise<T> {
+  async normalizeVideoRecord<T extends { video_url?: string | null; thumbnail_url?: string | null; location_coordinates?: unknown; location_latitude?: unknown; location_longitude?: unknown }>(video: T): Promise<T> {
     const [videoUrl, thumbnailUrl] = await Promise.all([
       this.normalizeMediaUrl(video.video_url ?? null, 'videos'),
       this.normalizeMediaUrl(video.thumbnail_url ?? null, 'images'),
@@ -752,13 +756,15 @@ export const videoService = {
 
     return {
       ...video,
+      location_latitude: videoVenueCoordinates(video)?.latitude ?? null,
+      location_longitude: videoVenueCoordinates(video)?.longitude ?? null,
       video_url: videoUrl ?? video.video_url ?? null,
       thumbnail_url: thumbnailUrl ?? video.thumbnail_url ?? null,
     };
   },
 
   async uploadVideo(video: Tables['videos']['Insert']) {
-    console.log('Creating video record with data:', video);
+    logger.debug('Creating video record with data:', video);
 
     // Ensure user is authenticated and has a corresponding profiles row (FK dependency).
     const user = await ensureAuthenticatedProfileExists();
@@ -783,8 +789,8 @@ export const videoService = {
       .single();
 
     if (error) {
-      console.error('Error uploading video:', error);
-      console.error('Video upload error details:', {
+      logger.error('Error uploading video:', error);
+      logger.error('Video upload error details:', {
         message: error.message,
         details: error.details,
         hint: error.hint,
@@ -799,12 +805,12 @@ export const videoService = {
       throw error;
     }
 
-    console.log('Video record created successfully:', data);
+    logger.debug('Video record created successfully:', data);
     return data;
   },
 
   async getUserVideos(userId: string) {
-    console.log('📹 getUserVideos: fetching for user', userId);
+    logger.debug('📹 getUserVideos: fetching for user', userId);
     // Get videos for the user (all statuses — existing & newly uploaded)
     const { data: videosData, error: videosError } = await supabase
       .from('videos')
@@ -813,13 +819,13 @@ export const videoService = {
       .order('created_at', { ascending: false });
 
     if (videosError) {
-      console.error('📹 getUserVideos error:', videosError);
+      logger.error('📹 getUserVideos error:', videosError);
       throw videosError;
     }
 
-    console.log('📹 getUserVideos: found', videosData?.length ?? 0, 'videos for user', userId);
+    logger.debug('📹 getUserVideos: found', videosData?.length ?? 0, 'videos for user', userId);
     if (videosData && videosData.length > 0) {
-      console.log('📹 first video id:', videosData[0].id, 'user_id:', videosData[0].user_id);
+      logger.debug('📹 first video id:', videosData[0].id, 'user_id:', videosData[0].user_id);
     }
 
     if (!videosData || videosData.length === 0) {
@@ -830,7 +836,7 @@ export const videoService = {
     const { data: profileData, error: profileError } = await fetchProfileForVideoById(userId);
 
     if (profileError) {
-      console.warn('Unable to fetch user profile:', profileError);
+      logger.warn('Unable to fetch user profile:', profileError);
       // Don't throw error, just continue without profile data
     }
 
@@ -856,7 +862,7 @@ export const videoService = {
       .single();
 
     if (videoError) {
-      console.error('Error fetching video:', videoError);
+      logger.error('Error fetching video:', videoError);
       throw videoError;
     }
 
@@ -864,7 +870,7 @@ export const videoService = {
     const { data: profileData, error: profileError } = await fetchProfileForVideoById(videoData.user_id);
 
     if (profileError) {
-      console.error('Error fetching video profile:', profileError);
+      logger.error('Error fetching video profile:', profileError);
       // Don't throw error, just continue without profile data
     }
 
@@ -883,7 +889,7 @@ export const videoService = {
     const { data: videosData, error: videosError } = await loadVideoFeed(limit, offset, seed);
 
     if (videosError) {
-      console.warn('Unable to fetch videos:', videosError.message || videosError);
+      logger.warn('Unable to fetch videos:', videosError instanceof Error ? videosError.message : String(videosError));
       throw videosError;
     }
 
@@ -898,7 +904,7 @@ export const videoService = {
     const { data: profilesData, error: profilesError } = await fetchProfilesForVideoByIds(userIds);
 
     if (profilesError) {
-      console.warn('Unable to fetch profiles:', profilesError);
+      logger.warn('Unable to fetch profiles:', profilesError);
       // Don't throw error, just continue without profile data
     }
 
@@ -937,7 +943,7 @@ export const videoService = {
       .maybeSingle();
 
     if (ownedVideoError) {
-      console.error('Error validating video ownership:', ownedVideoError);
+      logger.error('Error validating video ownership:', ownedVideoError);
       throw ownedVideoError;
     }
 
@@ -966,7 +972,7 @@ export const videoService = {
 
       const cleanupError = dependentCleanup.find((result) => result.error)?.error;
       if (cleanupError) {
-        console.warn('Dependent cleanup warning before video delete:', cleanupError);
+        logger.warn('Dependent cleanup warning before video delete:', cleanupError);
       }
 
       const { data: deletedRows, error } = await supabase
@@ -977,7 +983,7 @@ export const videoService = {
         .select('id');
 
       if (error) {
-        console.error('Error deleting video:', error);
+        logger.error('Error deleting video:', error);
         const deletedViaBackend = await deleteVideoViaBackend(videoId);
         if (!deletedViaBackend) {
           throw error;
@@ -987,7 +993,7 @@ export const videoService = {
       // Some Supabase/RLS combinations can delete successfully but return no deleted
       // rows from delete().select(). Treat the row existence check as the source of truth.
       if (!deletedRows || deletedRows.length === 0) {
-        console.warn('Video delete succeeded without returned rows; verified by follow-up existence check.', {
+        logger.warn('Video delete succeeded without returned rows; verified by follow-up existence check.', {
           videoId,
           userId: user.id,
         });
@@ -1001,7 +1007,7 @@ export const videoService = {
       .maybeSingle();
 
     if (existingVideoCheckError) {
-      console.warn('Unable to verify deleted video row:', existingVideoCheckError);
+      logger.warn('Unable to verify deleted video row:', existingVideoCheckError);
     }
 
     if (existingVideoAfterDelete) {
@@ -1020,7 +1026,7 @@ export const videoService = {
       existingVideoCheckError = verificationResult.error;
 
       if (existingVideoCheckError) {
-        console.warn('Unable to verify deleted video row after backend fallback:', existingVideoCheckError);
+        logger.warn('Unable to verify deleted video row after backend fallback:', existingVideoCheckError);
       }
 
       if (existingVideoAfterDelete) {
@@ -1034,7 +1040,7 @@ export const videoService = {
         .remove([videoStoragePath]);
 
       if (storageDeleteError) {
-        console.warn('Video row deleted, but storage file removal failed:', storageDeleteError);
+        logger.warn('Video row deleted, but storage file removal failed:', storageDeleteError);
       }
     }
 
@@ -1044,7 +1050,7 @@ export const videoService = {
         .remove([imageStoragePath]);
 
       if (imageDeleteError) {
-        console.warn('Video row deleted, but thumbnail file removal failed:', imageDeleteError);
+        logger.warn('Video row deleted, but thumbnail file removal failed:', imageDeleteError);
       }
     }
   },
@@ -1064,7 +1070,7 @@ export const videoService = {
       .single();
 
     if (error) {
-      console.error('Error updating video:', error);
+      logger.error('Error updating video:', error);
       throw error;
     }
 
@@ -1080,7 +1086,7 @@ export const videoService = {
       .single();
 
     if (error) {
-      console.error('Error updating video stats:', error);
+      logger.error('Error updating video stats:', error);
       throw error;
     }
     return data;
@@ -1114,7 +1120,7 @@ export const videoService = {
     const { data: videosData, error: videosError } = await queryBuilder.order('created_at', { ascending: false });
 
     if (videosError) {
-      console.error('Error searching videos:', videosError);
+      logger.error('Error searching videos:', videosError);
       throw videosError;
     }
 
@@ -1129,7 +1135,7 @@ export const videoService = {
     const { data: profilesData, error: profilesError } = await fetchProfilesForVideoByIds(userIds);
 
     if (profilesError) {
-      console.warn('Unable to fetch profiles for search:', profilesError);
+      logger.warn('Unable to fetch profiles for search:', profilesError);
       // Don't throw error, just continue without profile data
     }
 
@@ -1210,7 +1216,7 @@ export const orderService = {
     }
 
     if (error) {
-      console.error('Error creating order:', error);
+      logger.error('Error creating order:', error);
 
       if (error.code === '42501' || error.message?.includes('row-level security')) {
         throw new Error('Permission denied: Please ensure you are authenticated and have the correct permissions to create orders.');
@@ -1229,7 +1235,7 @@ export const orderService = {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching user orders:', error);
+      logger.error('Error fetching user orders:', error);
       throw error;
     }
     return data;
@@ -1289,7 +1295,7 @@ export const orderService = {
       .single();
 
     if (error) {
-      console.error('Error fetching order:', error);
+      logger.error('Error fetching order:', error);
       throw error;
     }
     return data;
@@ -1313,7 +1319,7 @@ export const orderService = {
       .single();
 
     if (error) {
-      console.error('Error updating order status:', error);
+      logger.error('Error updating order status:', error);
       throw error;
     }
     return data;
@@ -1340,7 +1346,7 @@ export const orderService = {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching orders by video:', error);
+      logger.error('Error fetching orders by video:', error);
       throw error;
     }
     return data;
@@ -1372,9 +1378,10 @@ export const ticketReceiptService = {
     const normalizedQrCode = qrCodeData.trim();
     if (!normalizedQrCode) throw new Error('Invalid QR code.');
 
-    const { data, error } = await supabase.rpc('redeem_ticket', {
-      receipt_qr_code: normalizedQrCode,
-    });
+    const isTableBooking = normalizedQrCode.startsWith('TABLE:');
+    const { data, error } = isTableBooking
+      ? await supabase.rpc('redeem_event_table_booking', { booking_qr_code: normalizedQrCode })
+      : await supabase.rpc('redeem_ticket', { receipt_qr_code: normalizedQrCode });
 
     if (error) {
       throw new Error(error.message || 'Ticket verification failed.');
@@ -1391,212 +1398,9 @@ export const ticketReceiptService = {
     sourceItems: TicketReceiptSourceItem[];
     fallbackVideoId?: string;
   }) {
-    if (!input.sourceItems.length) {
-      return [] as TicketReceipt[];
-    }
-
-    // Fail closed: tickets are issued only for successfully paid/completed orders.
-    // Older production schemas may not have payment_status; fall back to status.
-    let orderData: any = null;
-    let orderError: any = null;
-
-    ({ data: orderData, error: orderError } = await supabase
-      .from('orders')
-      .select('id, status, payment_status')
-      .eq('id', input.orderId)
-      .single());
-
-    if (orderError && /payment_status|column/i.test(String(orderError.message || ''))) {
-      ({ data: orderData, error: orderError } = await supabase
-        .from('orders')
-        .select('id, status')
-        .eq('id', input.orderId)
-        .single());
-    }
-
-    if (orderError) {
-      console.warn('Skipping ticket receipt creation; unable to verify order payment status:', orderError);
-      return [] as TicketReceipt[];
-    }
-
-    const normalizedPaymentStatus = String(orderData?.payment_status || '').toLowerCase();
-    const normalizedOrderStatus = String(orderData?.status || '').toLowerCase();
-    const isPaidOrder =
-      normalizedPaymentStatus === 'paid' ||
-      normalizedPaymentStatus === 'completed' ||
-      normalizedPaymentStatus === 'success' ||
-      normalizedOrderStatus === 'completed' ||
-      normalizedOrderStatus === 'confirmed' ||
-      normalizedOrderStatus === 'paid' ||
-      normalizedOrderStatus === 'success';
-
-    if (!isPaidOrder) {
-      console.warn('Skipping ticket receipt creation; order payment is not successful:', {
-        orderId: input.orderId,
-        paymentStatus: orderData?.payment_status,
-        orderStatus: orderData?.status,
-      });
-      return [] as TicketReceipt[];
-    }
-
-    // Idempotency guard: if receipts already exist for this order, do not issue/decrement again.
-    const { data: existingReceipts, error: existingReceiptsError } = await supabase
-      .from('ticket_receipts')
-      .select('*')
-      .eq('order_id', input.orderId)
-      .limit(1);
-
-    if (existingReceiptsError) {
-      console.error('Error checking existing ticket receipts:', existingReceiptsError);
-      throw existingReceiptsError;
-    }
-
-    if ((existingReceipts || []).length > 0) {
-      return existingReceipts as TicketReceipt[];
-    }
-
-    const uniqueProductIds = Array.from(
-      new Set(input.sourceItems.map((item) => item.productId).filter(Boolean))
-    );
-
-    const { data: productsData } = await supabase
-      .from('products')
-      .select('id, business_id, event_id, type, name, price, currency')
-      .in('id', uniqueProductIds);
-
-    const productsById = new Map((productsData || []).map((p) => [p.id, p]));
-
-    const uniqueEventIds = Array.from(
-      new Set((productsData || []).map((p) => p.event_id).filter(Boolean))
-    );
-
-    const { data: eventsData } = uniqueEventIds.length
-      ? await supabase
-        .from('events')
-        .select('id, user_id, event_name, start_date, end_date, location_name, video_id, image_url')
-        .in('id', uniqueEventIds)
-      : { data: [] as any[] };
-
-    const eventsById = new Map((eventsData || []).map((e) => [e.id, e]));
-
-    const nowIso = new Date().toISOString();
-    const rows: Tables['ticket_receipts']['Insert'][] = [];
-    let serial = 1;
-
-    for (const item of input.sourceItems) {
-      const product = productsById.get(item.productId);
-      const event = product?.event_id ? eventsById.get(product.event_id) : null;
-      const ownerId = product?.business_id || event?.user_id;
-
-      if (!ownerId) {
-        continue;
-      }
-
-      const eventDate = event?.start_date ? new Date(event.start_date) : new Date();
-      const startDateLabel = eventDate.toLocaleDateString('en-US');
-      const startTimeLabel = eventDate.toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      });
-
-      const qty = Math.max(1, Number(item.quantity || 1));
-      const receiptType = String(item.type || product?.type || 'ticket').toLowerCase();
-      const isTicket = receiptType === 'ticket';
-      const receiptCount = isTicket ? qty : 1;
-
-      for (let i = 0; i < receiptCount; i += 1) {
-        const receiptQuantity = isTicket ? 1 : qty;
-        const unitPrice = Number(item.unitPrice || product?.price || 0);
-        const seatNo = isTicket ? `A${serial.toString().padStart(2, '0')}` : undefined;
-        const qrCodeData = `${isTicket ? 'TICKET' : 'PRODUCT'}:${input.orderNumber}:${item.productId}:${serial}:${Date.now()}`;
-
-        rows.push({
-          order_id: input.orderId,
-          order_number: input.orderNumber,
-          buyer_id: input.buyerId,
-          owner_id: ownerId,
-          video_id: event?.video_id || item.videoId || input.fallbackVideoId,
-          event_id: product?.event_id || undefined,
-          product_id: item.productId,
-          ticket_type: receiptType,
-          receipt_kind: isTicket ? 'ticket' : 'product',
-          ticket_title: item.name || product?.name || (isTicket ? 'Ticket' : 'Product'),
-          quantity: receiptQuantity,
-          unit_price: unitPrice,
-          total_price: unitPrice * receiptQuantity,
-          currency: item.currency || product?.currency || 'USD',
-          qr_code_data: qrCodeData,
-          ticket_image_url: event?.image_url || buildTicketImageUrl({
-            eventName: event?.event_name || '60seconds Event',
-            orderNumber: input.orderNumber,
-            seatNo: seatNo || '-',
-            startDateLabel,
-            startTimeLabel,
-          }) || undefined,
-          seat_no: seatNo,
-          event_name: event?.event_name || '60seconds Event',
-          event_start_date: event?.start_date || undefined,
-          event_end_date: event?.end_date || undefined,
-          location_name: event?.location_name || 'Location not specified',
-          is_active: true,
-          issued_at: nowIso,
-        });
-
-        serial += 1;
-      }
-    }
-
-    if (!rows.length) {
-      return [] as TicketReceipt[];
-    }
-
-    const { data, error } = await supabase
-      .from('ticket_receipts')
-      .insert(rows)
-      .select('*');
-
-    if (error) {
-      console.error('Error creating ticket receipts:', error);
-      throw error;
-    }
-
-    const quantityByProduct = new Map<string, number>();
-    for (const item of input.sourceItems) {
-      const productId = String(item.productId || '').trim();
-      if (!productId) continue;
-      const qty = Math.max(1, Number(item.quantity || 1));
-      quantityByProduct.set(productId, (quantityByProduct.get(productId) || 0) + qty);
-    }
-
-    const productIds = Array.from(quantityByProduct.keys());
-    if (productIds.length) {
-      const { data: stockRows, error: stockRowsError } = await supabase
-        .from('products')
-        .select('id, available_quantity, sold_quantity')
-        .in('id', productIds);
-
-      if (stockRowsError) {
-        console.error('Error fetching product stock for decrement:', stockRowsError);
-        throw stockRowsError;
-      }
-
-      for (const stockRow of stockRows || []) {
-        const orderedQty = quantityByProduct.get(stockRow.id) || 0;
-        if (orderedQty <= 0) continue;
-
-        const { error: stockUpdateError } = await supabase.rpc('reconcile_product_inventory', {
-          target_product_id: stockRow.id,
-        });
-
-        if (stockUpdateError) {
-          console.error('Error decrementing product stock after ticket issuance:', stockUpdateError);
-          throw stockUpdateError;
-        }
-      }
-    }
-
-    return data || [];
+    const {data,error}=await supabase.rpc('get_verified_order_receipts',{order_key:input.orderId});
+    if(error)throw new Error(error.message || 'Verified purchase receipts are not ready');
+    return (data || []) as TicketReceipt[];
   },
 
   async getVisibleTickets(userId: string) {
@@ -1607,7 +1411,7 @@ export const ticketReceiptService = {
       .order('issued_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching visible tickets:', error);
+      logger.error('Error fetching visible tickets:', error);
       throw error;
     }
 
@@ -1621,13 +1425,14 @@ export const ticketReceiptService = {
       .in('id', orderIds);
 
     if (orderError) {
-      console.warn('Unable to load original purchase dates; using receipt dates:', orderError.message);
-      return tickets;
+      logger.warn('Unable to load original purchase dates; using receipt dates:', orderError.message);
     }
 
+    const sellers=await loadTicketSellers(supabase,tickets.map(ticket=>ticket.owner_id));
     const purchasedAtByOrder = new Map((orderRows || []).map((order) => [order.id, order.created_at]));
     return tickets.map((ticket) => ({
       ...ticket,
+      seller:sellers.get(ticket.owner_id),
       purchased_at: purchasedAtByOrder.get(ticket.order_id) || ticket.issued_at || ticket.created_at,
     })) as Array<TicketReceipt & { purchased_at?: string }>;
   },
@@ -1661,7 +1466,7 @@ export const eventService = {
       .single();
 
     if (error) {
-      console.error('Error creating event:', error);
+      logger.error('Error creating event:', error);
 
       if (error.code === '42501' || error.message?.includes('row-level security')) {
         throw new Error('Permission denied: Please ensure you are authenticated and have the correct permissions to create events.');
@@ -1683,7 +1488,7 @@ export const eventService = {
       .order('start_date', { ascending: true });
 
     if (error) {
-      console.warn('Unable to fetch user events:', error);
+      logger.warn('Unable to fetch user events:', error);
       return [];
     }
     return data;
@@ -1700,7 +1505,7 @@ export const eventService = {
       .single();
 
     if (error) {
-      console.error('Error fetching event:', error);
+      logger.error('Error fetching event:', error);
       throw error;
     }
     return data;
@@ -1715,7 +1520,7 @@ export const eventService = {
       .single();
 
     if (error) {
-      console.error('Error updating event:', error);
+      logger.error('Error updating event:', error);
       throw error;
     }
     return data;
@@ -1735,7 +1540,7 @@ export const eventService = {
       .range(offset, offset + limit - 1);
 
     if (error) {
-      console.error('Error fetching public events:', error);
+      logger.error('Error fetching public events:', error);
       throw error;
     }
     return data;
@@ -1776,7 +1581,7 @@ export const eventService = {
     const { data, error } = await queryBuilder.order('start_date', { ascending: true });
 
     if (error) {
-      console.error('Error searching events:', error);
+      logger.error('Error searching events:', error);
       throw error;
     }
     return data;
@@ -1850,7 +1655,7 @@ export const searchService = {
         .limit(10);
 
       if (eventsError) {
-        console.error('Error fetching events in unified search:', eventsError);
+        logger.error('Error fetching events in unified search:', eventsError);
       } else if (events) {
         searchResults.events = await this.resolveFirstVideoForEvents(events);
       }
@@ -1876,10 +1681,12 @@ export const searchService = {
       const { data: usersData, error: usersError } = await supabase
         .from('profiles')
         .select('*')
-        .or(`username.ilike.${searchTerm},full_name.ilike.${searchTerm},business_name.ilike.${searchTerm},business_type.ilike.${searchTerm}`)
+        .or(`${profileSearchFilter(query)},business_type.ilike.${searchTerm}`)
         .limit(15);
 
-      if (!usersError && usersData) {
+      if (usersError) throw usersError;
+
+      if (usersData) {
         searchResults.users = usersData;
       }
 
@@ -1911,7 +1718,7 @@ export const searchService = {
       searchResults.totalResults = searchResults.videos.length + searchResults.users.length + searchResults.events.length;
       return searchResults;
     } catch (error) {
-      console.error('Error in unified search:', error);
+      logger.error('Error in unified search:', error);
       throw error;
     }
   },
@@ -1951,7 +1758,7 @@ export const searchService = {
     const { data, error } = await queryBuilder.order('start_date', { ascending: true });
 
     if (error) {
-      console.error('Error searching events:', error);
+      logger.error('Error searching events:', error);
       throw error;
     }
     return data;
@@ -1988,7 +1795,7 @@ export const searchService = {
     const { data, error } = await queryBuilder.order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error searching videos:', error);
+      logger.error('Error searching videos:', error);
       throw error;
     }
     return data;
@@ -2003,7 +1810,7 @@ export const searchService = {
       .select('*');
 
     if (query) {
-      queryBuilder = queryBuilder.ilike('username', `%${query}%`);
+      queryBuilder = queryBuilder.or(profileSearchFilter(query));
     }
 
     if (filters?.userType) {
@@ -2018,7 +1825,7 @@ export const searchService = {
       .order('followers_count', { ascending: false });
 
     if (error) {
-      console.error('Error searching users:', error);
+      logger.error('Error searching users:', error);
       throw error;
     }
     return data;
@@ -2062,7 +1869,7 @@ export const voucherService = {
     }
 
     if (error) {
-      console.error('Error creating voucher:', error);
+      logger.error('Error creating voucher:', error);
 
       if (error.code === '42501' || error.message?.includes('row-level security')) {
         throw new Error('Permission denied: Please ensure you are authenticated as a business user to create vouchers.');
@@ -2081,7 +1888,7 @@ export const voucherService = {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching business vouchers:', error);
+      logger.error('Error fetching business vouchers:', error);
       throw error;
     }
     return data;
@@ -2099,7 +1906,7 @@ export const voucherService = {
       .single();
 
     if (error) {
-      console.error('Error fetching voucher by code:', error);
+      logger.error('Error fetching voucher by code:', error);
       throw error;
     }
     return data;
@@ -2120,7 +1927,7 @@ export const voucherService = {
       .single();
 
     if (error) {
-      console.error('Error updating voucher:', error);
+      logger.error('Error updating voucher:', error);
       throw error;
     }
     return data;
@@ -2143,7 +1950,7 @@ export const voucherService = {
     const { data, error } = await queryBuilder.order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching active vouchers:', error);
+      logger.error('Error fetching active vouchers:', error);
       throw error;
     }
     return data;
@@ -2158,33 +1965,33 @@ export const storageService = {
       const { data: buckets, error: listError } = await supabase.storage.listBuckets();
 
       if (listError) {
-        console.error('Error listing buckets:', listError);
+        logger.error('Error listing buckets:', listError);
         // If we can't list buckets, assume they exist and continue
         // This handles cases where RLS policies prevent listing
-        console.log(`Assuming bucket ${bucketName} exists due to listing error`);
+        logger.debug(`Assuming bucket ${bucketName} exists due to listing error`);
         return;
       }
 
       const bucketExists = buckets?.some(bucket => bucket.name === bucketName);
 
       if (!bucketExists) {
-        console.log(`Bucket ${bucketName} does not exist, but skipping creation due to RLS restrictions`);
-        console.log(`Please ensure the bucket is created manually in Supabase Dashboard or via the RLS setup script`);
+        logger.debug(`Bucket ${bucketName} does not exist, but skipping creation due to RLS restrictions`);
+        logger.debug(`Please ensure the bucket is created manually in Supabase Dashboard or via the RLS setup script`);
         // Don't attempt to create bucket programmatically as it will fail with RLS
         // The bucket should be created via the SQL script or Supabase Dashboard
         return;
       } else {
-        console.log(`Bucket ${bucketName} already exists`);
+        logger.debug(`Bucket ${bucketName} already exists`);
       }
     } catch (error) {
-      console.error(`Error ensuring bucket ${bucketName} exists:`, error);
+      logger.error(`Error ensuring bucket ${bucketName} exists:`, error);
       // If it's an RLS error, assume bucket exists and continue
       if (error instanceof Error && (error.message?.includes('row-level security') || error.message?.includes('permission'))) {
-        console.log(`Assuming bucket ${bucketName} exists due to RLS restrictions`);
+        logger.debug(`Assuming bucket ${bucketName} exists due to RLS restrictions`);
         return;
       }
       // For other errors, don't throw - just log and continue
-      console.log(`Continuing with upload assuming bucket ${bucketName} exists`);
+      logger.debug(`Continuing with upload assuming bucket ${bucketName} exists`);
     }
   },
 
@@ -2193,7 +2000,7 @@ export const storageService = {
       // Ensure the videos bucket exists
       await this.ensureBucketExists('videos', true);
 
-      console.log(`Uploading video: ${fileName} (${contentType})`);
+      logger.debug(`Uploading video: ${fileName} (${contentType})`);
 
       const { data, error } = await supabase.storage
         .from('videos')
@@ -2203,11 +2010,11 @@ export const storageService = {
         });
 
       if (error) {
-        console.error('Error uploading video:', error);
+        logger.error('Error uploading video:', error);
 
         // If it's a bucket not found error, try to create the bucket and retry
         if (error.message?.includes('Bucket not found') || error.message?.includes('bucket does not exist')) {
-          console.log('Bucket not found, creating and retrying...');
+          logger.debug('Bucket not found, creating and retrying...');
           await this.ensureBucketExists('videos', true);
 
           // Retry the upload
@@ -2219,7 +2026,7 @@ export const storageService = {
             });
 
           if (retryError) {
-            console.error('Error on retry upload:', retryError);
+            logger.error('Error on retry upload:', retryError);
             throw retryError;
           }
 
@@ -2229,10 +2036,10 @@ export const storageService = {
         throw error;
       }
 
-      console.log('Video uploaded successfully:', data);
+      logger.debug('Video uploaded successfully:', data);
       return data;
     } catch (error) {
-      console.error('Error in uploadVideo:', error);
+      logger.error('Error in uploadVideo:', error);
       throw error;
     }
   },
@@ -2246,10 +2053,10 @@ export const storageService = {
         .from('videos')
         .getPublicUrl(filePath);
 
-      console.log('Generated video URL:', data.publicUrl);
+      logger.debug('Generated video URL:', data.publicUrl);
       return data.publicUrl;
     } catch (error) {
-      console.error('Error getting video URL:', error);
+      logger.error('Error getting video URL:', error);
       // Return a fallback URL or rethrow based on your needs
       throw error;
     }
@@ -2260,7 +2067,7 @@ export const storageService = {
       // Ensure the bucket exists
       await this.ensureBucketExists(bucket, true);
 
-      console.log(`Uploading image: ${fileName} to bucket: ${bucket}`);
+      logger.debug(`Uploading image: ${fileName} to bucket: ${bucket}`);
 
       const { data, error } = await supabase.storage
         .from(bucket)
@@ -2270,11 +2077,11 @@ export const storageService = {
         });
 
       if (error) {
-        console.error('Error uploading image:', error);
+        logger.error('Error uploading image:', error);
 
         // If it's a bucket not found error, try to create the bucket and retry
         if (error.message?.includes('Bucket not found') || error.message?.includes('bucket does not exist')) {
-          console.log('Bucket not found, creating and retrying...');
+          logger.debug('Bucket not found, creating and retrying...');
           await this.ensureBucketExists(bucket, true);
 
           // Retry the upload
@@ -2286,7 +2093,7 @@ export const storageService = {
             });
 
           if (retryError) {
-            console.error('Error on retry upload:', retryError);
+            logger.error('Error on retry upload:', retryError);
             throw retryError;
           }
 
@@ -2296,10 +2103,10 @@ export const storageService = {
         throw error;
       }
 
-      console.log('Image uploaded successfully:', data);
+      logger.debug('Image uploaded successfully:', data);
       return data;
     } catch (error) {
-      console.error('Error in uploadImage:', error);
+      logger.error('Error in uploadImage:', error);
       throw error;
     }
   },
@@ -2313,10 +2120,10 @@ export const storageService = {
         .from(bucket)
         .getPublicUrl(filePath);
 
-      console.log('Generated image URL:', data.publicUrl);
+      logger.debug('Generated image URL:', data.publicUrl);
       return data.publicUrl;
     } catch (error) {
-      console.error('Error getting image URL:', error);
+      logger.error('Error getting image URL:', error);
       throw error;
     }
   },
@@ -2327,7 +2134,7 @@ export const storageService = {
       .remove([filePath]);
 
     if (error) {
-      console.error('Error deleting file:', error);
+      logger.error('Error deleting file:', error);
       throw error;
     }
   }
@@ -2448,7 +2255,7 @@ export const reservationService = {
       .single();
 
     if (error) {
-      console.error('Error creating reservation:', error);
+      logger.error('Error creating reservation:', error);
 
       if (error.code === '42501' || error.message?.includes('row-level security')) {
         throw new Error('Permission denied: Please ensure you are authenticated and have the correct permissions to create reservations.');
@@ -2472,7 +2279,7 @@ export const reservationService = {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching user reservations:', error);
+      logger.error('Error fetching user reservations:', error);
       throw error;
     }
     return data;
@@ -2491,7 +2298,7 @@ export const reservationService = {
       .order('reservation_date', { ascending: true });
 
     if (error) {
-      console.error('Error fetching business reservations:', error);
+      logger.error('Error fetching business reservations:', error);
       throw error;
     }
     return data;
@@ -2510,7 +2317,7 @@ export const reservationService = {
       .single();
 
     if (error) {
-      console.error('Error fetching reservation:', error);
+      logger.error('Error fetching reservation:', error);
       throw error;
     }
     return data;
@@ -2529,7 +2336,7 @@ export const reservationService = {
       .single();
 
     if (error) {
-      console.error('Error fetching reservation by confirmation code:', error);
+      logger.error('Error fetching reservation by confirmation code:', error);
       throw error;
     }
     return data;
@@ -2553,7 +2360,7 @@ export const reservationService = {
       .single();
 
     if (error) {
-      console.error('Error updating reservation status:', error);
+      logger.error('Error updating reservation status:', error);
       throw error;
     }
     return data;
@@ -2568,7 +2375,7 @@ export const reservationService = {
       .single();
 
     if (error) {
-      console.error('Error updating reservation:', error);
+      logger.error('Error updating reservation:', error);
       throw error;
     }
     return data;
@@ -2585,7 +2392,7 @@ export const reservationService = {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching event reservations:', error);
+      logger.error('Error fetching event reservations:', error);
       throw error;
     }
     return data;
@@ -2602,7 +2409,7 @@ export const reservationService = {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching video reservations:', error);
+      logger.error('Error fetching video reservations:', error);
       throw error;
     }
     return data;
@@ -2623,7 +2430,7 @@ export const reservationService = {
       .order('reservation_date', { ascending: true });
 
     if (error) {
-      console.error('Error fetching reservations by date range:', error);
+      logger.error('Error fetching reservations by date range:', error);
       throw error;
     }
     return data;
@@ -2647,7 +2454,7 @@ export const reservationService = {
       .single();
 
     if (error) {
-      console.error('Error cancelling reservation:', error);
+      logger.error('Error cancelling reservation:', error);
       throw error;
     }
     return data;
@@ -2669,7 +2476,7 @@ export const reservationService = {
       .limit(limit);
 
     if (error) {
-      console.error('Error fetching upcoming reservations:', error);
+      logger.error('Error fetching upcoming reservations:', error);
       throw error;
     }
     return data;
@@ -2701,7 +2508,7 @@ export const productService = {
       .single();
 
     if (error) {
-      console.error('Error creating product:', error);
+      logger.error('Error creating product:', error);
       throw error;
     }
     return data;
@@ -2716,7 +2523,7 @@ export const productService = {
       .order('created_at', { ascending: true });
 
     if (error) {
-      console.error('Error fetching products for event:', error);
+      logger.error('Error fetching products for event:', error);
       throw error;
     }
     return data;
@@ -2734,7 +2541,7 @@ export const productService = {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching business products:', error);
+      logger.error('Error fetching business products:', error);
       throw error;
     }
     return data;
@@ -2756,7 +2563,7 @@ export const productService = {
       .single();
 
     if (error) {
-      console.error('Error updating product:', error);
+      logger.error('Error updating product:', error);
       throw error;
     }
     return data;
@@ -2776,7 +2583,7 @@ export const productService = {
       .eq('business_id', user.id); // Ensure user owns the product
 
     if (error) {
-      console.error('Error deleting product:', error);
+      logger.error('Error deleting product:', error);
       throw error;
     }
   },
@@ -2794,7 +2601,7 @@ export const productService = {
       .single();
 
     if (error) {
-      console.error('Error fetching product:', error);
+      logger.error('Error fetching product:', error);
       throw error;
     }
     return data;
@@ -2837,7 +2644,7 @@ export const commentService = {
     }
 
     if (!commentService.isMissingAvatarGenderColumn(withGender.error)) {
-      console.error('Error fetching comments:', withGender.error);
+      logger.error('Error fetching comments:', withGender.error);
       throw withGender.error;
     }
 
@@ -2864,7 +2671,7 @@ export const commentService = {
       .order('created_at', { ascending: true });
 
     if (legacy.error) {
-      console.error('Error fetching comments (legacy fallback):', legacy.error);
+      logger.error('Error fetching comments (legacy fallback):', legacy.error);
       throw legacy.error;
     }
 
@@ -2905,7 +2712,7 @@ export const commentService = {
     }
 
     if (!commentService.isMissingAvatarGenderColumn(withGender.error)) {
-      console.error('Error adding comment:', withGender.error);
+      logger.error('Error adding comment:', withGender.error);
       throw withGender.error;
     }
 
@@ -2936,7 +2743,7 @@ export const commentService = {
       .single();
 
     if (legacy.error) {
-      console.error('Error adding comment (legacy fallback):', legacy.error);
+      logger.error('Error adding comment (legacy fallback):', legacy.error);
       throw legacy.error;
     }
 
@@ -2976,7 +2783,7 @@ export const ratingService = {
       .single();
 
     if (error) {
-      console.error('Error upserting rating:', error);
+      logger.error('Error upserting rating:', error);
       throw error;
     }
     return data;
@@ -2992,7 +2799,7 @@ export const ratingService = {
       .maybeSingle();
 
     if (error) {
-      console.error('Error fetching user rating:', error);
+      logger.error('Error fetching user rating:', error);
       return null;
     }
     return data?.rating ?? null;
@@ -3016,7 +2823,7 @@ export const interactionService = {
       .insert({ video_id: videoId, user_id: userId });
 
     if (error && error.code !== '23505') {
-      console.error('Error liking video:', error);
+      logger.error('Error liking video:', error);
       throw error;
     }
   },
@@ -3029,7 +2836,7 @@ export const interactionService = {
       .eq('user_id', userId);
 
     if (error) {
-      console.error('Error unliking video:', error);
+      logger.error('Error unliking video:', error);
       throw error;
     }
   },
@@ -3041,7 +2848,7 @@ export const interactionService = {
       .eq('user_id', userId);
 
     if (error) {
-      console.warn('Unable to fetch user likes:', error);
+      logger.warn('Unable to fetch user likes:', error);
       return [];
     }
 
@@ -3058,7 +2865,7 @@ export const interactionService = {
       });
 
     if (error) {
-      console.error('Error tracking share:', error);
+      logger.error('Error tracking share:', error);
       throw error;
     }
   },
@@ -3096,18 +2903,18 @@ export const hiddenVideosService = {
     if (error) {
       if (isMissingHiddenVideosTableError(error)) {
         hiddenVideosTableUnavailable = true;
-        console.warn('[Hidden Videos] user_hidden_videos table missing; hide/unhide preference disabled.');
+        logger.warn('[Hidden Videos] user_hidden_videos table missing; hide/unhide preference disabled.');
         return;
       }
       // If duplicate key error, it's already hidden - that's fine
       if (error.code === '23505') {
-        console.log('[Hidden Videos] Video already hidden for user:', videoId);
+        logger.debug('[Hidden Videos] Video already hidden for user:', videoId);
         return;
       }
-      console.error('Error hiding video:', error);
+      logger.error('Error hiding video:', error);
       throw error;
     }
-    console.log('[Hidden Videos] Video hidden for user:', videoId);
+    logger.debug('[Hidden Videos] Video hidden for user:', videoId);
   },
 
   /**
@@ -3132,13 +2939,13 @@ export const hiddenVideosService = {
     if (error) {
       if (isMissingHiddenVideosTableError(error)) {
         hiddenVideosTableUnavailable = true;
-        console.warn('[Hidden Videos] user_hidden_videos table missing; hide/unhide preference disabled.');
+        logger.warn('[Hidden Videos] user_hidden_videos table missing; hide/unhide preference disabled.');
         return;
       }
-      console.error('Error unhiding video:', error);
+      logger.error('Error unhiding video:', error);
       throw error;
     }
-    console.log('[Hidden Videos] Video unhidden for user:', videoId);
+    logger.debug('[Hidden Videos] Video unhidden for user:', videoId);
   },
 
   /**
@@ -3162,10 +2969,10 @@ export const hiddenVideosService = {
     if (error) {
       if (isMissingHiddenVideosTableError(error)) {
         hiddenVideosTableUnavailable = true;
-        console.warn('[Hidden Videos] user_hidden_videos table missing; returning no hidden videos.');
+        logger.warn('[Hidden Videos] user_hidden_videos table missing; returning no hidden videos.');
         return [];
       }
-      console.error('Error fetching hidden videos:', error);
+      logger.error('Error fetching hidden videos:', error);
       return [];
     }
 
@@ -3201,7 +3008,7 @@ export const hiddenVideosService = {
       if (error.code === 'PGRST116') {
         return false;
       }
-      console.error('Error checking if video is hidden:', error);
+      logger.error('Error checking if video is hidden:', error);
       return false;
     }
 

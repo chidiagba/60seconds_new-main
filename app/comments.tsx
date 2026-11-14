@@ -21,7 +21,7 @@ import CommentItem from "@/components/CommentItem";
 import { User } from "@/types";
 
 const FALLBACK_AVATAR =
-  "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80";
+  '';
 
 export default function CommentsScreen() {
   const { videoId } = useLocalSearchParams<{ videoId: string }>();
@@ -56,10 +56,7 @@ export default function CommentsScreen() {
     }
 
     const emailPrefix = user.email?.split("@")[0] || "user";
-    const resolvedAvatar =
-      profile?.avatar_url ||
-      ((profile as any)?.avatar_gender === 'male' ? '👨' : (profile as any)?.avatar_gender === 'female' ? '👩' : '') ||
-      FALLBACK_AVATAR;
+    const resolvedAvatar = profile?.avatar_url || '';
 
     return {
       id: user.id,
@@ -280,7 +277,7 @@ const styles = StyleSheet.create({
 // import CommentItem from "@/components/CommentItem";
 
 // const FALLBACK_AVATAR =
-//   "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80";
+//   '';
 
 // export default function CommentsScreen() {
 //   const { videoId } = useLocalSearchParams<{ videoId: string }>();

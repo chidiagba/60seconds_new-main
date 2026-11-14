@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { ensureStripeInitialized } from "@/lib/stripe-initialization";
 import React from "react";
 import {
@@ -131,7 +132,7 @@ const ProductsList = ({
       }
     } catch (error) {
       // Some development binaries (for example Expo Go) do not include Stripe native modules.
-      console.warn("Stripe native module unavailable in this build:", error);
+      logger.warn("Stripe native module unavailable in this build:", error);
     }
 
     return stripeApiRef.current;
@@ -261,7 +262,7 @@ const ProductsList = ({
         setLiveProducts((productRows || []).map(mapRowToProduct));
 
       } catch (error) {
-        console.warn("ProductsList: failed to hydrate live products:", error);
+        logger.warn("ProductsList: failed to hydrate live products:", error);
       }
   }, [videoId, mapRowToProduct]);
 
@@ -417,9 +418,9 @@ const ProductsList = ({
       const envKey = process.env?.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
       const expoExtraKey = (Constants?.expoConfig?.extra && (Constants.expoConfig.extra as any).EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY) ||
         (Constants?.manifest?.extra && (Constants.manifest.extra as any).EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY);
-      console.debug("Stripe publishable keys:", { envKey, expoExtraKey });
+      logger.debug("Stripe publishable keys:", { envKey, expoExtraKey });
     } catch (e) {
-      console.debug("Stripe key check error:", e);
+      logger.debug("Stripe key check error:", e);
     }
 
     const { initPaymentSheet, presentPaymentSheet } = getStripeApi();
@@ -452,7 +453,7 @@ const ProductsList = ({
         (productForPayment as any).connectedAccountId ||
         null;
 
-      console.debug("Stripe: creating checkout on backend", {
+      logger.debug("Stripe: creating checkout on backend", {
         productId: productForPayment.id,
         connectedAccountId,
         amount_cents: Math.round(total * 100),
@@ -469,7 +470,7 @@ const ProductsList = ({
         connectedAccountId,
       });
 
-      console.debug("Stripe: backend response", data);
+      logger.debug("Stripe: backend response", data);
       const { paymentIntentClientSecret, customerId, ephemeralKeySecret } = data;
       if (!paymentIntentClientSecret) {
         throw new Error("Invalid response from payment server");
@@ -494,15 +495,15 @@ const ProductsList = ({
         // Apple Pay support is not configured in the app; Stripe Connect handles
         // wallet flows on the backend. We purposely omit any applePay option here
         // so that PassKit does not need to be linked.
-        console.debug("Apple Pay disabled in-app; Stripe Connect manages wallets.");
+        logger.debug("Apple Pay disabled in-app; Stripe Connect manages wallets.");
       } else {
         if (googlePaySupported) initOptions.googlePay = { merchantCountryCode: "US", testEnv: false };
       }
 
-      console.debug("Stripe: initPaymentSheet start", { product: productForPayment.id });
+      logger.debug("Stripe: initPaymentSheet start", { product: productForPayment.id });
       const { error: initError } = await initPaymentSheet(initOptions);
       if (initError) throw new Error(initError.message || "Failed to initialize payment sheet");
-      console.debug("Stripe: initPaymentSheet complete");
+      logger.debug("Stripe: initPaymentSheet complete");
 
       // Extra small delay and ensure interactions finished before presenting
       await new Promise((r) => setTimeout(r, 300));
@@ -511,11 +512,11 @@ const ProductsList = ({
       await new Promise((resolve) => {
         InteractionManager.runAfterInteractions(async () => {
           try {
-            console.debug("Stripe: presenting payment sheet");
+            logger.debug("Stripe: presenting payment sheet");
             const res = await presentPaymentSheet();
             resolve(res);
           } catch (presentErr) {
-            console.error("Stripe presentPaymentSheet threw:", presentErr);
+            logger.error("Stripe presentPaymentSheet threw:", presentErr);
             resolve({ error: { message: (presentErr as any)?.message || String(presentErr) } });
           }
         });
@@ -599,7 +600,7 @@ const ProductsList = ({
           });
 
           if (!settlement.success) {
-            console.warn('Stripe settlement failed:', settlement.error);
+            logger.warn('Stripe settlement failed:', settlement.error);
             await supabase
               .from('orders')
               .update({
@@ -666,13 +667,13 @@ const ProductsList = ({
           });
 
           if (!settlement.success) {
-            console.warn('Stripe settlement failed (no order id path):', settlement.error);
+            logger.warn('Stripe settlement failed (no order id path):', settlement.error);
             throw new Error(settlement.error || 'Stripe settlement failed.');
           }
         }
       } catch (recordErr) {
         const message = recordErr instanceof Error ? recordErr.message : 'Payment could not be finalized.';
-        console.warn('Payment finalization failed:', recordErr);
+        logger.warn('Payment finalization failed:', recordErr);
         Alert.alert('Payment Not Successful', message);
         return;
       }
@@ -689,7 +690,7 @@ const ProductsList = ({
       onClose();
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : "Payment failed. Please try again.";
-      console.error("Stripe checkout error:", errMsg);
+      logger.error("Stripe checkout error:", errMsg);
       Alert.alert("Payment Failed", errMsg);
     } finally {
       setIsPaying(false);
@@ -821,7 +822,7 @@ const ProductsList = ({
       setTwintOrderId(null);
       onClose();
     } catch (error) {
-      console.error('Twint checkout error:', error);
+      logger.error('Twint checkout error:', error);
       Alert.alert('Payment Failed', error instanceof Error ? error.message : 'Twint payment failed.');
     } finally {
       setIsPaying(false);
@@ -855,7 +856,7 @@ const ProductsList = ({
         );
       }
     } catch (error) {
-      console.error('Twint launch error:', error);
+      logger.error('Twint launch error:', error);
       Alert.alert('Twint Error', 'Could not launch Twint app. Opening Twint Web Checkout instead.');
       setShowTwintPaymentModal(false);
       setShowTwintWebViewModal(true);
@@ -920,7 +921,7 @@ const ProductsList = ({
       setTwintCheckoutUrl(initialized.data.redirectUrl);
       setTwintOrderId(order.id);
     } catch (error) {
-      console.error("Twint checkout initialization failed:", error);
+      logger.error("Twint checkout initialization failed:", error);
       Alert.alert(
         "Twint Initialization Failed",
         error instanceof Error ? error.message : "Could not initialize Twint checkout."
@@ -961,11 +962,10 @@ const ProductsList = ({
     );
   };
 
-  const handleApplyVoucher = (amount: number, voucher?: { code: string }) => {
+  const handleApplyVoucher = (amount: number, voucher?: any, quote?: any) => {
+    if(!selectedProduct||!voucher||!quote)throw new Error('Validate the selected product voucher first');
+    useVoucherStore.getState().applyValidatedVoucher(voucher,quote,[{productId:selectedProduct.id,quantity:1}]);
     setDiscountAmount(amount);
-    if (voucher?.code) {
-      applyVoucher(voucher.code);
-    }
   };
 
   const handleClearVoucher = () => {
@@ -1130,7 +1130,7 @@ const ProductsList = ({
                   <Text style={styles.feeText}>
                     {formatAmount(item.price, itemCurrency)} + {formatAmount(fee, itemCurrency)} platform fee
                   </Text>
-                  <TouchableOpacity onPress={() => setShowPaymentOptions(true)}>
+                  <TouchableOpacity onPress={() => Alert.alert('Service markup', 'A 4% service markup is included in the checkout price before any voucher discount.')} >
                     <Info size={12} color={Colors.dark.subtext} />
                   </TouchableOpacity>
                 </View>
@@ -1152,13 +1152,9 @@ const ProductsList = ({
               <TouchableOpacity
                 style={[styles.actionButton, styles.buyButton]}
                 onPress={() => {
-                  if (selectedProduct?.id && selectedProduct.id !== item.id) {
-                    setDiscountAmount(0);
-                    clearActiveVoucher();
-                  }
-                  setSelectedProduct(item);
-                  setShowMoreOptions(false);
-                  setShowPaymentOptions(true);
+                  addToCart(item,1);
+                  onClose();
+                  router.push('/cart');
                 }}
                 disabled={isPaying}
               >
@@ -1294,7 +1290,7 @@ const ProductsList = ({
 
       purchaseRecorded = true;
     } catch (recordErr) {
-      console.warn('Paystack payment succeeded but recording failed:', { reference, error: recordErr });
+      logger.warn('Paystack payment succeeded but recording failed:', { reference, error: recordErr });
     } finally {
       setIsPaying(false);
     }
@@ -1791,9 +1787,9 @@ export default ProductsList;
 //       const envKey = process.env?.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 //       const expoExtraKey = (Constants?.expoConfig?.extra && (Constants.expoConfig.extra as any).EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY) ||
 //         (Constants?.manifest?.extra && (Constants.manifest.extra as any).EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY);
-//       console.debug("Stripe publishable keys:", { envKey, expoExtraKey });
+//       logger.debug("Stripe publishable keys:", { envKey, expoExtraKey });
 //     } catch (e) {
-//       console.debug("Stripe key check error:", e);
+//       logger.debug("Stripe key check error:", e);
 //     }
 
 //     if (!initPaymentSheet || !presentPaymentSheet) {
@@ -1817,7 +1813,7 @@ export default ProductsList;
 //         (productForPayment as any).connectedAccountId ||
 //         null;
 
-//       console.debug("Stripe: creating checkout on backend", {
+//       logger.debug("Stripe: creating checkout on backend", {
 //         productId: productForPayment.id,
 //         connectedAccountId,
 //         amount_cents: Math.round(total * 100),
@@ -1839,7 +1835,7 @@ export default ProductsList;
 //       if (error) throw new Error(error.message || "Failed to create payment");
 //       if (data?.error) throw new Error(data.error);
 
-//       console.debug("Stripe: backend response", data);
+//       logger.debug("Stripe: backend response", data);
 //       const { paymentIntentClientSecret, customerId, ephemeralKeySecret } = data;
 //       if (!paymentIntentClientSecret) {
 //         throw new Error("Invalid response from payment server");
@@ -1866,21 +1862,21 @@ export default ProductsList;
 //         if (googlePaySupported) initOptions.googlePay = { merchantCountryCode: "US", testEnv: false };
 //       }
 
-//       console.debug("Stripe: initPaymentSheet start", { product: productForPayment.id });
+//       logger.debug("Stripe: initPaymentSheet start", { product: productForPayment.id });
 //       const { error: initError } = await initPaymentSheet(initOptions);
 //       if (initError) throw new Error(initError.message || "Failed to initialize payment sheet");
-//       console.debug("Stripe: initPaymentSheet complete");
+//       logger.debug("Stripe: initPaymentSheet complete");
 
 //       // Extra small delay and ensure interactions finished before presenting
 //       await new Promise((r) => setTimeout(r, 300));
 //       await new Promise((resolve) => {
 //         InteractionManager.runAfterInteractions(async () => {
 //           try {
-//             console.debug("Stripe: presenting payment sheet");
+//             logger.debug("Stripe: presenting payment sheet");
 //             const res = await presentPaymentSheet();
 //             resolve(res);
 //           } catch (presentErr) {
-//             console.error("Stripe presentPaymentSheet threw:", presentErr);
+//             logger.error("Stripe presentPaymentSheet threw:", presentErr);
 //             resolve({ error: { message: (presentErr as any)?.message || String(presentErr) } });
 //           }
 //         });
@@ -1905,7 +1901,7 @@ export default ProductsList;
 //           stripePaymentIntentClientSecret: paymentIntentClientSecret,
 //         });
 //       } catch (recordErr) {
-//         console.warn("Payment succeeded but recording failed:", recordErr);
+//         logger.warn("Payment succeeded but recording failed:", recordErr);
 //       }
 
 //       Alert.alert("Purchase Successful", "You have successfully made the payment.");
@@ -1914,7 +1910,7 @@ export default ProductsList;
 //       onClose();
 //     } catch (e) {
 //       const errMsg = e instanceof Error ? e.message : "Payment failed. Please try again.";
-//       console.error("Stripe checkout error:", errMsg);
+//       logger.error("Stripe checkout error:", errMsg);
 //       Alert.alert("Payment Failed", errMsg);
 //     } finally {
 //       setIsPaying(false);
@@ -2426,7 +2422,7 @@ export default ProductsList;
 //       Alert.alert("Purchase Successful", "You have successfully made the payment.");
 //       onClose();
 //     } catch (e) {
-//       console.error("Stripe checkout error:", e?.message || e);
+//       logger.error("Stripe checkout error:", e?.message || e);
 //       Alert.alert("Payment Failed", e?.message || "Payment failed. Please try again.");
 //     } finally {
 //       setIsPaying(false);
@@ -2867,7 +2863,7 @@ export default ProductsList;
 //       Alert.alert("Purchase Successful", "You have successfully made the payment.");
 //       onClose();
 //     } catch (e) {
-//       console.error("Stripe checkout error:", e?.message || e);
+//       logger.error("Stripe checkout error:", e?.message || e);
 //       Alert.alert("Payment Failed", e?.message || "Payment failed. Please try again.");
 //     } finally {
 //       setIsPaying(false);
@@ -3306,7 +3302,7 @@ export default ProductsList;
 //       Alert.alert("Purchase Successful", "You have successfully made the payment.");
 //       onClose();
 //     } catch (e) {
-//       console.error("Stripe checkout error:", e?.message || e);
+//       logger.error("Stripe checkout error:", e?.message || e);
 //       Alert.alert("Payment Failed", e?.message || "Payment failed. Please try again.");
 //     } finally {
 //       setIsPaying(false);
@@ -3769,7 +3765,7 @@ export default ProductsList;
 //       Alert.alert("Purchase Successful", "You have successfully made the payment.");
 //       onClose();
 //     } catch (e: any) {
-//       console.error("Stripe checkout error:", e?.message || e);
+//       logger.error("Stripe checkout error:", e?.message || e);
 //       Alert.alert("Payment Failed", e?.message || "Payment failed. Please try again.");
 //     } finally {
 //       setIsPaying(false);
@@ -4239,7 +4235,7 @@ export default ProductsList;
 //       Alert.alert("Purchase Successful", "You have successfully made the payment.");
 //       onClose();
 //     } catch (e: any) {
-//       console.error("Stripe checkout error:", e?.message || e);
+//       logger.error("Stripe checkout error:", e?.message || e);
 //       Alert.alert("Payment Failed", e?.message || "Payment failed. Please try again.");
 //     } finally {
 //       setIsPaying(false);
@@ -4264,9 +4260,9 @@ export default ProductsList;
 //         throw new Error(errorMsg || "Failed to transfer funds");
 //       }
 
-//       console.log("Transfer successful!");
+//       logger.debug("Transfer successful!");
 //     } catch (error) {
-//       console.error("Error transferring funds:", error);
+//       logger.error("Error transferring funds:", error);
 //     }
 //   };
 
@@ -4636,7 +4632,7 @@ export default ProductsList;
 //     const destinationAccount = connectedAccountId || null;  // No destination if missing
     
 //     // Log the data to confirm what's being passed
-//     console.log("Payment Data:", { connectedAccountId, destinationAccount });
+//     logger.debug("Payment Data:", { connectedAccountId, destinationAccount });
   
 //     try {
 //       setIsPaying(true);
@@ -4718,7 +4714,7 @@ export default ProductsList;
 //       Alert.alert("Purchase Successful", `You have successfully purchased ${product.name}.`);
 //       onClose();
 //     } catch (e: any) {
-//       console.error("Stripe checkout error:", e?.message || e);
+//       logger.error("Stripe checkout error:", e?.message || e);
 //       Alert.alert("Payment Failed", e?.message || "Payment failed. Please try again.");
 //     } finally {
 //       setIsPaying(false);
@@ -4736,7 +4732,7 @@ export default ProductsList;
 //   //   const destinationAccount = connectedAccountId || "acct_1SnDvXJTbyjuWarp";  // Use platform account if missing
     
 //   //   // Log the data to confirm what's being passed
-//   //   console.log("Payment Data:", { connectedAccountId, destinationAccount });
+//   //   logger.debug("Payment Data:", { connectedAccountId, destinationAccount });
   
 //   //   try {
 //   //     setIsPaying(true);
@@ -4818,7 +4814,7 @@ export default ProductsList;
 //   //     Alert.alert("Purchase Successful", `You have successfully purchased ${product.name}.`);
 //   //     onClose();
 //   //   } catch (e: any) {
-//   //     console.error("Stripe checkout error:", e?.message || e);
+//   //     logger.error("Stripe checkout error:", e?.message || e);
 //   //     Alert.alert("Payment Failed", e?.message || "Payment failed. Please try again.");
 //   //   } finally {
 //   //     setIsPaying(false);
@@ -4846,9 +4842,9 @@ export default ProductsList;
 //         throw new Error(errorMsg || "Failed to transfer funds");
 //       }
   
-//       console.log("Transfer successful!");
+//       logger.debug("Transfer successful!");
 //     } catch (error) {
-//       console.error("Error transferring funds:", error);
+//       logger.error("Error transferring funds:", error);
 //     }
 //   };
   
@@ -4863,7 +4859,7 @@ export default ProductsList;
 //   //   const destinationAccount = connectedAccountId || "acct_1SnDvXJTbyjuWarp";  // Replace with platform account if missing
   
 //   //   // Log the data to confirm what's being passed
-//   //   console.log("Payment Data:", { connectedAccountId, destinationAccount });
+//   //   logger.debug("Payment Data:", { connectedAccountId, destinationAccount });
   
 //   //   // Send request to backend
 //   //   const res = await fetch(
@@ -5024,7 +5020,7 @@ export default ProductsList;
 //   //     Alert.alert("Purchase Successful", `You have successfully purchased ${product.name}.`);
 //   //     onClose();
 //   //   } catch (e: any) {
-//   //     console.error("Stripe checkout error:", e?.message || e);
+//   //     logger.error("Stripe checkout error:", e?.message || e);
 //   //     Alert.alert("Payment Failed", e?.message || "Payment failed. Please try again.");
 //   //   } finally {
 //   //     setIsPaying(false);
@@ -5419,7 +5415,7 @@ export default ProductsList;
 //       Alert.alert("Purchase Successful", `You have successfully purchased ${product.name}.`);
 //       onClose();
 //     } catch (e: any) {
-//       console.error("Stripe checkout error:", e?.message || e);
+//       logger.error("Stripe checkout error:", e?.message || e);
 //       Alert.alert("Payment Failed", e?.message || "Payment failed. Please try again.");
 //     } finally {
 //       setIsPaying(false);
@@ -5825,7 +5821,7 @@ export default ProductsList;
 //       Alert.alert("Purchase Successful", `You have successfully purchased ${product.name}.`);
 //       onClose();
 //     } catch (e: any) {
-//       console.error("Stripe checkout error:", e?.message || e);
+//       logger.error("Stripe checkout error:", e?.message || e);
 //       Alert.alert("Payment Failed", e?.message || "Payment failed. Please try again.");
 //     } finally {
 //       setIsPaying(false);
@@ -6227,7 +6223,7 @@ export default ProductsList;
 //       Alert.alert("Purchase Successful", `You have successfully purchased ${product.name}.`);
 //       onClose();
 //     } catch (e: any) {
-//       console.error("Stripe checkout error:", e?.message || e);
+//       logger.error("Stripe checkout error:", e?.message || e);
 //       Alert.alert("Payment Failed", e?.message || "Payment failed. Please try again.");
 //     } finally {
 //       setIsPaying(false);
@@ -6630,7 +6626,7 @@ export default ProductsList;
 //       Alert.alert("Purchase Successful", `You have successfully purchased ${product.name}.`);
 //       onClose();
 //     } catch (e: any) {
-//       console.error("Stripe checkout error:", e?.message || e);
+//       logger.error("Stripe checkout error:", e?.message || e);
 //       Alert.alert("Payment Failed", e?.message || "Payment failed. Please try again.");
 //     } finally {
 //       setIsPaying(false);
@@ -7064,7 +7060,7 @@ export default ProductsList;
 //         [{ text: "OK", onPress: onClose }]
 //       );
 //     } catch (e: any) {
-//       console.error("Stripe checkout error:", e?.message || e);
+//       logger.error("Stripe checkout error:", e?.message || e);
 //       Alert.alert("Payment Failed", e?.message || "Payment failed. Please try again.");
 //     } finally {
 //       setIsPaying(false);
@@ -7556,7 +7552,7 @@ export default ProductsList;
 //         [{ text: "OK", onPress: onClose }]
 //       );
 //     } catch (e: any) {
-//       console.error("Stripe checkout error:", e?.message || e);
+//       logger.error("Stripe checkout error:", e?.message || e);
 //       Alert.alert(
 //         "Payment Failed",
 //         e?.message ||
@@ -8159,7 +8155,7 @@ export default ProductsList;
 //         [{ text: "OK", onPress: onClose }]
 //       );
 //     } catch (e: any) {
-//       console.error("Stripe checkout error:", e?.message || e);
+//       logger.error("Stripe checkout error:", e?.message || e);
 //       Alert.alert(
 //         "Payment Failed",
 //         e?.message ||
@@ -8705,7 +8701,7 @@ export default ProductsList;
 //                 }, 1500);
 //               })
 //               .catch((err) => {
-//                 console.error("Twint open error:", err);
+//                 logger.error("Twint open error:", err);
 //                 Alert.alert(
 //                   "Error",
 //                   "Could not open Twint app. Please try another payment method."
@@ -9327,7 +9323,7 @@ export default ProductsList;
 //                 }, 2000);
 //               })
 //               .catch((err) => {
-//                 console.error("Twint open error:", err);
+//                 logger.error("Twint open error:", err);
 //                 Alert.alert(
 //                   "Error",
 //                   "Could not open Twint app. Please try another payment method."
@@ -9926,7 +9922,7 @@ export default ProductsList;
 //                 }
 //               })
 //               .catch((err) => {
-//                 console.error("An error occurred", err);
+//                 logger.error("An error occurred", err);
 //                 Alert.alert(
 //                   "Error",
 //                   "Could not open Twint app. Please try another payment method."

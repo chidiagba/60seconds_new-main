@@ -1,3 +1,5 @@
+import { requestForegroundLocationPermission } from '@/utils/location';
+import { logger } from '@/lib/logger';
 
 
 
@@ -81,9 +83,9 @@ export default function HomeScreen() {
     const activateKeepAwake = async () => {
       try {
         await activateKeepAwakeAsync(keepAwakeTag);
-        console.log('🎬 HomeScreen: Keep awake activated');
+        logger.debug('🎬 HomeScreen: Keep awake activated');
       } catch (error) {
-        console.error('🎬 HomeScreen: Error activating keep awake:', error);
+        logger.error('🎬 HomeScreen: Error activating keep awake:', error);
       }
     };
 
@@ -91,7 +93,7 @@ export default function HomeScreen() {
 
     return () => {
       deactivateKeepAwake(keepAwakeTag);
-      console.log('🎬 HomeScreen: Keep awake deactivated');
+      logger.debug('🎬 HomeScreen: Keep awake deactivated');
     };
   }, []);
 
@@ -133,9 +135,9 @@ export default function HomeScreen() {
         }
 
         await loadCachedVideos();
-        console.log('🎬 HomeScreen: Initial video fetch (handled by focus effect)');
+        logger.debug('🎬 HomeScreen: Initial video fetch (handled by focus effect)');
       } catch (error) {
-        console.error('🎬 HomeScreen: Error fetching videos on mount:', error);
+        logger.error('🎬 HomeScreen: Error fetching videos on mount:', error);
       }
     })();
     return () => { isMounted = false; };
@@ -144,7 +146,7 @@ export default function HomeScreen() {
   useFocusEffect(
     React.useCallback(() => {
       refreshLocationPermission().catch((error) => {
-        console.warn('Error checking location permission on focus:', error);
+        logger.warn('Error checking location permission on focus:', error);
       });
     }, [refreshLocationPermission])
   );
@@ -154,7 +156,7 @@ export default function HomeScreen() {
       if (nextState === 'active') {
         if (!selectedVideoIdFromParams) void fetchVideos();
         refreshLocationPermission().catch((error) => {
-          console.warn('Error checking location permission on app active:', error);
+          logger.warn('Error checking location permission on app active:', error);
         });
       }
     });
@@ -167,22 +169,22 @@ export default function HomeScreen() {
   // Refresh videos when screen comes into focus (e.g., after creating an event)
   useFocusEffect(
     React.useCallback(() => {
-      console.log('🎬 HomeScreen: Screen focused, refreshing videos');
+      logger.debug('🎬 HomeScreen: Screen focused, refreshing videos');
       
       const refreshVideos = async () => {
         try {
           if (userLocation && Platform.OS !== 'web' && !showAllVideos) {
             // If we have location and user hasn't chosen to show all videos, filter by location
-            console.log('🎬 HomeScreen: Filtering by location');
+            logger.debug('🎬 HomeScreen: Filtering by location');
             await filterVideosByLocation(userLocation.coords.latitude, userLocation.coords.longitude, 30);
           } else {
             // Otherwise, fetch all videos with force refresh
-            console.log('🎬 HomeScreen: Fetching all videos');
+            logger.debug('🎬 HomeScreen: Fetching all videos');
             await fetchVideos();
           }
-          console.log('🎬 HomeScreen: Videos refreshed, count:', videos.length);
+          logger.debug('🎬 HomeScreen: Videos refreshed, count:', videos.length);
         } catch (error) {
-          console.error('🎬 HomeScreen: Error refreshing videos on focus:', error);
+          logger.error('🎬 HomeScreen: Error refreshing videos on focus:', error);
         }
       };
 
@@ -231,7 +233,7 @@ export default function HomeScreen() {
         }
       } catch (error) {
         if (!cancelled) {
-          console.error('Error preloading selected profile video:', error);
+          logger.error('Error preloading selected profile video:', error);
           setIsPreloadingVideo(false);
         }
       }
@@ -266,7 +268,7 @@ export default function HomeScreen() {
 
   const handleEndReached = useCallback(() => {
     fetchMoreVideos().catch((error) => {
-      console.warn('fetchMoreVideos error:', error);
+      logger.warn('fetchMoreVideos error:', error);
     });
   }, [fetchMoreVideos]);
 
@@ -275,22 +277,22 @@ export default function HomeScreen() {
   };
 
   const handleRefresh = async () => {
-    console.log('🔄 HomeScreen: Manual refresh triggered');
+    logger.debug('🔄 HomeScreen: Manual refresh triggered');
     setIsRefreshing(true);
     try {
       if (userLocation && Platform.OS !== 'web' && !showAllVideos) {
-        console.log('🔄 HomeScreen: Refreshing with location filter');
+        logger.debug('🔄 HomeScreen: Refreshing with location filter');
         await filterVideosByLocation(userLocation.coords.latitude, userLocation.coords.longitude, 30);
       } else {
-        console.log('🔄 HomeScreen: Refreshing all videos');
+        logger.debug('🔄 HomeScreen: Refreshing all videos');
         await fetchVideos(); // Force refresh to get latest data
       }
-      console.log('🔄 HomeScreen: Refresh complete, videos count:', videos.length);
+      logger.debug('🔄 HomeScreen: Refresh complete, videos count:', videos.length);
       if (videos.length === 0) {
-        console.warn('🔄 HomeScreen: No videos found after refresh');
+        logger.warn('🔄 HomeScreen: No videos found after refresh');
       }
     } catch (error) {
-      console.error('🔄 HomeScreen: Error refreshing videos:', error);
+      logger.error('🔄 HomeScreen: Error refreshing videos:', error);
       Alert.alert('Error', 'Failed to refresh videos. Please try again.');
     } finally {
       setIsRefreshing(false);
@@ -320,7 +322,7 @@ export default function HomeScreen() {
         return;
       }
       
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await requestForegroundLocationPermission();
       if (status === 'granted') {
         setLocationPermission(true);
         setHasCheckedLocationPermission(true);
@@ -338,7 +340,7 @@ export default function HomeScreen() {
         await fetchVideos();
       }
     } catch (error) {
-      console.error('Error requesting location:', error);
+      logger.error('Error requesting location:', error);
       setHasCheckedLocationPermission(true);
       setLocationError("Failed to get your location. Please try again.");
       await fetchVideos();
@@ -352,7 +354,7 @@ export default function HomeScreen() {
       const isHidden = isVideoHidden(video.id);
       const isBlocked = isUserBlocked(video.userId);
       
-      if (!hasPlayableUrl) console.warn(`📹 Home: Video ${video.id} has no playable URL`, video.url);
+      if (!hasPlayableUrl) logger.warn(`📹 Home: Video ${video.id} has no playable URL`, video.url);
       
       return hasPlayableUrl && !isUnavailable && !isHidden && !isBlocked;
     });
@@ -368,7 +370,7 @@ export default function HomeScreen() {
     }
 
     if (String(videosForFeed[0]?.id) === String(pendingSelectedVideoId)) {
-      console.log(`📹 Home: Pending video ${pendingSelectedVideoId} is now at index 0, scrolling...`);
+      logger.debug(`📹 Home: Pending video ${pendingSelectedVideoId} is now at index 0, scrolling...`);
       setVisibleVideoIndex(0);
       setCurrentVideoIndex(0);
       setManuallyPausedIndex(null);
@@ -487,6 +489,7 @@ export default function HomeScreen() {
         <VideoPlayer
           preload={isHomeFocused && Math.abs(index - visibleVideoIndex) <= 1}
           uri={item.url}
+          creatorUsername={item.user?.username}
           paused={index !== visibleVideoIndex || !isHomeFocused || manuallyPausedIndex === index}
           autoplay={true}
           autoplayWithSound={true}

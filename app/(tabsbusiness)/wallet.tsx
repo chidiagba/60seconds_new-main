@@ -326,9 +326,6 @@ export default function WalletScreen() {
     router.push("/trace-order-support");
   };
 
-  const handleTestPayment = () => {
-    router.push("/test-payment");
-  };
 
   const handleTransactionPress = (transaction: any) => {
     router.push({
@@ -495,12 +492,7 @@ export default function WalletScreen() {
           <Text style={styles.actionText}>Verify purchase</Text>
         </TouchableOpacity>
 
-        {/* <TouchableOpacity style={styles.actionButton} onPress={handleTestPayment}>
-          <View style={styles.actionIconContainer}>
-            <CreditCard size={20} color={Colors.dark.primary} />
-          </View>
-          <Text style={styles.actionText}>Test Payment</Text>
-        </TouchableOpacity> */}
+
       </View>
 
       <View style={{ flexDirection: "row", flexWrap: "wrap", marginBottom: 24 }}>
@@ -1722,7 +1714,7 @@ const styles = StyleSheet.create({
 //           </View>
 //           <Text style={styles.actionText}>Cards</Text>
 //         </TouchableOpacity>
-        
+
 //         {user?.isBusinessAccount && (
 //           <TouchableOpacity style={styles.actionButton} onPress={handleManageBankAccounts}>
 //             <View style={styles.actionIconContainer}>

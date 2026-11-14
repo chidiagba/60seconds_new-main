@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 
 /////////////////////////////        31 jan    2026   /////////////////////
 
@@ -51,7 +52,7 @@ const persistVideoFeedCache = async (videos: Video[]) => {
       JSON.stringify(videos.slice(0, VIDEO_FEED_CACHE_LIMIT))
     );
   } catch (error) {
-    console.warn('Failed to persist video feed cache:', error);
+    logger.warn('Failed to persist video feed cache:', error);
   }
 };
 
@@ -90,7 +91,7 @@ const readVideoFeedCache = async (): Promise<Video[]> => {
     const parsedValue = JSON.parse(rawValue);
     return Array.isArray(parsedValue) ? parsedValue : [];
   } catch (error) {
-    console.warn('Failed to read video feed cache:', error);
+    logger.warn('Failed to read video feed cache:', error);
     return [];
   }
 };
@@ -222,17 +223,17 @@ export const useVideoStore = create<VideoState>((set, get) => ({
 
     if (fetchMoreVideosInFlight) await fetchMoreVideosInFlight;
     if (fetchVideosInFlight) return fetchVideosInFlight;
-    console.log('📹 VideoStore: Fetching videos from database...');
+    logger.debug('📹 VideoStore: Fetching videos from database...');
     set({ isLoading: true, error: null });
     fetchVideosInFlight = (async () => {
       try {
       const seed = get().feedMode === 'random' ? `${Date.now()}-${Math.random()}` : undefined;
       set({ feedSeed: seed || '' });
       const videosData = await videoService.getVideos(FEED_PAGE_SIZE, 0, seed);
-      console.log('📹 VideoStore: Fetched', videosData.length, 'videos from database');
+      logger.debug('📹 VideoStore: Fetched', videosData.length, 'videos from database');
       
       if (videosData.length === 0) {
-        console.warn('📹 VideoStore: No videos found in database');
+        logger.warn('📹 VideoStore: No videos found in database');
         set({ videos: [], isLoading: false, _feedOffset: 0, hasMoreVideos: false });
         return;
       }
@@ -247,7 +248,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
             .select('id, video_id, currency, start_date, end_date, status')
             .in('video_id', videoIds);
           if (data) eventsData = data;
-        } catch (e) { console.warn('📹 VideoStore: Error fetching batched events:', e); }
+        } catch (e) { logger.warn('📹 VideoStore: Error fetching batched events:', e); }
       }
 
       const eventIdByVideoId = new Map<string, string>();
@@ -274,7 +275,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         try {
           const { data } = await supabase.from('products').select('*').in('event_id', eventIds);
           if (data) productsData = data;
-        } catch (e) { console.warn('📹 VideoStore: Error fetching batched products:', e); }
+        } catch (e) { logger.warn('📹 VideoStore: Error fetching batched products:', e); }
       }
 
       const productsByEventId = new Map<string, Product[]>();
@@ -310,12 +311,12 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       const { deletedVideoIds } = get();
       const visibleVideos = videosWithProducts.filter((video) => !deletedVideoIds.has(video.id));
       if (get().feedMode === 'random' && visibleVideos.length > 1 && visibleVideos.every((v, i) => v.id === get().videos[i]?.id)) visibleVideos.push(visibleVideos.shift()!);
-      console.log('📹 VideoStore: Transformed', visibleVideos.length, 'videos successfully');
+      logger.debug('📹 VideoStore: Transformed', visibleVideos.length, 'videos successfully');
       await persistVideoFeedCache(visibleVideos);
       // Reset pagination state on a fresh fetch
       set({ videos: visibleVideos, isLoading: false, _feedOffset: FEED_PAGE_SIZE, hasMoreVideos: videosData.length >= FEED_PAGE_SIZE });
       } catch (error) {
-        console.warn('📹 VideoStore: Unable to fetch videos from database:', error);
+        logger.warn('📹 VideoStore: Unable to fetch videos from database:', error);
         await persistVideoFeedCache([]);
         set({ videos: [], isLoading: false, error: null, _feedOffset: 0, hasMoreVideos: false });
       } finally {
@@ -333,12 +334,12 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       return fetchMoreVideosInFlight;
     }
 
-    console.log('📹 VideoStore: Fetching more videos, offset =', _feedOffset);
+    logger.debug('📹 VideoStore: Fetching more videos, offset =', _feedOffset);
     set({ isFetchingMore: true });
     fetchMoreVideosInFlight = (async () => {
       try {
       const videosData = await videoService.getVideos(FEED_PAGE_SIZE, _feedOffset, get().feedSeed || undefined);
-      console.log('📹 VideoStore: Fetched', videosData.length, 'more videos');
+      logger.debug('📹 VideoStore: Fetched', videosData.length, 'more videos');
 
       if (videosData.length === 0) {
         set({ hasMoreVideos: false, isFetchingMore: false });
@@ -420,7 +421,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         isFetchingMore: false,
       }));
       } catch (error) {
-        console.warn('📹 VideoStore: Unable to fetch more videos:', error);
+        logger.warn('📹 VideoStore: Unable to fetch more videos:', error);
         set({ isFetchingMore: false });
       } finally {
         fetchMoreVideosInFlight = null;
@@ -434,7 +435,12 @@ export const useVideoStore = create<VideoState>((set, get) => ({
 
   syncUserProfile: (userId: string, updates: Partial<User>) => {
     set((state) => ({
-      videos: state.videos.map((video) => {
+      videos: state.videos.map((originalVideo) => {
+        const video = {
+          ...originalVideo,
+          taggedUsers: originalVideo.taggedUsers?.map(tag => tag.userId === userId
+            ? { ...tag, user: { ...tag.user, ...updates } } : tag),
+        };
         if (video.userId !== userId && video.user?.id !== userId) {
           return video;
         }
@@ -473,7 +479,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
     
     // Otherwise, try to fetch it explicitly
     try {
-      console.log(`📹 VideoStore: Fetching missing video by ID: ${id}`);
+      logger.debug(`📹 VideoStore: Fetching missing video by ID: ${id}`);
       const videoData = await videoService.getVideo(id);
       if (!videoData) return null;
 
@@ -596,7 +602,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       } : undefined);
 
       // Add the explicitly fetched video to the front of the feed
-      console.log('📹 VideoStore: Successfully formatted explicitly fetched video:', {
+      logger.debug('📹 VideoStore: Successfully formatted explicitly fetched video:', {
         id: formattedVideo.id,
         url: formattedVideo.url,
         hasUser: !!formattedVideo.user,
@@ -607,7 +613,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         // Double check it wasn't added concurrently
         const existing = state.videos.find(v => v.id === id);
         if (existing) {
-          console.log('📹 VideoStore: Video already in store, updating it.');
+          logger.debug('📹 VideoStore: Video already in store, updating it.');
           return {
             videos: state.videos.map(v => v.id === id ? formattedVideo : v)
           };
@@ -617,7 +623,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
 
       return formattedVideo;
     } catch (e) {
-      console.error('📹 VideoStore: Error explicitly fetching video by ID', e);
+      logger.error('📹 VideoStore: Error explicitly fetching video by ID', e);
       return null;
     }
   },
@@ -633,7 +639,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         .maybeSingle();
 
       if (error) {
-        console.warn('Failed to refresh engagement for video:', videoId, error);
+        logger.warn('Failed to refresh engagement for video:', videoId, error);
         return;
       }
 
@@ -654,7 +660,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         ),
       }));
     } catch (error) {
-      console.warn('Unexpected error while refreshing engagement:', error);
+      logger.warn('Unexpected error while refreshing engagement:', error);
     }
   },
   
@@ -698,7 +704,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         isLoading: false,
       }));
     } catch (err) {
-      console.error('fetchComments error:', err);
+      logger.error('fetchComments error:', err);
       set({ error: 'Failed to fetch comments', isLoading: false });
     }
   },
@@ -746,7 +752,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
           userLikedVideos: updated,
         };
       });
-      console.warn('Failed to persist like:', error);
+      logger.warn('Failed to persist like:', error);
     }
   },
   
@@ -793,7 +799,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         ),
         userLikedVideos: new Set([...current.userLikedVideos, videoId]),
       }));
-      console.warn('Failed to persist unlike:', error);
+      logger.warn('Failed to persist unlike:', error);
     }
   },
   
@@ -806,7 +812,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       const likedVideoIds = await interactionService.getUserLikedVideoIds(userId);
       set({ userLikedVideos: new Set(likedVideoIds) });
     } catch (error) {
-      console.warn('Failed to load user likes from database:', error);
+      logger.warn('Failed to load user likes from database:', error);
     }
   },
   
@@ -859,7 +865,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
 
       await get().refreshVideoEngagement(videoId);
     } catch (err) {
-      console.error('addComment error:', err);
+      logger.error('addComment error:', err);
     }
   },
   
@@ -908,7 +914,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
 
       await get().refreshVideoEngagement(videoId);
     } catch (err) {
-      console.error('addReply error:', err);
+      logger.error('addReply error:', err);
     }
   },
   
@@ -957,7 +963,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         }));
       }
     } catch (error) {
-      console.error('shareVideo error:', error);
+      logger.error('shareVideo error:', error);
     }
   },
   
@@ -1000,7 +1006,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
         }));
       }
     } catch (err) {
-      console.error('rateVideo error:', err);
+      logger.error('rateVideo error:', err);
     }
   },
   
@@ -1132,7 +1138,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
               id: video.user_id,
               username: 'unknown',
               name: 'Unknown User',
-              avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80',
+              avatar: '',
               isBusinessAccount: false,
               followers: 0,
               following: 0,
@@ -1192,7 +1198,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
-      console.warn('Unable to filter videos by location:', errorMessage);
+      logger.warn('Unable to filter videos by location:', errorMessage);
       set({ error: `Failed to filter videos by location: ${errorMessage}`, isLoading: false });
       
       // Fallback to all videos if location filtering fails
@@ -1382,7 +1388,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       });
 
       await persistVideoFeedCache(previousState.videos);
-      console.error('Failed to remove video:', e);
+      logger.error('Failed to remove video:', e);
       throw e;
     }
   },

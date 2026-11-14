@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 
 export const LEGACY_EVENT_THUMBNAIL_URL =
@@ -11,7 +12,7 @@ export const generateEventThumbnail = async (videoUri: string): Promise<string |
     });
     return result.uri;
   } catch (error) {
-    console.warn('Unable to generate event thumbnail:', error);
+    logger.warn('Unable to generate event thumbnail:', error);
     return null;
   }
 };

@@ -1,3 +1,4 @@
+import {voucherExpiryInstant} from '@/utils/voucher-expiry';
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -5,6 +6,8 @@ import { Tag, ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useVoucherStore } from '@/store/voucher-store';
 import { Voucher } from '@/types';
+import { useFocusEffect } from '@react-navigation/native';
+import { supabase } from '@/lib/supabase';
 
 interface BusinessVouchersSectionProps {
   businessId: string;
@@ -14,14 +17,17 @@ export default function BusinessVouchersSection({ businessId }: BusinessVouchers
   const router = useRouter();
   const { vouchers, fetchVouchers, isLoading } = useVoucherStore();
   
-  useEffect(() => {
-    fetchVouchers(businessId);
-  }, [businessId]);
+  useFocusEffect(React.useCallback(() => {
+    const refresh=()=>{void fetchVouchers(businessId);};
+    refresh();
+    const channel=supabase.channel(`business-vouchers-${businessId}`).on('postgres_changes',{event:'*',schema:'public',table:'vouchers',filter:`business_id=eq.${businessId}`},refresh).subscribe();
+    return ()=>{void supabase.removeChannel(channel);};
+  }, [businessId,fetchVouchers]));
   
   const activeVouchers = vouchers.filter(voucher => 
     voucher.isActive && 
-    new Date(voucher.expiryDate) > new Date() &&
-    voucher.usageCount < voucher.usageLimit
+    voucherExpiryInstant(voucher.expiryDate) > Date.now() &&
+    (voucher.usageLimit == null || voucher.usageCount < voucher.usageLimit)
   );
   
   if (activeVouchers.length === 0) {
@@ -41,14 +47,14 @@ export default function BusinessVouchersSection({ businessId }: BusinessVouchers
       <View key={voucher.id} style={styles.voucherCard}>
         <View style={styles.voucherHeader}>
           <Text style={styles.voucherCode}>{voucher.code}</Text>
-          <Text style={styles.expiryDate}>Expires {formatExpiryDate(voucher.expiryDate)}</Text>
+          <Text style={styles.expiryDate}>{voucher.expiryDate ? `Expires ${formatExpiryDate(voucher.expiryDate)}` : 'No expiry'}</Text>
         </View>
         
         <Text style={styles.voucherName}>{voucher.name}</Text>
         <Text style={styles.discountValue}>
           {voucher.discountType === 'percentage' 
             ? `${voucher.discountValue}% off` 
-            : `$${voucher.discountValue.toFixed(2)} off`}
+            : `${voucher.currency || ''} ${voucher.discountValue.toFixed(2)} off`}
         </Text>
         
         {voucher.minPurchaseAmount && (
