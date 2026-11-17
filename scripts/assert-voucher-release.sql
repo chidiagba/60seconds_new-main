@@ -4,6 +4,8 @@ SET LOCAL statement_timeout='30s';
 DO $$
 BEGIN
  IF to_regclass('public.checkout_orders') IS NULL OR to_regclass('public.checkout_payment_evidence') IS NULL OR to_regclass('public.voucher_redemptions') IS NULL THEN RAISE EXCEPTION 'Missing private checkout state';END IF;
+ IF to_regprocedure('public.get_checkout_attempt(text)') IS NULL OR to_regprocedure('public.quote_order_checkout(jsonb,text,uuid)') IS NULL OR to_regprocedure('public.create_order_checkout(jsonb,text,text,text,uuid)') IS NULL THEN RAISE EXCEPTION 'Missing customer checkout RPCs';END IF;
+ IF NOT has_function_privilege('authenticated','public.get_checkout_attempt(text)','EXECUTE') OR has_function_privilege('anon','public.get_checkout_attempt(text)','EXECUTE') THEN RAISE EXCEPTION 'Invalid checkout recovery privileges';END IF;
  IF has_function_privilege('authenticated','public.finalize_checkout_payment(uuid,text,text,numeric,text,text)','EXECUTE') OR has_function_privilege('authenticated','public.settle_verified_guest_payment(uuid,text,text,numeric,text,text)','EXECUTE') THEN RAISE EXCEPTION 'Client has financial settlement privilege';END IF;
  IF NOT has_function_privilege('service_role','public.finalize_checkout_payment(uuid,text,text,numeric,text,text)','EXECUTE') THEN RAISE EXCEPTION 'Missing server settlement grant';END IF;
  IF has_table_privilege('authenticated','public.ticket_receipts','INSERT') OR has_table_privilege('authenticated','public.ticket_receipts','UPDATE') OR has_table_privilege('authenticated','public.ticket_receipts','DELETE') THEN RAISE EXCEPTION 'Client retains receipt writes';END IF;

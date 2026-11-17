@@ -312,7 +312,9 @@ export default function MessagesInboxScreen() {
         return undefined;
       }
 
-      const channel = supabase.channel(`messages_screen_${myId}`);
+      // Each mounted inbox owns its channel. Reusing a topic can return another
+      // screen's already-subscribed channel before its async cleanup completes.
+      const channel = supabase.channel(`messages_screen_${myId}_${Date.now()}_${Math.random().toString(36).slice(2)}`);
       channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, async () => {
         await loadChats();
       });
@@ -335,10 +337,15 @@ export default function MessagesInboxScreen() {
       };
     };
 
-    const cleanupPromise = setup();
+    const cleanupPromise = setup().catch((error) => {
+      logInboxError('subscribe', error);
+      return undefined;
+    });
     return () => {
       mounted = false;
-      cleanupPromise.then((cleanup) => cleanup && cleanup());
+      void cleanupPromise.then((cleanup) => cleanup && cleanup()).catch((error) => {
+        logInboxError('unsubscribe', error);
+      });
     };
   }, [loadChats]);
 

@@ -14,7 +14,7 @@ async function paystack(path: string, body?: unknown) {
   return result.data;
 }
 
-export async function initializeGuestPaystack(db: any, order: any, returnPath: string) {
+export async function initializeGuestPaystack(db: any, order: any, returnPath: string, channel?: 'card' | 'bank_transfer') {
   const reference = `guest_paystack_${order.id}`;
   const fee = Number((order.total_amount - order.total_amount / 1.04).toFixed(2));
   const base = (Deno.env.get('PUBLIC_EVENT_BASE_URL') || 'https://events.60secondsapp.io').replace(/\/$/, '');
@@ -33,6 +33,7 @@ export async function initializeGuestPaystack(db: any, order: any, returnPath: s
   const initialized = await paystack('transaction/initialize', {
     reference, email: order.guest_email, amount: toMinorUnits(order.total_amount,order.currency), currency: order.currency,
     callback_url: `${base}${returnPath}${returnPath.includes('?') ? '&' : '?'}payment=processing`,
+    ...(channel ? { channels: [channel] } : {}),
     metadata: { guest_order_id: order.id, orderId: order.id, paymentType: 'guest_booking' },
     ...(subaccount ? {subaccount, transaction_charge:toMinorUnits(fee,order.currency),bearer:'account'} : {}),
   });

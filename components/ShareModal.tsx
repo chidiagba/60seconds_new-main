@@ -1,3 +1,4 @@
+import { shareWebpage } from '@/lib/share-webpage';
 import { videoWatermarkService } from '@/utils/video-watermark';
 import * as MediaLibrary from 'expo-media-library';
 import { logger } from '@/lib/logger';
@@ -490,46 +491,14 @@ export default function ShareModal({ visible, onClose, video }: ShareModalProps)
     }
     handleHapticFeedback();
 
-    const webpageMessage = [
-      `🎉 ${video.eventName}`,
-      uploaderUsername ? `👤 Uploaded by ${uploaderUsername}` : null,
-      locationText ? `📍 ${locationText}` : null,
-      eventDateText ? `🗓️ ${eventDateText}` : null,
-      shortDescription || null,
-      `🔗 ${videoShareLink}`,
-    ].filter(Boolean).join('\n');
-
-    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.share) {
-      try {
-        await navigator.share({
-          title: video.eventName,
-          text: webpageMessage,
-          url: videoShareLink,
-        });
+    try {
+      const shared = await shareWebpage({ title: video.eventName, url: videoShareLink,
+        username: uploaderUsername, location: locationText, date: eventDateText,
+        description: shortDescription });
+      if (shared) {
         shareVideo(video.id, 'webpage');
         onClose();
-        return;
-      } catch (error) {
-        logger.error('Web Share API failed, copying link', error);
       }
-    }
-
-    if (Platform.OS === 'web') {
-      await Clipboard.setStringAsync(videoShareLink);
-      shareVideo(video.id, 'webpage');
-      onClose();
-      return;
-    }
-
-    // Native: open system share sheet with event page link + message
-    try {
-      await Share.share({
-        message: webpageMessage,
-        title: video.eventName,
-        url: videoShareLink,
-      });
-      shareVideo(video.id, 'webpage');
-      onClose();
     } catch (error) {
       logger.error('[Share] Share page failed:', error);
     }

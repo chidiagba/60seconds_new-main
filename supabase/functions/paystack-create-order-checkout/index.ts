@@ -32,6 +32,11 @@ Deno.serve(async (req) => {
     const { data: authData, error: authError } = await auth.auth.getUser(token);
     if (authError || !authData.user) return respond({ error: "Authentication required" }, 401);
     const body = await req.json().catch(() => ({}));
+    const allowedChannels = ['card', 'bank', 'ussd', 'qr', 'mobile_money', 'bank_transfer'];
+    if (body.channels !== undefined && (!Array.isArray(body.channels) || !body.channels.length || body.channels.some((channel: unknown) => !allowedChannels.includes(String(channel))))) {
+      return respond({error:'Invalid payment method'},400);
+    }
+    const requestedChannels = Array.isArray(body.channels) ? [...new Set(body.channels)].sort() : null;
     const requested = Array.isArray(body.items) ? body.items : [];
     if (!requested.length) return respond({ error: "At least one product is required" }, 400);
     let voucherCode = String(body.voucherCode || '').trim();
@@ -53,7 +58,12 @@ Deno.serve(async (req) => {
     const platformFee=Number(order.platform_fee), subtotal=money(total-platformFee);
     const items=order.items, ids=items.map((item:any)=>item.product_id);
     const {data: previousAttempt}=await admin.from('payments').select('metadata').eq('payment_provider','paystack').eq('provider_reference',reference).maybeSingle();
-    if (previousAttempt?.metadata?.authorization_url) return respond({success:true,order,payment:{reference,status:'pending'},authorizationUrl:previousAttempt.metadata.authorization_url,accessCode:previousAttempt.metadata.access_code});
+    if (previousAttempt?.metadata?.authorization_url) {
+      if (JSON.stringify(previousAttempt.metadata.checkout_channels || null) !== JSON.stringify(requestedChannels)) {
+        return respond({error:'The previous checkout uses a different payment method. Return to that method or check its status in Orders.'},409);
+      }
+      return respond({success:true,order,payment:{reference,status:'pending'},authorizationUrl:previousAttempt.metadata.authorization_url,accessCode:previousAttempt.metadata.access_code});
+    }
     const { data: bankRoutes, error: routeError } = await admin.from("business_bank_accounts")
       .select("is_active,payout_provider,country_code,is_verified,verification_status,paystack_subaccount_code,metadata,updated_at")
       .eq("user_id", organizerId).eq("is_active", true).order("updated_at", { ascending: false }).limit(20);
@@ -100,12 +110,12 @@ Deno.serve(async (req) => {
       processing_fee: platformFee, net_amount: subtotal, metadata: { products: ids, voucher_id: order.voucher_id || null },
     }, {onConflict:"payment_provider,provider_reference",ignoreDuplicates:true});
     if (paymentError) throw new Error(`Payment attempt creation failed: ${paymentError.message}`);
-    const metadata = { orderId: order.id, orderNumber: order.order_number, buyerId: authData.user.id, userId: authData.user.id, organizerId, ownerId: organizerId, productId: ids[0], items, paymentType: "order_payment", splitMode: subaccount ? "single_subaccount" : "platform_collection" };
+    const metadata = { orderId: order.id, orderNumber: order.order_number, buyerId: authData.user.id, userId: authData.user.id, organizerId, ownerId: organizerId, productId: ids[0], items, checkout_channels: requestedChannels, paymentType: "order_payment", splitMode: subaccount ? "single_subaccount" : "platform_collection" };
     const paystackPayload: any = {
       email: authData.user.email, amount: Math.round(total * 100), currency, reference,
       callback_url: `myapp://paystack/callback?reference=${encodeURIComponent(reference)}&orderId=${order.id}`,
       metadata,
-      channels: Array.isArray(body.channels) && body.channels.length ? body.channels : undefined,
+      channels: requestedChannels || undefined,
     };
     if (subaccount) {
       paystackPayload.subaccount = subaccount;

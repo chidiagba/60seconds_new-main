@@ -69,20 +69,23 @@ export interface EventListItem {
   updated_at: string;
   has_products: boolean;
   product_count: number;
+  has_tables?: boolean;
+  table_count?: number;
   video?: { id: string; title?: string | null; thumbnail_url?: string | null; video_url?: string | null };
   creator?: { id: string; username?: string | null; full_name?: string | null; avatar_url?: string | null };
 }
 
 export class EventQueries {
-  static async getDealsEvents(limit = 60): Promise<{ success: boolean; events?: EventListItem[]; error?: string }> {
-    const { data, error } = await supabase.from('events')
-      .select('*,products!inner(id),video:videos(id,title,thumbnail_url,video_url)')
-      .eq('is_public', true).in('status', PUBLIC_OPEN_EVENT_STATUSES)
-      .eq('products.is_active', true).gt('products.available_quantity', 0).gt('products.price', 0)
-      .or(`end_date.gt.${new Date().toISOString()},and(end_date.is.null,start_date.gt.${new Date().toISOString()})`)
-      .order('created_at', { ascending: false }).limit(limit);
-    if (error) return { success: false, error: this.formatError(error) };
-    return { success: true, events: (data || []).map((event: any) => ({ ...event, has_products: true, product_count: event.products.length })) };
+  static async getDealsEvents(limit = 60, offset = 0): Promise<{ success: boolean; events?: EventListItem[]; hasMore?: boolean; error?: string }> {
+    try {
+      const { data, error } = await supabase.functions.invoke('guest-event', {
+        body: { action: 'deals', limit, offset },
+      });
+      if (error || data?.error || !Array.isArray(data?.events)) throw new Error('Deals unavailable');
+      return { success: true, events: data.events, hasMore: data.hasMore === true };
+    } catch {
+      return { success: false, error: 'Unable to load deals. Please try again.' };
+    }
   }
   /**
    * Fetches latest public events that have a linked video.
@@ -104,7 +107,7 @@ export class EventQueries {
 
       let { data: events, error } = await selectLatestEvents(`
         *,
-        video:videos(id, title, thumbnail_url, video_url),
+        video:videos!events_video_id_fkey(id, title, thumbnail_url, video_url),
         creator:profiles!events_creator_id_fkey(id, username, full_name, avatar_url)
       `);
 
@@ -166,7 +169,7 @@ export class EventQueries {
 
       let { data: events, error } = await selectTrendingEvents(`
         *,
-        video:videos(id, title, thumbnail_url, video_url),
+        video:videos!events_video_id_fkey(id, title, thumbnail_url, video_url),
         creator:profiles!events_creator_id_fkey(id, username, full_name, avatar_url)
       `);
 
@@ -213,7 +216,7 @@ export class EventQueries {
         .select(`
           *,
           products!inner(id, is_active),
-          video:videos(id, title, thumbnail_url, video_url),
+          video:videos!events_video_id_fkey(id, title, thumbnail_url, video_url),
           creator:profiles!events_creator_id_fkey(id, username, full_name, avatar_url)
         `)
         .eq('is_public', true)
@@ -262,7 +265,7 @@ export class EventQueries {
         .from('events')
         .select(`
           *,
-          video:videos(id, title, thumbnail_url, video_url),
+          video:videos!events_video_id_fkey(id, title, thumbnail_url, video_url),
           creator:profiles!events_creator_id_fkey(id, username, full_name, avatar_url)
         `)
         .eq('is_public', true)
@@ -332,7 +335,7 @@ export class EventQueries {
         .select(`
           *,
           products!products_event_id_fkey(*),
-          video:videos(*),
+          video:videos!events_video_id_fkey(*),
           creator:profiles!events_creator_id_fkey(*)
         `)
         .eq('id', eventId)
@@ -421,7 +424,7 @@ export class EventQueries {
       let { data, error } = await selectUserEvents(`
         *,
         products!products_event_id_fkey(*),
-        video:videos(*)
+        video:videos!events_video_id_fkey(*)
       `);
 
       if (error) {
@@ -480,7 +483,7 @@ export class EventQueries {
         .from('events')
         .select(`
           *,
-          video:videos(id, title, thumbnail_url, video_url),
+          video:videos!events_video_id_fkey(id, title, thumbnail_url, video_url),
           creator:profiles!events_creator_id_fkey(id, username, full_name, avatar_url)
         `)
         .eq('is_public', true)

@@ -1,7 +1,7 @@
 """Production-shaped LOCAL staging upgrade. No production connection or records.
 Uses the captured public schema shape/history and synthetic historical fixtures.
 """
-import os,subprocess,json
+import os,subprocess,json,tempfile
 from pathlib import Path
 url=os.environ.get('TEST_DATABASE_URL')
 if not url:raise SystemExit('Set TEST_DATABASE_URL to a dedicated EMPTY LOCAL database')
@@ -65,13 +65,24 @@ insert into ticket_receipts(order_id,order_number,buyer_id,owner_id,product_id,t
 select id,order_number,user_id,business_id,'c3000000-0000-0000-0000-000000000001','Legacy receipt',1,1000,1000,'NGN',gen_random_uuid()::text from orders;
 """)
 snapshots={table:sql(f"select coalesce(jsonb_agg(to_jsonb(t) order by id),'[]') from {table} t").stdout.strip() for table in ['orders','vouchers','ticket_receipts','payments','wallets','products']}
-paths=[Path('supabase/migrations')/name for name in ['20261111080000_voucher_production_bridge.sql','20261111090000_atomic_voucher_checkout.sql','20261111100000_verified_fulfillment_boundaries.sql','20261113100000_secure_event_table_checkin.sql','20261113110000_checkout_schema_cache_repair.sql']]
-release='\n'.join(p.read_text() for p in paths)
-failed=sql('begin;'+release+'select 1/0;commit;',True)
+sql('create schema supabase_migrations;create table supabase_migrations.schema_migrations(version text primary key,name text);')
+for version in versions:sql(f"insert into supabase_migrations.schema_migrations(version) values('{version}')")
+with tempfile.TemporaryDirectory(prefix='checkout-release-') as output:
+ subprocess.run(['node','scripts/prepare-checkout-release.cjs',output],check=True,capture_output=True)
+ release=(Path(output)/'01_checkout_release.sql').read_text()
+ rehearsal=(Path(output)/'01_checkout_release_REHEARSAL.sql').read_text()
+ sql(rehearsal)
+assert sql("select to_regclass('checkout_orders') is null").stdout.strip()=='t'
+assert sql("select count(*) from supabase_migrations.schema_migrations where version='20261111080000'").stdout.strip()=='0'
+print('Generated release rehearsal rolls back schema and migration history')
+failed=sql(release.rsplit('COMMIT;',1)[0]+'select 1/0;commit;',True)
 assert failed.returncode and 'division by zero' in failed.stderr,failed.stderr
 assert sql("select to_regclass('checkout_orders') is null").stdout.strip()=='t'
 print('Production-shaped staging: failed upgrade rolls back all release DDL')
-sql("begin;set local lock_timeout='3s';set local statement_timeout='60s';"+release+'commit;')
+sql(release)
+replay=sql(release,True)
+assert replay.returncode and 'partially/already applied' in replay.stderr,replay.stderr
+print('Generated release applies exact migration history and refuses replay')
 for table,before in snapshots.items():
  prior=json.loads(before);current=json.loads(sql(f"select coalesce(jsonb_agg(to_jsonb(t) order by id),'[]') from {table} t").stdout.strip())
  assert len(prior)==len(current),(table,'row count changed')

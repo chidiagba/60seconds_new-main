@@ -1,3 +1,5 @@
+import { shareWebpage } from '@/lib/share-webpage';
+import { buildEventShareUrl } from '@/constants/app-links';
 import AvatarImage from '@/components/AvatarImage';
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
@@ -9,6 +11,7 @@ import {
   ActivityIndicator,
   GestureResponderEvent,
   ViewToken,
+  Alert,
 } from "react-native";
 import { Image } from "expo-image";
 import { Video as ExpoVideo, ResizeMode } from "expo-av";
@@ -16,6 +19,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useIsFocused } from "@react-navigation/native";
 import {
   MapPin,
+  Share2,
   Star,
   UserPlus,
   UserCheck,
@@ -79,7 +83,7 @@ const getEventPreviewVideoUrl = (event: EventListItem) => {
 
 const eventMatchesCategory = (event: EventListItem, categoryName: string) => {
   const name = categoryName.toLowerCase();
-  if (name === "deals") return event.has_products && event.product_count > 0 && ["open", "published"].includes(event.status) && !isEventClosed({ status: event.status, startDate: event.start_date, endDate: event.end_date });
+  if (name === "deals") return (event.product_count > 0 || (event.table_count || 0) > 0) && ["open", "published"].includes(event.status) && !isEventClosed({ status: event.status, startDate: event.start_date, endDate: event.end_date });
   const eventName = String(event.event_name || "").toLowerCase();
   const locationName = String(event.location_name || "").toLowerCase();
   const category = String(event.category || "").toLowerCase();
@@ -134,48 +138,70 @@ export default function TrendingEventsDiscoverScreen({ homePath }: Props) {
   const [failedPreviewVideoIds, setFailedPreviewVideoIds] = useState<Set<string>>(new Set());
   const [visiblePreviewVideoIds, setVisiblePreviewVideoIds] = useState<Set<string>>(new Set());
 
-  const loadLatestEvents = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMessage(null);
-    if (selectedCategoryId === 'deals') {
-      const result = await EventQueries.getDealsEvents();
-      setEvents(result.events || []);
-      setErrorMessage(result.error || null);
+  const requestGeneration = useRef(0);
+  const pageBusy = useRef(false);
+  const nextDealsOffset = useRef(0);
+  const shareBusy = useRef(false);
+  const [hasMoreDeals, setHasMoreDeals] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshRevision, setRefreshRevision] = useState(0);
+
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    const load = async () => {
+      const generation = ++requestGeneration.current;
+      pageBusy.current = false;
+      setLoadingMore(false);
+      setIsLoading(true);
+      setErrorMessage(null);
+      setEvents([]);
+      setHasMoreDeals(false);
+      nextDealsOffset.current = 0;
+      let result = selectedCategoryId === 'deals'
+        ? await EventQueries.getDealsEvents()
+        : await EventQueries.getLatestEvents();
+      if (selectedCategoryId !== 'deals' && !result.success) result = await EventQueries.getTrendingEvents();
+      if (!active || generation !== requestGeneration.current) return;
+      if (result.success) {
+        setEvents(result.events || []);
+        nextDealsOffset.current = (result.events || []).length;
+        setHasMoreDeals('hasMore' in result && result.hasMore === true);
+      } else setErrorMessage('Unable to load events. Please try again.');
       setIsLoading(false);
-      return;
-    }
-    const latestResult = await EventQueries.getLatestEvents();
+    };
+    void load();
+    const interval = setInterval(() => { void load(); }, 60000);
+    return () => { active = false; ++requestGeneration.current; clearInterval(interval); };
+  }, [selectedCategoryId, refreshRevision]));
 
-    if (latestResult.success && (latestResult.events?.length || 0) > 0) {
-      setEvents(latestResult.events || []);
-      setIsLoading(false);
-      return;
-    }
+  const loadMoreDeals = async () => {
+    if (selectedCategoryId !== 'deals' || isLoading || pageBusy.current || !hasMoreDeals || errorMessage) return;
+    pageBusy.current = true;
+    setLoadingMore(true);
+    const generation = requestGeneration.current;
+    const result = await EventQueries.getDealsEvents(60, nextDealsOffset.current);
+    if (generation !== requestGeneration.current) return;
+    if (result.success) {
+      nextDealsOffset.current += (result.events || []).length;
+      setEvents(current => [...current, ...(result.events || []).filter(event => !current.some(existing => existing.id === event.id))]);
+      setHasMoreDeals(result.hasMore === true);
+    } else setErrorMessage('Unable to load more deals. Please try again.');
+    pageBusy.current = false;
+    setLoadingMore(false);
+  };
 
-    const fallbackTrendingResult = await EventQueries.getTrendingEvents();
-    if (fallbackTrendingResult.success) {
-      setEvents(fallbackTrendingResult.events || []);
-      if ((fallbackTrendingResult.events?.length || 0) === 0 && latestResult.error) {
-        setErrorMessage(latestResult.error);
-      }
-    } else {
-      setErrorMessage(
-        latestResult.error || fallbackTrendingResult.error || "Failed to load events"
-      );
-    }
-    setIsLoading(false);
-  }, [selectedCategoryId]);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadLatestEvents();
-    }, [loadLatestEvents])
-  );
-
-  React.useEffect(() => {
-    const intervalId = setInterval(loadLatestEvents, 60000);
-    return () => clearInterval(intervalId);
-  }, [loadLatestEvents]);
+  const handleShareEvent = async (item: EventListItem, press: GestureResponderEvent) => {
+    press.stopPropagation();
+    if (shareBusy.current) return;
+    shareBusy.current = true;
+    try {
+      const date = new Date(item.start_date);
+      await shareWebpage({ title: item.event_name, url: buildEventShareUrl(item.id),
+        username: item.creator?.username, location: item.location_name || item.location_city,
+        date: Number.isNaN(date.getTime()) ? undefined : date.toLocaleString(), description: item.description });
+    } catch { Alert.alert('Unable to share', 'Please try again.'); }
+    finally { shareBusy.current = false; }
+  };
 
   const filteredEvents = useMemo(() => {
     if (!selectedCategoryId) return events;
@@ -327,7 +353,9 @@ export default function TrendingEventsDiscoverScreen({ homePath }: Props) {
             </View>
             <View style={styles.eventDetail}>
               <Star size={14} color={Colors.dark.primary} />
-              <Text style={styles.eventDetailText}>Trending</Text>
+              <Text style={styles.eventDetailText}>{selectedCategoryId === 'deals'
+                ? [item.product_count > 0 ? 'Tickets & products' : '', (item.table_count || 0) > 0 ? 'Tables' : ''].filter(Boolean).join(' · ')
+                : 'Trending'}</Text>
             </View>
             {attendeeCount > 0 && (
               <View style={styles.eventDetail}>
@@ -337,6 +365,12 @@ export default function TrendingEventsDiscoverScreen({ homePath }: Props) {
             )}
           </View>
         </View>
+
+        <TouchableOpacity style={styles.shareButton} accessibilityRole="button"
+          accessibilityLabel={`Share ${item.event_name} as webpage`}
+          onPress={press => { void handleShareEvent(item, press); }}>
+          <Share2 size={17} color={Colors.dark.text} />
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.userInfoButton}
@@ -395,6 +429,8 @@ export default function TrendingEventsDiscoverScreen({ homePath }: Props) {
       isFollowing,
       isAttending,
       currentUser?.id,
+      selectedCategoryId,
+      homePath,
     ]
   );
 
@@ -409,7 +445,7 @@ export default function TrendingEventsDiscoverScreen({ homePath }: Props) {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.categoriesContainer}
       />
-      <Text style={styles.sectionTitle}>Latest Events</Text>
+      <Text style={styles.sectionTitle}>{selectedCategoryId === "deals" ? "Available Deals" : "Latest Events"}</Text>
     </>
   );
 
@@ -427,11 +463,19 @@ export default function TrendingEventsDiscoverScreen({ homePath }: Props) {
             <Text style={styles.noEventsText}>{errorMessage || "No events found"}</Text>
           ) : null
         }
+        onEndReached={() => { void loadMoreDeals(); }}
+        onEndReachedThreshold={0.5}
+        refreshing={isLoading}
+        onRefresh={() => setRefreshRevision(value => value + 1)}
         ListFooterComponent={
-          isLoading ? (
+          isLoading || loadingMore ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color={Colors.dark.primary} />
             </View>
+          ) : errorMessage ? (
+            <TouchableOpacity onPress={() => setRefreshRevision(value => value + 1)} style={styles.retryButton}>
+              <Text style={styles.noEventsText}>Retry</Text>
+            </TouchableOpacity>
           ) : null
         }
         onViewableItemsChanged={onViewableItemsChanged}
@@ -447,6 +491,9 @@ export default function TrendingEventsDiscoverScreen({ homePath }: Props) {
 }
 
 const styles = StyleSheet.create({
+  shareButton: { position: 'absolute', right: 10, top: 52, width: 34, height: 34, borderRadius: 17,
+    backgroundColor: 'rgba(0,0,0,0.75)', alignItems: 'center', justifyContent: 'center' },
+  retryButton: { padding: 16, alignItems: 'center' },
   container: {
     flex: 1,
     backgroundColor: Colors.dark.background,

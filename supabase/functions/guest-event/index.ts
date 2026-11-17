@@ -1,3 +1,4 @@
+import { createWebEventCheckout, webEventCheckoutStatus } from '../_shared/web-event-checkout.ts';
 import { corsForRequest } from '../_shared/cors.ts';
 import { initializeGuestPaystack } from '../_shared/guest-paystack.ts';
 import { eventShareExpired, toMinorUnits } from '../../../utils/commerce-rules.ts';
@@ -13,6 +14,20 @@ Deno.serve(async req => {
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   try {
     const input = await req.json();
+    if (input.action === 'checkout-status') {
+      const result = await webEventCheckoutStatus(db, input.eventId, input.requestKey);
+      return reply(result.body, result.status);
+    }
+    if (input.action === 'deals') {
+      const size = input.limit ?? 60;
+      const offset = input.offset ?? 0;
+      if (!Number.isInteger(size) || size < 1 || size > 100 || !Number.isInteger(offset) || offset < 0) {
+        return reply({ error: 'Invalid page' }, 400);
+      }
+      const { data, error } = await db.rpc('public_deals_events', { page_size: size, page_offset: offset });
+      if (error) throw error;
+      return reply(data);
+    }
     if (input.action === 'venue-checkout') {
       const token = req.headers.get('authorization')?.replace(/^Bearer /i, '');
       const { data: auth, error: authError } = await db.auth.getUser(token || '');
@@ -51,7 +66,7 @@ Deno.serve(async req => {
       return reply({url:session.url});
     }
     if (!/^[0-9a-f-]{36}$/i.test(input.eventId || '')) return reply({ error: 'Invalid event' },400);
-    const { data: event, error } = await db.from('events').select('id,event_name,description,image_url,start_date,end_date,location_name,currency,business_id,user_id,status,video:videos(video_url,thumbnail_url)').eq('id',input.eventId).eq('is_public',true).single();
+    const { data: event, error } = await db.from('events').select('id,event_name,description,image_url,start_date,end_date,location_name,currency,business_id,user_id,status,video:videos!events_video_id_fkey(video_url,thumbnail_url)').eq('id',input.eventId).eq('is_public',true).single();
     if (error || !event || !['published','open','completed','closed'].includes(event.status)) return reply({ error: 'Event unavailable' },404);
     const expiry = Date.parse(event.end_date || event.start_date) + 48*60*60*1000;
     if (eventShareExpired(event.end_date,event.start_date)) return reply({ error: 'This event link has expired' },410);
@@ -63,6 +78,10 @@ Deno.serve(async req => {
     const { data: tables, error: tableError } = await db.rpc('event_table_inventory', { event_key: event.id });
     if (tableError) throw tableError;
     if (input.action !== 'checkout') return reply({ event, products: products || [], tables: tables || [], expiresAt: new Date(expiry).toISOString() });
+    if (input.paymentMethod || input.buyerRegion || input.requestKey) {
+      const result = await createWebEventCheckout(db, event, input);
+      return reply(result.body, result.status);
+    }
     if (['BHD','JOD','KWD','OMR','TND','ISK'].includes(String(event.currency).toUpperCase())) return reply({error:'Web checkout is not available for this currency yet'},409);
     if (String(event.currency).toUpperCase() === 'NGN') {
       if (!Deno.env.get('PAYSTACK_SECRET_KEY')) return reply({error:'Paystack payments are unavailable'},409);

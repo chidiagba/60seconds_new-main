@@ -3,7 +3,7 @@ import { useAuth } from '@/lib/auth';
 
 // This is a redirect file to handle profile routes
 export default function ProfileRedirect() {
-  const { userId } = useLocalSearchParams();
+  const { userId, tab } = useLocalSearchParams();
   const { user, profile } = useAuth();
   const userType = profile?.user_type || user?.user_metadata?.user_type;
   const profilePath = userType === 'business' ? '/(tabsbusiness)/profile' : '/(tabs)/profile';
@@ -14,5 +14,5 @@ export default function ProfileRedirect() {
   }
   
   // Otherwise, redirect to the current user's profile
-  return <Redirect href={profilePath} />;
+  return <Redirect href={{ pathname: profilePath, params: tab === 'orders' ? { tab: 'orders' } : {} }} />;
 }

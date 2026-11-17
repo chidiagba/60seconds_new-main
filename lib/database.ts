@@ -1428,11 +1428,25 @@ export const ticketReceiptService = {
       logger.warn('Unable to load original purchase dates; using receipt dates:', orderError.message);
     }
 
+    // Receipt snapshots remain authoritative; address is optional display enrichment.
+    const eventIds = [...new Set(tickets.map(ticket => ticket.event_id).filter((id): id is string => !!id))];
+    const videoIds = [...new Set(tickets.map(ticket => ticket.video_id).filter((id): id is string => !!id))];
+    const addressBySource = new Map<string, string>();
+    await Promise.all((['events', 'videos'] as const).map(async table => {
+      const ids = table === 'events' ? eventIds : videoIds;
+      if (!ids.length) return;
+      const result = await supabase.from(table).select('id,location_address,location_city').in('id', ids);
+      if (result.error) return; // Historical or private event details need not block the ticket.
+      for (const row of result.data || []) {
+        addressBySource.set(`${table}:${row.id}`, [row.location_address, row.location_city].filter(Boolean).join(', '));
+      }
+    }));
     const sellers=await loadTicketSellers(supabase,tickets.map(ticket=>ticket.owner_id));
     const purchasedAtByOrder = new Map((orderRows || []).map((order) => [order.id, order.created_at]));
     return tickets.map((ticket) => ({
       ...ticket,
       seller:sellers.get(ticket.owner_id),
+      location_address: addressBySource.get(`events:${ticket.event_id}`) || addressBySource.get(`videos:${ticket.video_id}`) || undefined,
       purchased_at: purchasedAtByOrder.get(ticket.order_id) || ticket.issued_at || ticket.created_at,
     })) as Array<TicketReceipt & { purchased_at?: string }>;
   },

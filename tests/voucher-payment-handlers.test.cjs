@@ -100,3 +100,60 @@ test('a signed legacy Paystack webhook requests reconciliation without issuing r
  const response=await handler(new Request('https://example.test',{method:'POST',headers:{'x-paystack-signature':signature},body:payload}));
  assert.equal(response.status,503);assert.equal((await response.json()).success,false);assert.equal(writes,0);
 });
+
+function selectedPaystackFixture(cachedMetadata = null) {
+ let handler; const initialized=[]; const stored=[];
+ const order={id:'selected-order',order_number:'TEST',payment_status:'pending',payment_reference:'selected-reference',business_id:'owner',currency:'NGN',total_amount:1040,platform_fee:40,items:[{product_id:'ticket',quantity:1}]};
+ const client={auth:{getUser:async()=>({data:{user:{id:'buyer',email:'buyer@example.test'}}}),admin:{getUserById:async()=>({data:{user:{user_metadata:{}}}})}},rpc:async()=>({data:order}),from(name){
+  const chain={select(){return this;},eq(){return this;},order(){return this;},limit:async()=>({data:[]}),maybeSingle:async()=>({data:cachedMetadata?{metadata:cachedMetadata}:null}),upsert:async data=>{stored.push(data);return {error:null};},update(data){stored.push(data);return this;},then(resolve){resolve({error:null});}};
+  return chain;
+ }};
+ load('supabase/functions/paystack-create-order-checkout/index.ts',name=>{
+  if(name.includes('supabase-js'))return {createClient:()=>client};
+  if(name.includes('cors'))return {corsForRequest:()=>({})};
+  if(name.includes('logger'))return {logger:{debug(){}}};
+  return {};
+ },{Deno:{env:{get:name=>name==='PAYSTACK_SECRET_KEY'?'fixture-secret':'fixture'},serve:fn=>{handler=fn;}},crypto:{randomUUID:()=> 'fixture-key'},fetch:async(_url,options)=>{initialized.push(JSON.parse(options.body));return new Response(JSON.stringify({status:true,data:{authorization_url:'https://checkout.paystack.com/fixture',access_code:'fixture-code'}}),{status:200});}});
+ return {initialized,stored,request:channels=>handler(new Request('https://example.test',{method:'POST',headers:{authorization:'Bearer user'},body:JSON.stringify({items:[{productId:'ticket',quantity:1}],requestKey:'selected-method-attempt',channels})}))};
+}
+test('selected Paystack card and bank-transfer channels reach the actual initializer and durable attempt metadata',async()=>{
+ for(const channel of ['card','bank_transfer']){
+  const f=selectedPaystackFixture();const response=await f.request([channel]);
+  assert.equal(response.status,200);assert.equal(f.initialized.length,1);
+  assert.deepEqual(f.initialized[0].channels,[channel]);
+  assert.equal(f.initialized[0].amount,104000);
+  assert.deepEqual(Array.from(f.stored.at(-1).metadata.checkout_channels),[channel]);
+ }
+});
+test('Paystack retries reuse a matching channel but never silently open an old different-method URL',async()=>{
+ const cached={authorization_url:'https://checkout.paystack.com/fixture',access_code:'fixture',checkout_channels:['card']};
+ const same=selectedPaystackFixture(cached);assert.equal((await same.request(['card'])).status,200);assert.equal(same.initialized.length,0);
+ for(const metadata of [cached,{authorization_url:cached.authorization_url}]){
+  const different=selectedPaystackFixture(metadata);const response=await different.request(['bank_transfer']);
+  assert.equal(response.status,409);assert.match((await response.json()).error,/different payment method/);assert.equal(different.initialized.length,0);
+ }
+});
+test('invalid Paystack channels cannot initialize a charge',async()=>{
+ const f=selectedPaystackFixture();assert.equal((await f.request(['untrusted_method'])).status,400);assert.equal(f.initialized.length,0);
+});
+
+test('Stripe honors selected card mode and resumes the stored intent instead of creating a second payment',async()=>{
+ for(const storedReference of [null,'pi_existing']){
+  let handler,created=0,retrieved=0,params;
+  const intent={id:'pi_existing',client_secret:'fixture-secret',amount:104000,currency:'ngn',status:'requires_payment_method',metadata:{checkoutOrderId:'stripe-order',buyerId:'buyer'}};
+  const db={auth:{getUser:async()=>({data:{user:{id:'buyer',email:'buyer@example.test'}}})},rpc:async name=>({data:name==='create_order_checkout'?{id:'stripe-order',business_id:'owner',payment_status:'pending',payment_reference:storedReference,total_amount:1040,platform_fee:40,currency:'NGN'}:null}),from:()=>({select(){return this;},eq(){return this;},maybeSingle:async()=>({data:null})})};
+  class Stripe {customers={create:async()=>({id:'fixture-customer'})};ephemeralKeys={create:async()=>({secret:'fixture-ephemeral'})};paymentIntents={create:async value=>{created++;params=value;return intent;},retrieve:async()=>{retrieved++;return intent;}};}
+  load('supabase/functions/stripe-create-checkout/index.ts',name=>{
+   if(name.includes('supabase-js'))return {createClient:()=>db};
+   if(name.includes('cors'))return {corsForRequest:()=>({})};
+   if(name.includes('commerce-rules'))return {toMinorUnits:value=>Math.round(value*100)};
+   if(name.includes('checkout-stripe'))return {finishStripeCheckout:()=>{throw Error('Unpaid intent must not settle');}};
+   if(name==='npm:stripe')return {default:Stripe};
+   throw Error(name);
+  },{Deno:{env:{get:()=> 'fixture'},serve:fn=>{handler=fn;}}});
+  const response=await handler(new Request('https://example.test',{method:'POST',headers:{authorization:'Bearer user'},body:JSON.stringify({items:[{productId:'ticket',quantity:1}],requestKey:'stripe-selected-method',paymentMethod:'card'})}));
+  assert.equal(response.status,200);assert.equal((await response.json()).paymentIntentClientSecret,'fixture-secret');
+  assert.equal(created,storedReference?0:1);assert.equal(retrieved,storedReference?1:0);
+  if(!storedReference){assert.deepEqual(Array.from(params.payment_method_types),['card']);assert.equal(params.automatic_payment_methods,undefined);}
+ }
+});

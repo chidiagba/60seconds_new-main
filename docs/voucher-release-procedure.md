@@ -1,3 +1,5 @@
+> Update — 16 November 2026: the production checkout migrations and 13 related functions are now deployed. The missing-RPC blocker is resolved. See [deployment results](supabase-checkout-deployment-2026-11-16.md) for evidence and remaining acceptance checks.
+
 # Voucher release procedure — prepared, not executed
 
 ## Release gates and staging/device matrix
@@ -66,3 +68,28 @@ Before commit, any migration error/timeout rolls back the transaction; the injec
 After commit or after accepting payments, retain canonical checkout/evidence/redemption tables and compatible settlement handlers. Stop new checkout creation through approved operational controls and forward-fix. Do not drop financial state, return to fake-payment handlers, release unknown provider holds, or undo voucher counters. Retry a finalizer only with the same verified reference and amount. Database errors roll back financial changes and receipts together; idempotent replay returns the existing result.
 
 A point-in-time restore may discard later valid payments and requires separate incident approval plus provider reconciliation. No destructive down migration, automatic historical repair or automatic refund is supplied. Hosted recovery and device scenarios remain NOT RUN.
+
+## Reproducible release preparation (16 November 2026)
+
+Run `node scripts/prepare-checkout-release.cjs` to generate the checkout transaction,
+its ROLLBACK rehearsal, the separate optional campaign transaction, and SHA256SUMS
+under `build/checkout-release/`. These files come from current repository sources;
+do not copy wrapped SQL out of the supplied PDF. Generation performs no deployment.
+The checkout transaction includes both prerequisite and postcondition gates. It
+requires the expected production baseline in migration history, refuses partial or
+already-recorded releases, and records only the five migrations executed by that
+transaction. Campaign migrations belong to the separate attribution release scope.
+
+`TEST_DATABASE_URL=postgresql://... python3 scripts/test-voucher-production-stage.py`
+now tests the generated checkout files directly: rehearsal leaves no schema/history,
+injected failure rolls back, commit preserves synthetic historical rows, and replay
+fails before further changes. This remains a LOCAL production-shaped test, not a
+hosted staging or production deployment.
+
+The live SELECT-only check on 16 November confirmed all three checkout RPCs absent
+and `checkout_orders`/`voucher_redemptions` absent. A mobile update cannot restore
+checkout until the backend release is approved and applied. Obtain/verify the backup,
+review the generated SQL and hashes, run the rehearsal on hosted staging, apply the
+checkout transaction with `psql -X -v ON_ERROR_STOP=1 -f ...`, redeploy the handler set
+listed above, and complete provider smoke tests before reopening checkout. Never use
+unrestricted `supabase db push` for this production schema.

@@ -1,5 +1,5 @@
 import {TicketSeller} from '@/lib/ticket-seller';
-import { Image } from 'expo-image';
+import PurchasedTicketCard from '@/components/PurchasedTicketCard';
 import React from 'react';
 import {
   View,
@@ -13,8 +13,6 @@ import {
   Share,
 } from 'react-native';
 import { Calendar, ExternalLink, Download, Share2 } from 'lucide-react-native';
-import QRCode from 'react-native-qrcode-svg';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
@@ -33,6 +31,8 @@ type TicketRow = {
   event_name?: string | null;
   event_start_date?: string | null;
   location_name?: string | null;
+  location_address?: string | null;
+  entry_conditions?: string | null;
   seat_no?: string | null;
   is_active: boolean;
   redeemed_at?: string | null;
@@ -245,104 +245,12 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
     };
   };
 
-  const renderTicket = (item: TicketRow) => {
-    const resolvedReceiptKind = item.receipt_kind ||
-      (String(item.ticket_type || 'ticket').toLowerCase() === 'ticket' ? 'ticket' : 'product');
-    const isProductReceipt = resolvedReceiptKind === 'product';
-    const purchaseTimestamp = item.purchased_at || item.issued_at || item.created_at || '';
-    const { dateLabel, timeLabel } = formatTicketDate(purchaseTimestamp);
-    const purchaseDate = new Date(purchaseTimestamp);
-    const purchaseDateLabel = Number.isNaN(purchaseDate.getTime())
-      ? 'Purchase date unavailable'
-      : purchaseDate.toLocaleString(undefined, {
-          year: 'numeric',
-          month: 'short',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          timeZoneName: 'short',
-        });
-
+  const renderTicket = (item: TicketRow, sample = false) => {
     return (
       <View style={styles.ticketWrap}>
-        <View style={styles.ticketCard}>
-          {!!item.ticket_image_url && <Image source={{ uri: item.ticket_image_url }} style={{ width: '100%', height: 160 }} contentFit="cover" accessibilityLabel="Event flyer" />}
-          <LinearGradient
-            colors={['#0A1733', '#10264F', '#173163']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.ticketBackground}
-          >
-            <View style={styles.ticketFrame}>
-              <Text style={styles.brandText}>60seconds</Text>
-              <Text style={styles.receiptKindText}>{isProductReceipt ? 'PRODUCT RECEIPT' : 'EVENT TICKET'}</Text>
+        <PurchasedTicketCard ticket={item} sample={sample} />
 
-              {!!item.qr_code_data&&<View style={styles.qrPanel}>
-                <QRCode
-                  value={item.qr_code_data}
-                  size={168}
-                  backgroundColor="#ffffff"
-                  color="#0A1733"
-                />
-              </View>}
-              <View style={styles.locationSection}><Text style={styles.sectionLabel}>SOLD BY</Text><Text style={styles.locationTitle}>{item.seller?.name||'Business details unavailable'}</Text>{!!item.seller?.username&&<Text style={styles.locationSubtitle}>@{item.seller.username}</Text>}{[item.seller?.address,item.seller?.phone,item.seller?.website].filter(Boolean).map((detail,index)=><Text key={index} style={styles.locationSubtitle}>{detail}</Text>)}</View>
-
-              <View style={styles.dateRow}>
-                <View>
-                  <Text style={styles.sectionLabel}>PURCHASE DATE</Text>
-                  <Text style={styles.dateValue}>{dateLabel}</Text>
-                </View>
-                <View style={styles.purchaseTimeColumn}>
-                  <Text style={styles.sectionLabel}>PURCHASE TIME</Text>
-                  <Text style={styles.dateValue}>{timeLabel}</Text>
-                </View>
-              </View>
-
-              <View style={styles.ticketDivider} />
-
-              <View style={styles.locationSection}>
-                <Text style={styles.sectionLabel}>LOCATION</Text>
-                <Text style={styles.locationTitle}>{item.event_name || item.ticket_title}</Text>
-                {!!item.event_start_date&&<Text style={styles.locationSubtitle}>{new Date(item.event_start_date).toLocaleString()}</Text>}
-                <Text style={styles.locationSubtitle}>{item.location_name || 'Location not specified'}</Text>
-              </View>
-
-              <View style={styles.bottomRow}>
-                <View style={styles.bottomCol}>
-                  <Text style={styles.sectionLabel}>{isProductReceipt ? 'PRODUCT' : 'TICKET'}</Text>
-                  <Text style={styles.primaryBottomText}>{item.ticket_title}</Text>
-                  <Text style={styles.sectionLabel}>QUANTITY</Text>
-                  <Text style={styles.secondaryBottomText}>{Math.max(1, Number(item.quantity || 1))}</Text>
-                  <Text style={styles.sectionLabel}>TOTAL</Text>
-                  <Text style={styles.secondaryBottomText}>
-                    {item.currency || ''} {Number(item.total_price || 0).toFixed(2)}
-                  </Text>
-                  <Text style={styles.sectionLabel}>ORDER NO.</Text>
-                  <Text style={styles.secondaryBottomText}>{item.order_number}</Text>
-                  <Text style={styles.sectionLabel}>SEAT</Text>
-                  <Text style={styles.secondaryBottomText}>{item.seat_no || '-'}</Text>
-                </View>
-
-                <View style={styles.bottomColRight}>
-                  <Text style={styles.sectionLabel}>STATUS</Text>
-                  <Text style={styles.performingText}>
-                    {item.redeemed_at ? 'REDEEMED' : item.is_active ? 'OPEN' : 'INACTIVE'}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.purchaseDateSection}>
-                <Text style={styles.sectionLabel}>PURCHASED ON</Text>
-                <Text style={styles.purchaseDateText}>{purchaseDateLabel}</Text>
-              </View>
-
-              <Text style={styles.brandFooter}>60seconds</Text>
-            </View>
-          </LinearGradient>
-        </View>
-
-        <View style={styles.orderActions}>
+        {!sample && <View style={styles.orderActions}>
           <TouchableOpacity style={styles.actionButton} onPress={() => handleDownloadPdf(item)}>
             <Download size={16} color={Colors.dark.text} />
             <Text style={styles.actionButtonText}>Download PDF</Text>
@@ -364,10 +272,35 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
             <Calendar size={14} color={Colors.dark.subtext} />
             <Text style={styles.generatedAtText}>Issued {formatTicketDate(item.issued_at).dateLabel}</Text>
           </View>
-        </View>
+        </View>}
       </View>
     );
   };
+
+  const samplePreview = __DEV__ ? (
+    <View style={styles.listContainer}>
+      <Text style={styles.title}>Sample purchased ticket</Text>
+      <Text style={styles.subtitle}>Design preview only. No payment or purchase was created.</Text>
+      {renderTicket({
+        id: "sample-preview",
+        order_number: "SAMPLE-0001",
+        qr_code_data: "60SECONDS:SAMPLE:NOT-VALID-FOR-ENTRY",
+        ticket_title: "VIP Admission",
+        event_name: "60seconds Sample Night",
+        event_start_date: "2026-12-19T20:00:00+01:00",
+        location_name: "Sample venue · Lagos",
+        location_address: "12 Sample Street, Victoria Island",
+        entry_conditions: "Doors open at 20:00. Age 18+. Present your valid ticket at entry.",
+        seller: { name: "Sample Events", username: "sample_events" },
+        seat_no: "General admission",
+        is_active: false,
+        issued_at: "2026-11-16T12:00:00+01:00",
+        quantity: 1,
+        total_price: 1040,
+        currency: "NGN",
+      }, true)}
+    </View>
+  ) : null;
 
   if (isLoading) {
     return (
@@ -391,10 +324,13 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
 
   if (!tickets.length) {
     return (
-      <View style={styles.emptyContainer}>
+      <View>
+        {samplePreview}
+        <View style={styles.emptyContainer}>
         <Text style={styles.emptyTicketIcon}>TICKET</Text>
         <Text style={styles.emptyTitle}>No Purchases Yet</Text>
         <Text style={styles.emptySubtitle}>Purchased tickets and products will appear here in your profile</Text>
+        </View>
       </View>
     );
   }
@@ -411,6 +347,7 @@ export default function OrderPDFList({ userId }: OrderPDFListProps) {
         </Text>
       </View>
 
+      {samplePreview}
       <View style={styles.listContainer}>
         {tickets.map((ticket) => (
           <View key={ticket.id}>{renderTicket(ticket)}</View>
@@ -452,142 +389,6 @@ const styles = StyleSheet.create({
   },
   ticketWrap: {
     marginBottom: 16,
-  },
-  ticketCard: {
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  ticketBackground: {
-    width: '100%',
-    padding: 14,
-  },
-  ticketFrame: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
-    borderRadius: 16,
-    padding: 14,
-    alignItems: 'center',
-  },
-  brandText: {
-    color: '#ffffff',
-    fontSize: 34,
-    fontWeight: '800',
-    marginBottom: 12,
-    letterSpacing: 0.3,
-    includeFontPadding: false,
-  },
-  receiptKindText: {
-    color: 'rgba(255,255,255,0.82)',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    marginTop: -8,
-    marginBottom: 12,
-  },
-  qrPanel: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 10,
-    marginBottom: 14,
-  },
-  dateRow: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  dateValue: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '700',
-    includeFontPadding: false,
-  },
-  ticketDivider: {
-    width: '100%',
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.28)',
-    marginBottom: 10,
-  },
-  purchaseDateSection: {
-    marginTop: 14,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.2)',
-  },
-  purchaseDateText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  purchaseTimeColumn: {
-    alignItems: 'flex-end',
-  },
-  locationSection: {
-    width: '100%',
-    marginBottom: 12,
-  },
-  sectionLabel: {
-    color: 'rgba(255,255,255,0.82)',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.7,
-    marginBottom: 2,
-  },
-  locationTitle: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 2,
-    includeFontPadding: false,
-  },
-  locationSubtitle: {
-    color: 'rgba(255,255,255,0.86)',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  bottomRow: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  bottomCol: {
-    flex: 1,
-    paddingRight: 8,
-  },
-  bottomColRight: {
-    width: '40%',
-    alignItems: 'flex-end',
-  },
-  primaryBottomText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '800',
-    marginBottom: 4,
-    includeFontPadding: false,
-  },
-  secondaryBottomText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-    marginBottom: 4,
-    includeFontPadding: false,
-  },
-  performingText: {
-    color: '#ffffff',
-    fontSize: 22,
-    fontWeight: '900',
-    textAlign: 'right',
-    includeFontPadding: false,
-  },
-  brandFooter: {
-    marginTop: 8,
-    color: 'rgba(255,255,255,0.92)',
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    includeFontPadding: false,
   },
   orderActions: {
     marginTop: 10,

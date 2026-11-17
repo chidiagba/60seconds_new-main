@@ -1,4 +1,5 @@
 import { logger } from '@/lib/logger';
+import { checkoutErrorMessage, checkoutErrorCode } from '@/utils/checkout-errors';
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
@@ -72,6 +73,7 @@ interface PaystackWebViewProps {
   paystackBearer?: 'account' | 'subaccount';
   requireSplitRouting?: boolean;
   onRoutingSetupRequired?: () => void;
+  initialChannel?: ChannelSelection;
 }
 
 export default function PaystackWebView({
@@ -93,11 +95,12 @@ export default function PaystackWebView({
   paystackBearer,
   requireSplitRouting = false,
   onRoutingSetupRequired,
+  initialChannel = 'all',
 }: PaystackWebViewProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success' | 'failed'>('idle');
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [selectedChannel, setSelectedChannel] = useState<ChannelSelection>('all');
+  const [selectedChannel, setSelectedChannel] = useState<ChannelSelection>(initialChannel);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [checkoutReference, setCheckoutReference] = useState<string | null>(null);
   const [checkoutWebViewReady, setCheckoutWebViewReady] = useState(false);
@@ -108,13 +111,15 @@ export default function PaystackWebView({
   // Ref to prevent stale-closure success fire after the user has cancelled/navigated away
   const isCancelledRef = useRef(false);
 
-  // Register Android back-button handler while this modal is visible
+  // Reset only when opening. Payment status changes must retain the method and
+  // hosted reference rather than resetting an in-progress checkout to "all".
   useEffect(() => {
     if (!visible) {
-      isCancelledRef.current = false;
+      isCancelledRef.current = true;
       return;
     }
-    setSelectedChannel('all');
+    isCancelledRef.current = false;
+    setSelectedChannel(initialChannel);
     setPaymentStatus('idle');
     setErrorMessage('');
     setCheckoutUrl(null);
@@ -122,6 +127,11 @@ export default function PaystackWebView({
     setCheckoutWebViewReady(false);
     setExternalCheckoutMode(false);
     setCheckoutOrderId(null);
+  }, [visible, initialChannel]);
+
+  // Back handling follows status without resetting the payment session.
+  useEffect(() => {
+    if (!visible) return;
     const onBackPress = () => {
       // Treat hardware back as a cancellation — do NOT silently close
       if (paymentStatus === 'processing') {
@@ -211,7 +221,7 @@ export default function PaystackWebView({
 
       throw new Error(`Payment not completed yet (status: ${status || 'unknown'}).`);
     } catch (error: any) {
-      const message = error?.message || 'Could not verify payment yet.';
+      const message = 'Payment verification is pending. Check your order before attempting another payment.';
       setPaymentStatus('failed');
       setErrorMessage(message);
       setIsLoading(false);
@@ -463,12 +473,12 @@ export default function PaystackWebView({
     } catch (error: any) {
       // Keep expected checkout failures inside the payment UI. console.error
       // triggers the React Native development error overlay and hides the alert.
-      logger.warn('Paystack payment could not start:', error?.message || error);
+      logger.warn('Paystack payment could not start', { code: checkoutErrorCode(error) });
 
-      const message = error?.message || 'There was an error starting the Paystack payment.';
+      const message = checkoutErrorMessage(error);
       const canShowRoutingFixButton =
         typeof onRoutingSetupRequired === 'function' &&
-        (error?.canUpdateBankDetails === true || /split routing|subaccount|bank details|bank account/i.test(message));
+        (error?.canUpdateBankDetails === true || /split routing|subaccount|bank details|bank account/i.test(String(error?.message || '')));
       setPaymentStatus('failed');
       setErrorMessage(message);
       setIsLoading(false);
@@ -512,7 +522,7 @@ export default function PaystackWebView({
     trackPaymentEvent('cancelled', {
       message: 'User cancelled from Paystack modal button',
     }).catch(() => undefined);
-    Alert.alert('Payment Cancelled', 'Your Paystack payment was cancelled.', [
+    Alert.alert('Checkout closed', 'If you started a payment, check its status before paying again.', [
       { text: 'OK', onPress: onCancel },
     ]);
   };
@@ -766,11 +776,11 @@ export default function PaystackWebView({
                 </TouchableOpacity>
 
                 <View style={styles.checkoutActionRow}>
-                  <TouchableOpacity style={styles.changeMethodButton} onPress={handleChangePaymentMethod}>
-                    <Text style={styles.changeMethodButtonText}>Change Payment Method</Text>
+                  <TouchableOpacity style={styles.changeMethodButton} onPress={initialChannel === 'all' ? handleChangePaymentMethod : handleClose}>
+                    <Text style={styles.changeMethodButtonText}>{initialChannel === 'all' ? 'Change Payment Method' : 'Back to cart'}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.cancelCheckoutButton} onPress={handleCancel}>
-                    <Text style={styles.cancelCheckoutButtonText}>Cancel Payment</Text>
+                    <Text style={styles.cancelCheckoutButtonText}>Close checkout</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -780,7 +790,7 @@ export default function PaystackWebView({
               <View style={styles.paymentMethods}>
                 <Text style={styles.methodsTitle}>Supported Payment Methods</Text>
                 <View style={styles.methodsList}>
-                  {SUPPORTED_CHANNELS.map((channel) => (
+                  {(initialChannel === 'all' ? SUPPORTED_CHANNELS : [initialChannel]).map((channel) => (
                     <Text key={channel} style={styles.methodItem}>
                       • {channel === 'bank_transfer' ? 'Direct Transfer' : channel.replace('_', ' ')}
                     </Text>
@@ -788,7 +798,7 @@ export default function PaystackWebView({
                 </View>
                 <Text style={styles.selectMethodTitle}>Choose an Option</Text>
                 <View style={styles.channelPills}>
-                  {CHANNEL_OPTIONS.map((option) => {
+                  {CHANNEL_OPTIONS.filter(option => initialChannel === 'all' || option.key === initialChannel).map((option) => {
                     const selected = selectedChannel === option.key;
                     return (
                       <TouchableOpacity
