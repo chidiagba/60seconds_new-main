@@ -174,6 +174,8 @@ function AppContent() {
   }, []);
 
   const handleDeepLink = async (url: string) => {
+    // Guest lookup codes are private; Expo Router handles the route itself.
+    try { const guestUrl=new URL(url); if(guestUrl.pathname==='/guest-order' || guestUrl.hostname==='guest-order')return; } catch {}
     logger.debug('🔗 Deep link received:', url);
     
     try {
@@ -325,6 +327,7 @@ function AppContent() {
                   }}
                 >
                 <Stack.Screen name="web-event/[id]" options={{ headerShown: false }} />
+                <Stack.Screen name="guest-order" options={{ headerShown: false }} />
                 <Stack.Screen name="[id]" options={{ headerShown: false }} />
                 <Stack.Screen name="(tabs)" options={{ headerShown: false, title: "" }} />
                 <Stack.Screen name="(tabsbusiness)" options={{ headerShown: false, title: "" }} />

@@ -44,3 +44,33 @@ jobs:
       - run: python3 scripts/test-database.py
         env:
           TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/review_test
+      - run: python3 scripts/test-withdrawals.py
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/review_test
+  edge-types:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check critical Edge Function dependency graph
+        working-directory: ${{ runner.temp }}
+        run: >-
+          deno check --no-config --no-lock --node-modules-dir=none
+          "$GITHUB_WORKSPACE/supabase/functions/_shared/withdrawals.ts"
+          "$GITHUB_WORKSPACE/supabase/functions/paystack-initialize/index.ts"
+          "$GITHUB_WORKSPACE/supabase/functions/send-welcome-email/index.ts"
+          "$GITHUB_WORKSPACE/supabase/functions/send-otp/index.ts"
+          "$GITHUB_WORKSPACE/supabase/functions/create-signup-user/index.ts"
+          "$GITHUB_WORKSPACE/supabase/functions/verify-otp/index.ts"
+          "$GITHUB_WORKSPACE/supabase/functions/guest-order-lookup/index.ts"
+          "$GITHUB_WORKSPACE/supabase/functions/guest-event/index.ts"
+          "$GITHUB_WORKSPACE/supabase/functions/guest-checkout-webhook/index.ts"
+          "$GITHUB_WORKSPACE/supabase/functions/guest-checkout-reconcile/index.ts"
+          "$GITHUB_WORKSPACE/supabase/functions/withdrawal-reconcile/index.ts"
+      - name: Test server ticket PDF generation
+        working-directory: ${{ runner.temp }}
+        run: >-
+          deno test --no-config --no-lock --node-modules-dir=none
+          "$GITHUB_WORKSPACE/supabase/functions/_tests/guest-ticket-pdf_test.ts"

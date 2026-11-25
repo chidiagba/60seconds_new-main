@@ -1,3 +1,4 @@
+import {paymentHttpStatus} from '../_shared/payment-http.ts';
 // @ts-nocheck
 import { corsForRequest } from '../_shared/cors.ts';
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
@@ -52,7 +53,12 @@ Deno.serve(async (req) => {
           source: 'fallback',
           error: 'Paystack is not configured on the server (missing PAYSTACK_SECRET_KEY).',
         }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: paymentHttpStatus({
+          banks: [],
+          countryCode: 'NG',
+          source: 'fallback',
+          error: 'Paystack is not configured on the server (missing PAYSTACK_SECRET_KEY).',
+        }), headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -90,7 +96,12 @@ Deno.serve(async (req) => {
         source: 'fallback',
         error: 'Request could not be completed',
       }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: paymentHttpStatus({
+        banks: [],
+        countryCode: 'NG',
+        source: 'fallback',
+        error: 'Request could not be completed',
+      }), headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });

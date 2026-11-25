@@ -39,7 +39,7 @@ as $$
       'video', (select jsonb_build_object('id', v.id, 'title', v.title, 'thumbnail_url', v.thumbnail_url, 'video_url', v.video_url)
         from public.videos v where v.id = e.video_id),
       'creator', (select jsonb_build_object('id', p.id, 'username', p.username, 'full_name', p.full_name, 'avatar_url', p.avatar_url)
-        from public.profiles p where p.id = coalesce(e.creator_id, e.user_id))
+        from public.profiles p where p.id = coalesce(nullif(to_jsonb(e)->>'creator_id','')::uuid, e.user_id))
     ) order by e.created_at desc, e.id) from visible e), '[]'::jsonb)
   );
 $$;

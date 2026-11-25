@@ -44,8 +44,7 @@ async function initializeNativeStripePayment(params: StripePaymentParams) {
     await ensureStripeInitialized();
 
     const stripeKey =
-      process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
-      'pk_live_51SnDvXJTbyjuWarpewYMsveVy4MZcwQGtfcSfWa3qq390qr8Da0xFdcoA6Nya6UeUUNsApKVUnWbxw9tf2Mymscp00AbgC2cOa';
+      process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
 
     // Initialize payment sheet with backend created payment intent
     const paymentIntentClientSecret = await createPaymentIntentOnBackend(params);

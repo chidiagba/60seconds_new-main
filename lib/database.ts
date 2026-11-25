@@ -88,6 +88,7 @@ async function ensureAuthenticatedProfileExists() {
     business_type: typeof metadata.business_type === 'string' ? metadata.business_type : null,
     country,
     country_code: countryCode,
+    location_city: typeof metadata.location_city === 'string' ? metadata.location_city.trim() : null,
     currency: resolvedCurrency,
     avatar_url: typeof metadata.avatar_url === 'string' ? metadata.avatar_url : null,
   } as const;
@@ -1866,18 +1867,18 @@ export const voucherService = {
       throw new Error('Only business users can create vouchers');
     }
 
+    // Redemption counters and generated fields belong to the database.
+    const { usage_count, id, created_at, updated_at, ...editableVoucher } = voucher;
+    const insert = { ...editableVoucher, creator_id: user.id, is_active: voucher.is_active ?? true };
+
     let { data, error } = await supabase
       .from('vouchers')
-      .insert({
-        ...voucher,
-        usage_count: 0,
-        is_active: voucher.is_active ?? true
-      })
+      .insert(insert)
       .select()
       .single();
 
     if (isLegacyVoucherSchemaError(error)) {
-      const legacy = await supabase.from('vouchers').insert(legacyVoucherFields({ ...voucher, usage_count: 0, is_active: voucher.is_active ?? true })).select().single();
+      const legacy = await supabase.from('vouchers').insert(legacyVoucherFields(insert)).select().single();
       data = legacy.data;
       error = legacy.error;
     }

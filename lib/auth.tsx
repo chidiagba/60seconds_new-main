@@ -25,6 +25,7 @@ interface AuthContextType {
     business_type?: string;
     country?: string;
     country_code?: string;
+    location_city?: string;
     currency?: string;
   }, options?: { emailRedirectTo?: string }, attribution?: {
     referralCode: string;
@@ -113,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ? { avatar_gender: (previousProfile as any).avatar_gender }
         : {}),
       bio: undefined,
-      location_city: undefined,
+      location_city: currentUser.user_metadata?.location_city || previousProfile?.location_city || undefined,
       business_name: currentUser.user_metadata?.business_name || undefined,
       business_type: currentUser.user_metadata?.business_type || undefined,
       country: currentUser.user_metadata?.country || undefined,
@@ -314,6 +315,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     business_type?: string;
     country?: string;
     country_code?: string;
+    location_city?: string;
     currency?: string;
   }, _options?: { emailRedirectTo?: string }, attribution?: {
     referralCode: string;
@@ -355,6 +357,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             business_type: profileData?.business_type,
             country: profileData?.country,
             country_code: profileData?.country_code,
+            location_city: profileData?.location_city,
             currency: resolvedSignupCurrency,
           },
           attribution: attribution ? {

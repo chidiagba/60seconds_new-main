@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
 function load(platform, initStripe) {
-  const context={exports:{},process:{env:{}},require:name=>name==='react-native'?{Platform:{OS:platform}}:{initStripe}};
+  const context={exports:{},process:{env:{EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY:'pk_test_fixture'}},require:name=>name==='react-native'?{Platform:{OS:platform}}:{initStripe}};
   vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/stripe-initialization.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,context);
   return context.exports.ensureStripeInitialized;
 }

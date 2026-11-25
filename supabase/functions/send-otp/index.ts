@@ -1,3 +1,5 @@
+import type {ServiceDatabase} from '../_shared/service-client.ts';
+import { lookupAuthUser } from '../_shared/auth-user-lookup.ts';
 import { corsForRequest } from '../_shared/cors.ts';
 // @ts-ignore
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -112,34 +114,12 @@ const sendViaResend = async (email: string, subject: string, text: string): Prom
   return { ok: true, provider: "resend", detail: body || "accepted" };
 };
 
-const resolveUserByEmail = async (supabase: ReturnType<typeof createClient>, normalizedEmail: string): Promise<AuthUserRecord | null> => {
-  let page = 1;
-  const perPage = 1000;
-
-  while (page <= 20) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
-    if (error) {
-      throw new Error(`Failed to search users: ${error.message}`);
-    }
-
-    const users = data?.users || [];
-    const matched = users.find((u: any) => String(u?.email || "").trim().toLowerCase() === normalizedEmail);
-    if (matched) {
-      return { id: matched.id, email: matched.email || null };
-    }
-
-    if (users.length < perPage) {
-      break;
-    }
-
-    page += 1;
-  }
-
-  return null;
+const resolveUserByEmail = async (supabase: ServiceDatabase, normalizedEmail: string): Promise<AuthUserRecord | null> => {
+  return lookupAuthUser(supabase, normalizedEmail);
 };
 
 const resolveUserById = async (
-  supabase: ReturnType<typeof createClient>,
+  supabase: ServiceDatabase,
   uid: string,
 ): Promise<AuthUserRecord | null> => {
   const { data, error } = await supabase.auth.admin.getUserById(uid);

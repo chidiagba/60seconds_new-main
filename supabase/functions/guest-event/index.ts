@@ -3,7 +3,7 @@ import { corsForRequest } from '../_shared/cors.ts';
 import { initializeGuestPaystack } from '../_shared/guest-paystack.ts';
 import { eventShareExpired, toMinorUnits } from '../../../utils/commerce-rules.ts';
 import { resolveEventCurrency } from '../../../utils/country-currency.ts';
-import Stripe from 'npm:stripe';
+import Stripe from 'npm:stripe@23.2.0';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 Deno.serve(async req => {
@@ -51,7 +51,7 @@ Deno.serve(async req => {
       const base = (Deno.env.get('PUBLIC_EVENT_BASE_URL') || 'https://events.60secondsapp.io').replace(/\/$/,'');
       let session: Stripe.Checkout.Session;
       try {
-        session = await stripe.checkout.sessions.create({mode:'payment',payment_method_types:['card'],customer_email:order.guest_email,
+        session = await stripe.checkout.sessions.create({mode:'payment',allowed_payment_method_types:['card'],customer_email:order.guest_email,
           client_reference_id:order.id,metadata:{guest_order_id:order.id},expires_at:Math.floor(Date.now()/1000)+1800,
           line_items:order.items.map((i:any)=>({quantity:i.quantity,price_data:{currency:order.currency.toLowerCase(),unit_amount:toMinorUnits(i.price,order.currency),product_data:{name:i.name}}})),
           payment_intent_data:{application_fee_amount:toMinorUnits(order.total_amount-order.total_amount/1.04,order.currency),transfer_data:{destination:owner.stripe_connected_account_id}},
@@ -100,7 +100,7 @@ Deno.serve(async req => {
     let session: Stripe.Checkout.Session;
     try {
       const base = (Deno.env.get('PUBLIC_EVENT_BASE_URL') || 'https://events.60secondsapp.io').replace(/\/$/,'');
-      session = await stripe.checkout.sessions.create({ mode:'payment',payment_method_types:['card'],customer_email:order.guest_email,
+      session = await stripe.checkout.sessions.create({ mode:'payment',allowed_payment_method_types:['card'],customer_email:order.guest_email,
         client_reference_id:order.id,metadata:{guest_order_id:order.id},expires_at:Math.floor(Date.now()/1000)+1800,
         line_items:order.items.map((i: any) => ({ quantity:i.quantity,price_data:{currency:order.currency.toLowerCase(),unit_amount:toMinorUnits(i.price,order.currency),product_data:{name:i.name}} })),
         payment_intent_data:{application_fee_amount:toMinorUnits(order.total_amount-order.total_amount/1.04,order.currency),transfer_data:{destination:owner.stripe_connected_account_id}},

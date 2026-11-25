@@ -15,11 +15,11 @@ export function calculateOwnerWalletBalance(rows: ReadonlyArray<{
     Number(b.metadata?.entry === 'paystack_bank_settlement'));
   let balance = 0;
   for (const row of ordered) {
-    if (!['completed', 'success', 'successful', 'paid'].includes(String(row.status || '').trim().toLowerCase())) continue;
+    if (!['completed', 'success', 'successful', 'paid'].includes(String(row.status || '').trim().toLowerCase()) && !(row.status==='pending' && row.metadata?.entry==='owner_withdrawal')) continue;
     const amount = Math.round(Number(row.amount || 0) * 100);
     if (!Number.isFinite(amount)) continue;
     const entry = String(row.metadata?.entry || '').trim();
-    if (entry === 'owner_credit') balance += Math.max(0, amount);
+    if (entry === 'owner_credit' || entry === 'wallet_funding') balance += Math.max(0, amount);
     else if (entry === 'paystack_bank_settlement') balance = Math.max(0, balance - Math.abs(amount));
     else if (entry === 'owner_withdrawal' || row.type === 'withdrawal') balance -= Math.abs(amount);
     else if (includeLegacyEntries && row.type !== 'fee' && entry !== 'buyer_debit') {

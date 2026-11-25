@@ -1,3 +1,4 @@
+import { processWithdrawal } from '../_shared/withdrawals.ts';
 import {createClient} from 'https://esm.sh/@supabase/supabase-js@2';
 import {finishStripeCheckout} from '../_shared/checkout-stripe.ts';
 import Stripe from 'npm:stripe';
@@ -7,6 +8,16 @@ Deno.serve(async req => {
   let event: Stripe.Event;
   try { event = await stripe.webhooks.constructEventAsync(await req.text(),req.headers.get('stripe-signature') || '',Deno.env.get('STRIPE_GUEST_WEBHOOK_SECRET')!); }
   catch { return new Response('Invalid signature',{status:400}); }
+  if(event.type.startsWith('payout.')) {
+    const payout=event.data.object as Stripe.Payout;
+    const db=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    try {
+      const {data:hold,error}=await db.from('withdrawal_holds').select('*').eq('reference',payout.metadata?.reference||'').eq('provider','stripe').maybeSingle();
+      if(error) throw error;
+      if(hold && event.account===hold.destination.connected_account) await processWithdrawal(db,{...hold,state:'pending'});
+      return new Response('Processed');
+    } catch {return new Response('Retry withdrawal reconciliation',{status:500});}
+  }
   if (event.type.startsWith('payment_intent.')) {
     const intent=event.data.object as Stripe.PaymentIntent;
     if(!intent.metadata?.checkoutOrderId)return new Response('Ignored');

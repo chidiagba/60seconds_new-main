@@ -1,3 +1,4 @@
+import {paymentHttpStatus} from '../_shared/payment-http.ts';
 // @ts-nocheck
 import { corsForRequest } from '../_shared/cors.ts';
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
@@ -6,8 +7,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 
 const supabaseUrl =
-  Deno.env.get('SUPABASE_URL') ||
-  `https://${Deno.env.get('SUPABASE_PROJECT_REF') || ''}.supabase.co`;
+  Deno.env.get('SUPABASE_URL') || '';
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
 if (!supabaseUrl || !supabaseServiceKey) {
@@ -132,7 +132,7 @@ Deno.serve(async (req) => {
   const corsHeaders = corsForRequest(req);
   const respond = (body: unknown) =>
     new Response(JSON.stringify(body), {
-      status: 200,
+      status: paymentHttpStatus(body),
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   if (req.method === 'OPTIONS') {

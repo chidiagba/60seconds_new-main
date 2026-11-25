@@ -1,3 +1,4 @@
+import { processWithdrawal } from '../_shared/withdrawals.ts';
 // @ts-nocheck
 import { logger } from '../_shared/logger.ts';
 import { corsForRequest } from '../_shared/cors.ts';
@@ -8,8 +9,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 
 const supabaseUrl =
-  Deno.env.get("SUPABASE_URL") ||
-  `https://${Deno.env.get("SUPABASE_PROJECT_REF") || ""}.supabase.co`;
+  Deno.env.get('SUPABASE_URL') || '';
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const paystackSecretKey = Deno.env.get("PAYSTACK_SECRET_KEY") || "";
 
@@ -114,6 +114,12 @@ Deno.serve(async (req) => {
     const data = body?.data || {};
     const metadata = data?.metadata && typeof data.metadata === "object" ? data.metadata : {};
 
+    if(['transfer.success','transfer.failed','transfer.reversed'].includes(event)) {
+      const {data:hold,error}=await supabaseAdmin.from('withdrawal_holds').select('*').eq('reference',String(data.reference||'')).eq('provider','paystack').maybeSingle();
+      if(error) throw error;
+      if(hold) await processWithdrawal(supabaseAdmin,{...hold,state:'pending'});
+      return Response.json({success:true});
+    }
     if (event !== "charge.success") {
       return new Response(JSON.stringify({ success: true, ignored: true, event }), {
         status: 200,

@@ -50,7 +50,7 @@ export async function reconcileGuestPaystack(db: any, reference: string): Promis
   let transaction;
   try { transaction = await paystack(`transaction/verify/${encodeURIComponent(reference)}`); }
   catch(error) {
-    if (checkout.state === 'reserved' && Date.now() >= Date.parse(checkout.expires_at) && /transaction.*(not found|does not exist)|invalid.*reference/i.test(String(error.message))) {
+    if (checkout.state === 'reserved' && Date.now() >= Date.parse(checkout.expires_at) && /transaction.*(not found|does not exist)|invalid.*reference/i.test(String(error instanceof Error?error.message:'Provider unavailable'))) {
       return fulfillGuestSession({id:reference,metadata:{guest_order_id:id}},false);
     }
     throw error;
@@ -67,11 +67,12 @@ export async function reconcileGuestPaystack(db: any, reference: string): Promis
   // already released table: refund the verified transaction instead.
   if (checkout.state === 'released') {
     if (checkout.refund_id) return new Response('Refund already requested');
-    const {error: markError} = await db.from('guest_checkouts').update({refund_pending:true}).eq('order_id',id);
-    if (markError) throw markError;
+    const {data:claimed,error:claimError}=await db.rpc('claim_guest_refund',{p_order:id});
+    if(claimError) throw claimError;
+    if(!claimed) return new Response('Refund reconciliation already claimed',{status:202});
     const refunds = await paystack(`refund?transaction=${encodeURIComponent(transaction.id)}`);
     const existing = refunds.find((r:any)=>Number(r.amount) === transaction.amount && !['failed','cancelled'].includes(r.status));
-    const refund = existing || await paystack('refund',{transaction:reference,amount:transaction.amount,customer_note:'Your table checkout expired before payment completed. Your payment is being refunded.'});
+    const refund = existing || await paystack('refund',{transaction:reference,reference:`refund_${id}`,amount:transaction.amount,customer_note:'Your table checkout expired before payment completed. Your payment is being refunded.'});
     const {error: refundError} = await db.from('guest_checkouts').update({refund_id:String(refund.id),refund_pending:false}).eq('order_id',id);
     if (refundError) throw refundError;
     return new Response('Refund requested');

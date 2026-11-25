@@ -55,3 +55,17 @@ test('account deletion ignores an attacker-supplied user ID',async()=>{
  await caller.remove({userId:'00000000-0000-0000-0000-000000000099'});
  assert.equal(targets.length,6);assert.ok(targets.every(id=>id==='verified-user'));
 });
+
+test('legacy Node funding route delegates only safe fields to the canonical Edge initializer',async()=>{
+ const api=load('backend/trpc/create-context.ts',{'../lib/supabase':{supabase:{}}});
+ const calls=[];
+ const {initializePaymentProcedure}=load('backend/trpc/routes/paystack/initialize/route.ts',{
+  '../../../create-context':api,'@/backend/lib/supabase':{supabase:{functions:{invoke:async(name,options)=>{calls.push({name,options});return{data:{success:true,data:{authorization_url:'https://checkout.paystack.com/test',access_code:'saved',reference:'fund_server'}}};}}}},
+ });
+ const caller=api.createTRPCRouter({initialize:initializePaymentProcedure}).createCaller({user:{id:'verified-user',email:'owner@example.test'},req:new Request('https://example.test',{headers:{authorization:'Bearer verified-session'}})});
+ const result=await caller.initialize({email:'forged@example.test',amount:100,metadata:{paymentType:'wallet_funding',userId:'attacker'},reference:'forged',subaccount:'ACCT_attacker',bearer:'subaccount',userId:'attacker',walletId:'forged'});
+ assert.equal(result.data.reference,'fund_server');assert.equal(calls.length,1);assert.equal(calls[0].name,'paystack-initialize');assert.equal(calls[0].options.headers.Authorization,'Bearer verified-session');
+ assert.equal(calls[0].options.body.paymentType,'wallet_funding');
+ for(const key of ['email','metadata','subaccount','bearer','reference','userId','walletId'])assert.equal(calls[0].options.body[key],undefined);
+ await assert.rejects(caller.initialize({email:'owner@example.test',amount:100,paymentType:'order_payment'}),error=>error.code==='BAD_REQUEST');assert.equal(calls.length,1);
+});

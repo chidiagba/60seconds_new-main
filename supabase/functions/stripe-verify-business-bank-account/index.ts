@@ -1,3 +1,4 @@
+import {paymentHttpStatus} from '../_shared/payment-http.ts';
 // @ts-nocheck
 import { corsForRequest } from '../_shared/cors.ts';
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
@@ -8,8 +9,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const stripeSecretKey = Deno.env.get('STRIPE_SECRET_KEY') || '';
 const supabaseUrl =
-  Deno.env.get('SUPABASE_URL') ||
-  `https://${Deno.env.get('SUPABASE_PROJECT_REF') || 'rvvujgbaswecqohixgog'}.supabase.co`;
+  Deno.env.get('SUPABASE_URL') || '';
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
 
@@ -42,58 +42,14 @@ const getMetaValue = (obj: any, keys: string[]): string | null => {
 };
 
 const persistConnectedAccountId = async (userId: string, connectedAccountId: string, authUser: any) => {
-  await supabaseAdmin
-    .from('profiles')
-    .update({ stripe_connected_account_id: connectedAccountId })
-    .eq('id', userId);
-
-  try {
-    const userMeta = (authUser?.user_metadata || {}) as Record<string, any>;
-    await supabaseAdmin.auth.admin.updateUserById(userId, {
-      user_metadata: {
-        ...userMeta,
-        stripe_connected_account_id: connectedAccountId,
-        stripe_account_id: connectedAccountId,
-      },
-    });
-  } catch (metaError) {
-    console.warn('Unable to persist stripe account id in auth metadata:', metaError);
-  }
+  const {error}=await supabaseAdmin.auth.admin.updateUserById(userId, {
+    app_metadata:{...authUser.app_metadata,stripe_connected_account_id:connectedAccountId},
+  });
+  if(error) throw error;
 };
-
-const resolveConnectedAccountId = async (userId: string, authUser: any, payload: any): Promise<string | null> => {
-  const direct = getMetaValue(payload, ['connectedAccountId', 'stripeConnectedAccountId', 'stripe_account_id']);
-  if (direct) return direct;
-
-  const userMeta = authUser?.user_metadata || {};
-  const appMeta = authUser?.app_metadata || {};
-
-  const fromMeta =
-    getMetaValue(userMeta, ['stripe_connected_account_id', 'stripe_account_id', 'connected_account_id']) ||
-    getMetaValue(appMeta, ['stripe_connected_account_id', 'stripe_account_id', 'connected_account_id']);
-
-  if (fromMeta) return fromMeta;
-
-  const { data: profileRow, error: profileError } = await supabaseAdmin
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (!profileError && profileRow) {
-    const fromProfile = getMetaValue(profileRow as any, [
-      'stripe_connected_account_id',
-      'stripe_account_id',
-      'connected_account_id',
-      'owner_stripe_account_id',
-    ]);
-
-    if (fromProfile) return fromProfile;
-  }
-
-  return null;
+const resolveConnectedAccountId = async (_userId: string, authUser: any, _payload: any): Promise<string | null> => {
+  return getMetaValue(authUser.app_metadata,['stripe_connected_account_id']);
 };
-
 const ensureConnectedAccountId = async (userId: string, authUser: any, payload: any): Promise<string | null> => {
   const existing = await resolveConnectedAccountId(userId, authUser, payload);
   if (existing) {
@@ -202,19 +158,30 @@ Deno.serve(async (req) => {
           verificationReason: 'Stripe Connected account not found. Complete Stripe onboarding first.',
         }),
         {
-          status: 200,
+          status: paymentHttpStatus({
+          verified: false,
+          verificationStatus: 'failed',
+          verificationReason: 'Stripe Connected account not found. Complete Stripe onboarding first.',
+        }),
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       );
     }
 
     const refreshOnly = payload?.refreshOnly === true;
-    const externalAccountId = String(payload?.stripeExternalAccountId || '').trim();
+    const {data:savedBank,error:bankError}=await supabaseAdmin.from('business_bank_accounts').select('*').eq('user_id',userId).maybeSingle();
+    if(bankError) throw bankError;
+    const externalAccountId = savedBank?.verification_source==='server_v2' ? savedBank.stripe_external_account_id : null;
 
     if (refreshOnly && externalAccountId) {
       const connectedAccount = await stripe.accounts.retrieve(connectedAccountId);
       const external = await stripe.accounts.retrieveExternalAccount(connectedAccountId, externalAccountId);
       const result = mapVerificationFromStripe(external, connectedAccount);
+      const {error:saveError}=await supabaseAdmin.from('business_bank_accounts').update({
+        is_verified:result.verified,verification_status:result.verificationStatus,verification_reason:result.verificationReason,
+        stripe_connected_account_id:connectedAccountId,verification_source:'server_v2',verified_at:result.verified?new Date().toISOString():null,
+      }).eq('id',savedBank.id).eq('user_id',userId);
+      if(saveError) throw saveError;
 
       return new Response(
         JSON.stringify({
@@ -266,6 +233,15 @@ Deno.serve(async (req) => {
 
     const connectedAccount = await stripe.accounts.retrieve(connectedAccountId);
     const result = mapVerificationFromStripe(externalBank, connectedAccount);
+    const {error:saveError}=await supabaseAdmin.from('business_bank_accounts').upsert({
+      user_id:userId,bank_name:String(payload.bankName||'Bank'),account_holder_name:accountHolderName,account_number:iban||accountNumber,
+      routing_number:routingNumber||null,iban:iban||null,country,country_code:country,currency:currency.toUpperCase(),payout_provider:'stripe',
+      is_verified:result.verified,verification_status:result.verificationStatus,verification_reason:result.verificationReason,
+      verification_source:'server_v2',verified_at:result.verified?new Date().toISOString():null,is_active:true,is_primary:true,
+      stripe_connected_account_id:connectedAccountId,stripe_external_account_id:externalBank.id,
+      paystack_recipient_code:null,paystack_recipient_id:null,paystack_subaccount_code:null,paystack_subaccount_id:null,
+    },{onConflict:'user_id'});
+    if(saveError) throw saveError;
 
     return new Response(
       JSON.stringify({
@@ -288,7 +264,11 @@ Deno.serve(async (req) => {
         verificationReason: error?.message || 'Stripe verification failed.',
       }),
       {
-        status: 200,
+        status: paymentHttpStatus({
+        verified: false,
+        verificationStatus: 'failed',
+        verificationReason: error?.message || 'Stripe verification failed.',
+      }),
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     );

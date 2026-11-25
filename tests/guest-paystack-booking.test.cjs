@@ -11,7 +11,7 @@ function setup(status='success') {
  const order={id,business_id:'owner',user_id:'buyer',guest_email:'test@example.com',total_amount:1040,currency:'NGN',items:[]};
  const state={calls:[],ledger:0,fulfilled:0,refunds:0,routes:[]};
  const transaction={id:123,reference,status,amount:104000,currency:'NGN',metadata:{guest_order_id:id}};
- const db={from(name){let patch;const chain={select(){return this},eq(){return this},order(){return this},update(value){patch=value;return this},single:async()=>({data:name==='orders'?order:checkout}),limit:async()=>({data:state.routes}),then(resolve){Object.assign(name==='orders'?order:checkout,patch||{});resolve({error:null})}};return chain;},auth:{admin:{getUserById:async()=>({data:{user:{user_metadata:{}}}})}},rpc:async(name)=>{if(name==='settle_verified_guest_payment'){checkout.state='paid';state.ledger++;}else throw new Error('Unexpected settlement RPC');return {error:null}}};
+ const db={from(name){let patch;const chain={select(){return this},eq(){return this},order(){return this},update(value){patch=value;return this},single:async()=>({data:name==='orders'?order:checkout}),limit:async()=>({data:state.routes}),then(resolve){Object.assign(name==='orders'?order:checkout,patch||{});resolve({error:null})}};return chain;},auth:{admin:{getUserById:async()=>({data:{user:{user_metadata:{}}}})}},rpc:async(name)=>{if(name==='claim_guest_refund')return {data:true,error:null};if(name==='settle_verified_guest_payment'){checkout.state='paid';state.ledger++;}else throw new Error('Unexpected settlement RPC');return {error:null}}};
  const exports={};
  const fetch=async(url,options)=>{
   state.calls.push({url,body:options.body?JSON.parse(options.body):null});

@@ -521,3 +521,9 @@ content_path = "./supabase/templates/recovery.html"
 
 [functions.checkout-reconcile]
 verify_jwt = true
+
+[functions.withdrawal-reconcile]
+verify_jwt = false
+
+[functions.guest-order-lookup]
+verify_jwt = false

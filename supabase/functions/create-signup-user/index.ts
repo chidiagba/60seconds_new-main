@@ -1,3 +1,5 @@
+import { lookupAuthUser } from '../_shared/auth-user-lookup.ts';
+import { allowRequest } from '../_shared/rate-limit.ts';
 import { corsForRequest } from '../_shared/cors.ts';
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -15,6 +17,7 @@ type SignupBody = {
     business_type?: string;
     country?: string;
     country_code?: string;
+    location_city?: string;
     currency?: string;
   };
   attribution?: {
@@ -76,8 +79,7 @@ Deno.serve(async (req) => {
     }
 
     const supabaseUrl =
-      Deno.env.get("SUPABASE_URL") ||
-      `https://${Deno.env.get("SUPABASE_PROJECT_REF") || "rvvujgbaswecqohixgog"}.supabase.co`;
+      Deno.env.get('SUPABASE_URL') || '';
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
     if (!supabaseUrl || !serviceRoleKey) {
@@ -91,6 +93,7 @@ Deno.serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
+    if(!await allowRequest(admin,req,'signup',email)) return new Response(JSON.stringify({error:'Please try again later'}),{status:429,headers:{...corsHeaders,'Content-Type':'application/json'}});
     let validatedCampaign: { campaign_id: string; referral_code: string } | null = null;
     if (referralCode) {
       const { data: campaign, error: campaignError } = await admin
@@ -131,27 +134,7 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (staleProfile) {
-      let authUserExists = false;
-      let page = 1;
-      const perPage = 1000;
-
-      while (!authUserExists && page <= 10) {
-        const { data, error } = await admin.auth.admin.listUsers({ page, per_page: perPage });
-        if (error) {
-          return new Response(JSON.stringify({ success: false, error: 'Request could not be completed' }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-
-        authUserExists = Boolean(data?.users?.find((u) => (u.email || '').trim().toLowerCase() === email));
-
-        if (!data?.users?.length || data.users.length < perPage) {
-          break;
-        }
-
-        page += 1;
-      }
+      const authUserExists = Boolean(await lookupAuthUser(admin,email));
 
       if (!authUserExists) {
         const { error: deleteErr } = await admin.from('profiles').delete().eq('email', email);
@@ -172,31 +155,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    let existingUserId: string | null = null;
-    let page = 1;
-    const perPage = 1000;
-
-    while (!existingUserId && page <= 10) {
-      const { data, error } = await admin.auth.admin.listUsers({ page, per_page: perPage });
-      if (error) {
-        return new Response(JSON.stringify({ success: false, error: 'Request could not be completed' }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      const match = data?.users?.find((u) => (u.email || "").trim().toLowerCase() === email);
-      if (match) {
-        existingUserId = match.id;
-        break;
-      }
-
-      if (!data?.users?.length || data.users.length < perPage) {
-        break;
-      }
-
-      page += 1;
-    }
+    const existingUserId = (await lookupAuthUser(admin,email))?.id;
 
     if (existingUserId) {
       return new Response(
@@ -218,7 +177,8 @@ Deno.serve(async (req) => {
       business_name: profileData.business_name,
       business_type: profileData.business_type,
       country: profileData.country,
-      country_code: profileData.country_code,
+      country_code: typeof profileData.country_code === "string" ? profileData.country_code.trim().toUpperCase() : undefined,
+      location_city: typeof profileData.location_city === "string" ? profileData.location_city.trim().slice(0,120) : undefined,
       currency: resolveSignupCurrency(profileData),
     };
 
@@ -267,30 +227,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    let welcomeEmailTriggered = false;
-    if (!isBusinessSignup) {
-      const fallbackName =
-        String(profileData.full_name || "").trim() ||
-        String(email.split("@")[0] || "there").trim() ||
-        "there";
-
-      try {
-        const { data: welcomeData, error: welcomeErr } = await admin.functions.invoke("send-welcome-email", {
-          body: {
-            user_id: createdUserId,
-            email,
-            name: fallbackName,
-            trigger: "post_private_signup_autoverified",
-          },
-        });
-
-        if (!welcomeErr && welcomeData?.success) {
-          welcomeEmailTriggered = true;
-        }
-      } catch (welcomeInvokeErr) {
-        console.warn("Failed to trigger welcome email for private signup (non-blocking):", welcomeInvokeErr);
-      }
-    }
+    const welcomeEmailTriggered = false; // Delivery follows verified OTP, never unverified signup.
 
     return new Response(
       JSON.stringify({

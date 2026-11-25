@@ -6,8 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 
 const supabaseUrl =
-  Deno.env.get("SUPABASE_URL") ||
-  `https://${Deno.env.get("SUPABASE_PROJECT_REF") || ""}.supabase.co`;
+  Deno.env.get('SUPABASE_URL') || '';
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const backfillAdminToken = Deno.env.get("BACKFILL_ADMIN_TOKEN") || "";
 
@@ -58,28 +57,12 @@ const ensureWallet = async (userId: string, currency: string, isVerified = true)
   return data;
 };
 
-const adjustWalletBalance = async (walletId: string, delta: number) => {
-  const { data: wallet, error: fetchError } = await supabaseAdmin
-    .from("wallets")
-    .select("id,balance")
-    .eq("id", walletId)
-    .single();
-
-  if (fetchError || !wallet) {
-    throw new Error(`Failed to fetch wallet ${walletId}: ${fetchError?.message || "unknown"}`);
-  }
-
-  const nextBalance = roundMoney(Number(wallet.balance || 0) + delta);
-  const { error: updateError } = await supabaseAdmin
-    .from("wallets")
-    .update({ balance: nextBalance, updated_at: new Date().toISOString() })
-    .eq("id", walletId);
-
-  if (updateError) {
-    throw new Error(`Failed to update wallet ${walletId}: ${updateError.message}`);
-  }
-
-  return nextBalance;
+const adjustWalletBalance = async (walletId: string, _delta: number) => {
+  const {error}=await supabaseAdmin.rpc('recalculate_owner_wallet_balance',{target_wallet_id:walletId});
+  if(error) throw error;
+  const {data,error:readError}=await supabaseAdmin.from('wallets').select('balance').eq('id',walletId).single();
+  if(readError) throw readError;
+  return Number(data.balance);
 };
 
 const buildItems = (order: any) =>

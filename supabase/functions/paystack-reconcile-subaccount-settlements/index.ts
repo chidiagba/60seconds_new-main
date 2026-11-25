@@ -124,13 +124,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { data: rows, error: ledgerError } = await admin.from('transactions').select('amount,type,status,metadata,created_at').eq('wallet_id', wallet.id);
-    if (ledgerError) throw ledgerError;
-    const balance = calculateOwnerWalletBalance(rows || []);
-    if (Math.abs(Number(wallet.balance || 0) - balance) >= 0.01) {
-      const { error: balanceError } = await admin.from('wallets').update({ balance, updated_at: new Date().toISOString() }).eq('id', wallet.id);
-      if (balanceError) throw balanceError;
-    }
+    const {error:balanceError}=await admin.rpc('recalculate_owner_wallet_balance',{target_wallet_id:wallet.id});
+    if(balanceError) throw balanceError;
+    const {data:current,error:readError}=await admin.from('wallets').select('balance').eq('id',wallet.id).single();
+    if(readError) throw readError;
+    const balance=Number(current.balance);
     return reply({ success: true, subaccountLinked: Boolean(subaccount || accountNumber), scanned: settlements.length, created, updated, balance });
   } catch (error) {
     console.error('paystack-reconcile-subaccount-settlements:', error);

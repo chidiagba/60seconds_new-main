@@ -93,8 +93,8 @@ android {
         applicationId 'app.sixtyseconds.nightlife'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 118
-        versionName "115.0.4"
+        versionCode 120
+        versionName "120.0.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

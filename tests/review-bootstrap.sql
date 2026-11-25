@@ -4,7 +4,7 @@ CREATE ROLE service_role BYPASSRLS;
 CREATE SCHEMA auth;
 CREATE SCHEMA storage;
 CREATE SCHEMA extensions;
-CREATE TABLE auth.users (id uuid primary key default gen_random_uuid(),email text,email_confirmed_at timestamptz,raw_app_meta_data jsonb default '{}',raw_user_meta_data jsonb default '{}',created_at timestamptz default now());
+CREATE TABLE auth.users (id uuid primary key default gen_random_uuid(),instance_id uuid default '00000000-0000-0000-0000-000000000000',email text,email_confirmed_at timestamptz,raw_app_meta_data jsonb default '{}',raw_user_meta_data jsonb default '{}',created_at timestamptz default now());
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
 CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.role',true),'') $$;
 CREATE TABLE storage.buckets(id text primary key,name text,public boolean default false,file_size_limit bigint,allowed_mime_types text[]);

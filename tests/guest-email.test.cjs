@@ -3,13 +3,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const source = fs.readFileSync('supabase/functions/_shared/guest-fulfillment.ts', 'utf8');
 const emailCode = source.slice(source.indexOf('    const subject ='), source.indexOf('    const { error: emailError }'));
-const deliver = new (Object.getPrototypeOf(async function(){}).constructor)('Deno', 'fetch', 'order', 'html', 'attachments', require('typescript').transpile(emailCode, { target: require('typescript').ScriptTarget.ES2022 }));
+const deliver = new (Object.getPrototypeOf(async function(){}).constructor)('deliveryRejected', 'db', 'id', 'Deno', 'fetch', 'order', 'html', 'attachments', require('typescript').transpile("const checkout={tracking_code:'019c86d5-8922-45cf-90e5-9905a7df7e20'};const lookupUrl='https://events.60secondsapp.io/guest-order';\n"+emailCode, { target: require('typescript').ScriptTarget.ES2022 }));
 const env = { env: { get: key => ({ GUEST_EMAIL_PROVIDER: 'sendgrid', SENDGRID_API_KEY: 'test-key' })[key] } };
 const order = { order_number: '123', guest_email: 'buyer@example.com' };
 const attachments = [{ Name: 'qr-0.png', Content: 'base64', ContentType: 'image/png', ContentID: 'cid:qr-0' }];
 test('SendGrid receipt preserves buyer, sender and inline QR reference', async () => {
   let payload;
-  await deliver(env, async (url, options) => {
+  await deliver(false,{rpc:async()=>({data:true})},'order-id',env, async (url, options) => {
     assert.equal(url, 'https://api.sendgrid.com/v3/mail/send');
     payload = JSON.parse(options.body);
     return { ok: true, status: 202 };
@@ -22,5 +22,12 @@ test('SendGrid receipt preserves buyer, sender and inline QR reference', async (
   assert.equal(payload.content[1].value, '<img src="cid:qr-0">');
 });
 test('Rejected email remains retryable instead of being marked delivered', async () => {
-  await assert.rejects(deliver(env, async () => ({ ok: false, status: 403 }), order, '', attachments), /Email delivery failed \(403\)/);
+  await assert.rejects(deliver(false,{rpc:async()=>({data:true})},'order-id',env, async () => ({ ok: false, status: 403 }), order, '', attachments), /Email delivery failed \(403\)/);
+});
+
+test('SendGrid PDF is a downloadable attachment, not an inline QR',async()=>{
+ let payload;
+ await deliver(false,{rpc:async()=>({data:true})},'order-id',env,async(_url,options)=>{payload=JSON.parse(options.body);return{ok:true,status:202};},order,'Ticket PDF attached',[{Name:'ticket.pdf',Content:'JVBERi0=',ContentType:'application/pdf'}]);
+ assert.equal(payload.attachments[0].type,'application/pdf');assert.equal(payload.attachments[0].disposition,'attachment');assert.equal(payload.attachments[0].content_id,undefined);
+ assert.match(payload.content[0].value,/Tracking code:/);assert.match(payload.content[0].value,/checkout email/);
 });

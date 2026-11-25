@@ -32,12 +32,10 @@ type PaymentSheetSessionResponse = {
 };
 
 const SUPABASE_URL =
-  process.env.EXPO_PUBLIC_SUPABASE_URL ||
-  "https://rvvujgbaswecqohixgog.supabase.co";
+  process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 
 const SUPABASE_PUBLISHABLE_KEY =
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-  "sb_publishable_sIzCwLBlhd1--vlMsdY1Hg_UEWYbGVp";
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const EDGE_TIMEOUT_MS = 15000;
 

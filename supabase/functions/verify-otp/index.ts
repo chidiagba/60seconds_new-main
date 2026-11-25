@@ -47,6 +47,9 @@ Deno.serve(async (req) => {
       });
       if (attributionError) console.error('Campaign attribution recovery failed:', attributionError.code || 'database_error');
     }
+    // Trusted server invocation; endpoint resolves the email from this verified identity.
+    const {error:welcomeError}=await admin.functions.invoke('send-welcome-email',{body:{user_id:uid}});
+    if(welcomeError) console.error('Welcome email delivery deferred');
     return respond({ success: true, otp_verified: true });
   } catch (error) {
     console.error('OTP verification failed', error);

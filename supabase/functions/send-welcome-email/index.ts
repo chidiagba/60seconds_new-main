@@ -1,3 +1,5 @@
+import { workerAuthorized } from '../_shared/worker-auth.ts';
+import { allowRequest } from '../_shared/rate-limit.ts';
 import { corsForRequest } from '../_shared/cors.ts';
 // @ts-ignore
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -83,32 +85,6 @@ const sendViaSendGrid = async (email: string, subject: string, emailContent: str
   return { ok: true, provider: "sendgrid", detail: text || "accepted" };
 };
 
-const findUserByEmail = async (admin: ReturnType<typeof createClient>, normalizedEmail: string): Promise<AuthUser | null> => {
-  let page = 1;
-  const perPage = 1000;
-
-  while (page <= 10) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, per_page: perPage });
-    if (error) {
-      throw new Error(`Failed to search users: ${error.message}`);
-    }
-
-    const users = data?.users ?? [];
-    const found = users.find((u) => (u.email || "").trim().toLowerCase() === normalizedEmail);
-    if (found) {
-      return found as AuthUser;
-    }
-
-    if (users.length < perPage) {
-      break;
-    }
-
-    page += 1;
-  }
-
-  return null;
-};
-
 const sendViaPostmark = async (email: string, subject: string, emailContent: string): Promise<{ ok: boolean; provider: string; detail?: string }> => {
 // @ts-ignore
   const POSTMARK_API_KEY = Deno.env.get("POSTMARK_API_KEY");
@@ -185,18 +161,6 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const normalizedEmail = String(body?.email || "").trim().toLowerCase();
-    const name = String(body?.name || "").trim();
-    const userId = String(body?.user_id || "").trim();
-    const trigger = String(body?.trigger || "").trim();
-
-    if (!normalizedEmail || !name) {
-      return new Response(
-        JSON.stringify({ success: false, message: "email and name are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
 // @ts-ignore
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ||
 // @ts-ignore
@@ -215,44 +179,23 @@ Deno.serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    let authUser: AuthUser | null = null;
-
-    if (userId) {
-      const { data, error } = await admin.auth.admin.getUserById(userId);
-      if (error) {
-        return new Response(
-          JSON.stringify({ success: false, message: 'Request could not be completed' }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      authUser = (data?.user as AuthUser | null) ?? null;
+    const token=req.headers.get('authorization')?.match(/^Bearer (\S+)$/i)?.[1]||'';
+    let authUser;
+    const trustedServer=await workerAuthorized(req,serviceRoleKey);
+    if(trustedServer) {
+      const {data,error}=await admin.auth.admin.getUserById(String(body.user_id||''));
+      if(error) throw error;
+      authUser=data.user;
     } else {
-      authUser = await findUserByEmail(admin, normalizedEmail);
+      const {data,error}=await admin.auth.getUser(token);
+      if(error || !data.user) return new Response(JSON.stringify({error:'Authentication required'}),{status:401,headers:{...corsHeaders,'Content-Type':'application/json'}});
+      authUser=data.user;
     }
-
-    if (!authUser) {
-      return new Response(
-        JSON.stringify({ success: false, message: "User not found" }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const existingMeta = (authUser.app_metadata || {}) as Record<string, unknown>;
-    const signupOtpVerifiedAt =
-      typeof existingMeta.signup_otp_verified_at === "string"
-        ? existingMeta.signup_otp_verified_at
-        : null;
-    const canBypassOtpGuard =
-      trigger === "post_signup_pin_verification_server" ||
-      trigger === "post_signup_otp_table_verification_server";
-
-    if (!signupOtpVerifiedAt && !canBypassOtpGuard) {
-      return new Response(
-        JSON.stringify({ success: true, skipped: true, reason: "signup_otp_not_verified" }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
+    const normalizedEmail=authUser.email;
+    const name='there'; // Fixed content: no caller-controlled text in founder email.
+    const existingMeta=authUser.app_metadata||{};
+    if(!normalizedEmail || !existingMeta.signup_otp_verified_at) return new Response(JSON.stringify({success:true,skipped:true}),{headers:{...corsHeaders,'Content-Type':'application/json'}});
+    if(!await allowRequest(admin,req,'welcome',authUser.id,3,!trustedServer)) return new Response('Please try later',{status:429,headers:corsHeaders});
     // Primary guard: check profiles table (reliable, never silently fails).
     const { data: profileRow, error: profileReadErr } = await admin
       .from("profiles")
@@ -284,6 +227,9 @@ Deno.serve(async (req) => {
       );
     }
 
+    const {data:claimed,error:claimError}=await admin.rpc('claim_welcome_email',{p_user:authUser.id});
+    if(claimError) throw claimError;
+    if(!claimed) return new Response(JSON.stringify({success:true,skipped:true}),{headers:{...corsHeaders,'Content-Type':'application/json'}});
     const subject = "Welcome to 60seconds - Catch The Moment!";
     const emailContent = buildEmailContent(name);
 
@@ -344,7 +290,7 @@ Deno.serve(async (req) => {
     const message = error instanceof Error ? error.message : "Unexpected error";
     console.error("send-welcome-email error:", message);
     return new Response(
-      JSON.stringify({ success: false, message }),
+      JSON.stringify({ success: false, message: 'Email service unavailable' }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

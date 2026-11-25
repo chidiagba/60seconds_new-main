@@ -35,3 +35,14 @@ with ThreadPoolExecutor(max_workers=8) as workers:
 assert execute("SELECT balance FROM wallets WHERE user_id='00000000-0000-0000-0000-000000000003';").strip() == '8.00'
 assert execute("SELECT count(*) FROM transactions WHERE metadata->>'payment_reference' LIKE 'parallel-%';").strip() == '8'
 print('32 concurrent funding deliveries produced exactly 8 credits')
+
+execute(Path('tests/withdrawal-security.sql').read_text())
+print('Withdrawal holds, bank write denial and reversal assertions passed')
+
+execute(Path('tests/review-service-guards.sql').read_text())
+print('Email lookup, rate limits and delivery claim assertions passed')
+
+execute(Path('tests/signup-location.sql').read_text())
+print('Signup location persistence assertions passed')
+execute(Path('tests/guest-ticket-tracking.sql').read_text())
+print('Guest tracking defaults and privacy assertions passed')

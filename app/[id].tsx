@@ -31,6 +31,7 @@ export default function SharedEventPage() {
   const [canEdit, setCanEdit] = useState(false);
   const [buyerRegion, setBuyerRegion] = useState<WebBuyerRegion>('NG');
   const [paymentMethod, setPaymentMethod] = useState<WebMethod>('paystack_card');
+  const [trackingCode,setTrackingCode]=useState<string | null>(null);
   const [attemptKey, setAttemptKey] = useState<string | null>(null);
   const [paymentState, setPaymentState] = useState<'reserved' | 'paid' | 'released' | null>(null);
   const [resumeUrl, setResumeUrl] = useState<string | null>(null);
@@ -59,9 +60,10 @@ export default function SharedEventPage() {
       if (currentEventId.current !== id) return;
       if (error || data?.error) throw new Error(data?.error || 'Unable to check payment status. Please try again.');
       setPaymentState(data.state);
+      setTrackingCode(data.trackingCode || null);
       setResumeUrl(data.url || null);
       setNotice(data.state === 'paid'
-        ? (data.emailSent ? 'Payment confirmed. Your purchase and QR codes have been emailed to you.' : 'Payment confirmed. Your QR code email is being prepared.')
+        ? (data.emailSent ? 'Payment confirmed. Your ticket PDF has been emailed to you.' : 'Payment confirmed. Your ticket PDF email is being prepared.')
         : data.state === 'released' ? 'This checkout expired or failed. No purchase was confirmed. You can start again.'
         : 'Payment is pending. Resume the existing payment or check again after paying.');
     } catch (error: any) { setError(error.message || 'Unable to check payment status.'); }
@@ -77,7 +79,7 @@ export default function SharedEventPage() {
   };
   const resetCheckout = () => {
     if (paymentState !== 'paid' && paymentState !== 'released') return;
-    setAttemptKey(null); setPaymentState(null); setResumeUrl(null); setNotice('');
+    setAttemptKey(null); setTrackingCode(null); setPaymentState(null); setResumeUrl(null); setNotice('');
     setQuantities({}); setSeatCounts({});
     if (Platform.OS === 'web') try { window.sessionStorage.removeItem(storageKey); } catch {}
     router.setParams({ attempt: undefined, purchased: undefined, cancelled: undefined });
@@ -212,6 +214,8 @@ export default function SharedEventPage() {
       <CheckoutPaymentMethod options={paymentOptions} selected={selectedMethod} onSelect={setPaymentMethod} disabled={busy || pendingAttempt} total={total || 1} />
       {!!attemptKey && <View style={{marginTop:16,padding:16,borderWidth:1,borderColor:'#555',borderRadius:10}}>
         <Text style={{color:'#fff',fontWeight:'700'}}>{paymentState === 'paid' ? 'Payment confirmed' : paymentState === 'released' ? 'Checkout closed' : 'Existing payment attempt'}</Text>
+        {!!trackingCode && <View><Text selectable style={{color:'#ddd',marginTop:12}}>Tracking code: {trackingCode}</Text><Text style={{color:'#aaa',marginTop:8}}>Save this code. Use Find guest order with your checkout email to check status or download paid tickets. This is separate from your admission QR.</Text></View>}
+        <TouchableOpacity style={button} onPress={()=>router.push('/guest-order')}><Text style={{color:'#fff'}}>Find guest order / download tickets</Text></TouchableOpacity>
         <TouchableOpacity disabled={busy} style={button} onPress={() => { void checkPaymentStatus(); }}><Text style={{color:'#fff'}}>Check payment status</Text></TouchableOpacity>
         {pendingAttempt && !!resumeUrl && <TouchableOpacity disabled={busy} style={button} onPress={() => { void openCheckout(resumeUrl).catch(() => setError('Unable to open payment. Please try again.')); }}><Text style={{color:'#fff'}}>Resume payment</Text></TouchableOpacity>}
         {(paymentState === 'paid' || paymentState === 'released') && <TouchableOpacity disabled={busy} style={button} onPress={resetCheckout}><Text style={{color:'#fff'}}>Start another purchase</Text></TouchableOpacity>}
@@ -219,6 +223,7 @@ export default function SharedEventPage() {
       {!attemptKey && <TouchableOpacity disabled={busy || total <= 0 || !bookable} style={[button,{opacity:busy || total <= 0 || !bookable ? 0.5 : 1}]} onPress={checkout}><Text style={{color:'#fff'}}>{busy ? 'Please wait…' : `Pay ${total.toFixed(currencyDigits(event.currency))} ${event.currency} · ${selectedMethod.startsWith('paystack')?'Paystack':'Stripe'}`}</Text></TouchableOpacity>}
 
     </>}
+    <TouchableOpacity style={{paddingVertical:20}} onPress={()=>router.push('/guest-order')}><Text style={{color:'#aaa3ff'}}>Already purchased? Find your guest order</Text></TouchableOpacity>
     <TouchableOpacity style={{paddingVertical:20}} onPress={() => router.push('/signup')}><Text style={{color:'#ff809a'}}>Create a 60seconds account</Text></TouchableOpacity>
   </ScrollView>;
 }

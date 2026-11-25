@@ -75,6 +75,7 @@ export default function SignUpScreen() {
   const [businessName, setBusinessName] = useState("");
   const [businessType, setBusinessType] = useState("");
   const [isBusinessTypeDropdownOpen, setIsBusinessTypeDropdownOpen] = useState(false);
+  const [locationCity, setLocationCity] = useState("");
   const [country, setCountry] = useState("Nigeria");
   const [countryCode, setCountryCode] = useState("NG");
   const [countrySearch, setCountrySearch] = useState("");
@@ -295,6 +296,7 @@ export default function SignUpScreen() {
         user_type: accountType === "business" ? ("business" as const) : ("private" as const),
         country,
         country_code: countryCode,
+        location_city: locationCity.trim() || undefined,
         ...(accountType === "business" && {
           business_name: normalizedBusinessName,
           business_type: businessType,
@@ -596,6 +598,15 @@ export default function SignUpScreen() {
                   />
                 </TouchableOpacity>
                 {referralDetected && <Text style={styles.helperText}>Referral code applied</Text>}
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>City / town (optional)</Text>
+                <View style={styles.inputWrapper}>
+                  <TextInput style={styles.input} placeholder="Enter your city or town" placeholderTextColor={Colors.dark.subtext}
+                    value={locationCity} onChangeText={setLocationCity} maxLength={120} autoCapitalize="words" />
+                </View>
+                <Text style={styles.helperText}>Your selected country and entered city are saved to your profile. GPS access is not required.</Text>
               </View>
 
               <View style={styles.inputContainer}>

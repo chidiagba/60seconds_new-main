@@ -1,3 +1,4 @@
+import {paymentHttpStatus} from '../_shared/payment-http.ts';
 // @ts-nocheck
 import { corsForRequest } from '../_shared/cors.ts';
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
@@ -7,8 +8,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const paystackSecretKey = Deno.env.get('PAYSTACK_SECRET_KEY') || '';
 const supabaseUrl =
-  Deno.env.get('SUPABASE_URL') ||
-  `https://${Deno.env.get('SUPABASE_PROJECT_REF') || 'rvvujgbaswecqohixgog'}.supabase.co`;
+  Deno.env.get('SUPABASE_URL') || '';
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
 const supabaseAdmin =
@@ -217,7 +217,11 @@ Deno.serve(async (req) => {
           verificationStatus: 'failed',
           verificationReason: 'Paystack is not configured on the server (missing PAYSTACK_SECRET_KEY).',
         }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: paymentHttpStatus({
+          verified: false,
+          verificationStatus: 'failed',
+          verificationReason: 'Paystack is not configured on the server (missing PAYSTACK_SECRET_KEY).',
+        }), headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -231,7 +235,11 @@ Deno.serve(async (req) => {
           verificationReason: 'Missing bearer token for Paystack verification request.',
         }),
         {
-          status: 200,
+          status: paymentHttpStatus({
+          verified: false,
+          verificationStatus: 'failed',
+          verificationReason: 'Missing bearer token for Paystack verification request.',
+        }),
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       );
@@ -245,7 +253,11 @@ Deno.serve(async (req) => {
           verificationReason: 'Supabase service role is not configured for Paystack verification.',
         }),
         {
-          status: 200,
+          status: paymentHttpStatus({
+          verified: false,
+          verificationStatus: 'failed',
+          verificationReason: 'Supabase service role is not configured for Paystack verification.',
+        }),
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       );
@@ -260,7 +272,11 @@ Deno.serve(async (req) => {
           verificationReason: 'Unauthorized Paystack verification request.',
         }),
         {
-          status: 200,
+          status: paymentHttpStatus({
+          verified: false,
+          verificationStatus: 'failed',
+          verificationReason: 'Unauthorized Paystack verification request.',
+        }),
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       );
@@ -275,18 +291,22 @@ Deno.serve(async (req) => {
           verificationStatus: 'failed',
           verificationReason: 'Paystack bank verification is only available for Nigerian bank accounts.',
         }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: paymentHttpStatus({
+          verified: false,
+          verificationStatus: 'failed',
+          verificationReason: 'Paystack bank verification is only available for Nigerian bank accounts.',
+        }), headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const accountName = String(payload?.accountName || '').trim();
     const accountNumber = String(payload?.accountNumber || '').trim();
     const bankName = String(payload?.bankName || '').trim();
-    const currency = String(payload?.currency || 'NGN').trim().toUpperCase() || 'NGN';
+    const currency = 'NGN';
     const refreshOnly = payload?.refreshOnly === true;
     const resolveOnly = payload?.resolveOnly === true;
-    const existingRecipientCode = String(payload?.paystackRecipientCode || '').trim();
-    const existingSubaccountCode = String(payload?.paystackSubaccountCode || '').trim();
+    const existingRecipientCode = ''; // Never trust provider identifiers from clients.
+    const existingSubaccountCode = '';
 
     if (!accountName || !accountNumber || !bankName) {
       return new Response(JSON.stringify({ error: 'accountName, accountNumber, and bankName are required' }), {
@@ -303,7 +323,11 @@ Deno.serve(async (req) => {
           verificationStatus: 'failed',
           verificationReason: `Unable to resolve a Paystack bank code for ${bankName}.`,
         }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: paymentHttpStatus({
+          verified: false,
+          verificationStatus: 'failed',
+          verificationReason: `Unable to resolve a Paystack bank code for ${bankName}.`,
+        }), headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -368,6 +392,16 @@ Deno.serve(async (req) => {
       : null;
     const combinedReason = [verificationWarning, subaccountReason].filter(Boolean).join(' ');
 
+    if (!splitRoutingReady) throw new Error('Bank verification incomplete');
+    const { error: saveError } = await supabaseAdmin.from('business_bank_accounts').upsert({
+      user_id:userData.user.id,bank_name:bankName,account_holder_name:effectiveAccountName,account_number:accountNumber,
+      bank_code:bankCode,country:'Nigeria',country_code:'NG',currency:'NGN',payout_provider:'paystack',
+      is_verified:true,verification_status:'verified',verification_source:'server_v2',verified_at:new Date().toISOString(),
+      is_active:true,is_primary:true,paystack_recipient_code:recipientCode,paystack_recipient_id:String(recipient.id),
+      paystack_subaccount_code:subaccountCode,paystack_subaccount_id:String(hydratedSubaccount?.id || subaccount.id),
+      stripe_connected_account_id:null,stripe_external_account_id:null,
+    },{onConflict:'user_id'});
+    if(saveError) throw new Error('Could not save verified bank account');
     return new Response(
       JSON.stringify({
         verified: splitRoutingReady,
@@ -394,7 +428,11 @@ Deno.serve(async (req) => {
         verificationStatus: 'failed',
         verificationReason: error?.message || 'Paystack verification failed.',
       }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: paymentHttpStatus({
+        verified: false,
+        verificationStatus: 'failed',
+        verificationReason: error?.message || 'Paystack verification failed.',
+      }), headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });

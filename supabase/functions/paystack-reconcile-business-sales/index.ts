@@ -1,3 +1,4 @@
+import { lookupAuthUser } from '../_shared/auth-user-lookup.ts';
 // @ts-nocheck
 import { corsForRequest } from '../_shared/cors.ts';
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -35,11 +36,7 @@ const buyerIdForPayment = async (payment: any): Promise<string | null> => {
   if (metadataBuyerId) return metadataBuyerId;
   const buyerEmail = String(payment?.customer?.email || payment?.email || '').trim().toLowerCase();
   if (!buyerEmail) return null;
-  const { data, error } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  if (error) throw new Error(error.message);
-  return String((data?.users || []).find((user: any) =>
-    String(user?.email || '').trim().toLowerCase() === buyerEmail
-  )?.id || '').trim() || null;
+  return (await lookupAuthUser(admin,buyerEmail))?.id || null;
 };
 
 const settleUnlinkedLegacyPayment = async (payment: any, organizerId: string): Promise<boolean> => {
@@ -134,11 +131,7 @@ const resolveLegacyOrder = async (payment: any, organizerId: string): Promise<an
   if (!buyerId) {
     const buyerEmail = String(payment?.customer?.email || payment?.email || '').trim().toLowerCase();
     if (buyerEmail) {
-      const { data: usersPage, error: usersError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-      if (usersError) throw new Error(usersError.message);
-      buyerId = String((usersPage?.users || []).find((user: any) =>
-        String(user?.email || '').trim().toLowerCase() === buyerEmail
-      )?.id || '').trim();
+      buyerId=(await lookupAuthUser(admin,buyerEmail))?.id || '';
     }
   }
 

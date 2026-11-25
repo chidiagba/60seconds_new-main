@@ -1,9 +1,10 @@
+import { workerAuthorized } from '../_shared/worker-auth.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // Invoke from a protected scheduler; never expose this credential in the app.
 Deno.serve(async (req) => {
   const secret = Deno.env.get('PUSH_WORKER_SECRET');
-  if (!secret || req.headers.get('authorization') !== `Bearer ${secret}`) return new Response('Unauthorized', { status: 401 });
+  if (!await workerAuthorized(req,secret)) return new Response('Unauthorized', { status: 401 });
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   const { data: jobs, error } = await db.from('push_outbox').select('*').is('delivered_at', null).lt('attempts', 10).or(`claimed_until.is.null,claimed_until.lt.${new Date().toISOString()}`).order('created_at').limit(50);
   if (error) return new Response('Queue unavailable', { status: 500 });

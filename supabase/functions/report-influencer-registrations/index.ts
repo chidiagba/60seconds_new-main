@@ -1,3 +1,4 @@
+import { workerAuthorized } from '../_shared/worker-auth.ts';
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { buildSignupTRegistrationUrl, classifySignupTResponse } from '../_shared/signupt.ts';
@@ -10,7 +11,7 @@ const response = (body: unknown, status = 200) => new Response(JSON.stringify(bo
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return response({ error: 'Method not allowed' }, 405);
   const workerSecret = Deno.env.get('INFLUENCER_OUTBOX_WORKER_SECRET');
-  if (!workerSecret || req.headers.get('authorization') !== `Bearer ${workerSecret}`) {
+  if (!await workerAuthorized(req,workerSecret)) {
     return response({ error: 'Unauthorized' }, 401);
   }
   if (Deno.env.get('SIGNUPT_API_CONTRACT_VERIFIED') !== 'true') {

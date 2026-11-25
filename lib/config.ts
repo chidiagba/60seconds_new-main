@@ -1,3 +1,6 @@
+const supabaseUrl=process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey=process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+if(!supabaseUrl||!supabaseAnonKey) throw new Error('Missing public Supabase configuration');
 /**
  * Application Configuration
  * Centralized configuration management for the app
@@ -6,8 +9,8 @@
 export const config = {
   // Supabase Configuration
   supabase: {
-    url: process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://rvvujgbaswecqohixgog.supabase.co',
-    anonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_sIzCwLBlhd1--vlMsdY1Hg_UEWYbGVp',
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey,
   },
 
   // App Configuration

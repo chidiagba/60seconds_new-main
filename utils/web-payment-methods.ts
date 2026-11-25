@@ -1,4 +1,4 @@
-import type { CheckoutPaymentOption, CheckoutPaymentMethodId } from './checkout-payment-methods';
+import type { CheckoutPaymentOption, CheckoutPaymentMethodId } from './checkout-payment-methods.ts';
 export type WebBuyerRegion = 'NG' | 'OTHER';
 export function webPaymentOptions(region: WebBuyerRegion, currency: string): CheckoutPaymentOption[] {
   if (region === 'NG' && currency.toUpperCase() === 'NGN') return [
